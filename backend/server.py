@@ -86,6 +86,19 @@ class CreateEngagementIn(BaseModel):
     notes: Optional[str] = None
 
 
+class WsOnboardingIn(BaseModel):
+    """Lightweight create-or-update used by the WS partner during onboarding."""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    client_email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    province: Optional[str] = None
+    corp_name: Optional[str] = None
+    fiscal_year_end: Optional[datetime] = None
+    tier: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class UpdateEngagementIn(BaseModel):
     status: Optional[str] = None
     tier: Optional[str] = None
@@ -479,6 +492,176 @@ async def get_engagement(eid: str, user: dict = Depends(get_current_user)):
     if user["role"] == "WS_PARTNER":
         e = redact_for_ws(e)
     return e
+
+
+# ---- WS partner onboarding flow ----
+
+ONBOARDING_FIELDS = ["client_name", "client_email", "phone", "province", "corp_name", "fiscal_year_end", "tier"]
+
+
+def _onboarding_progress(eng: dict, corp: dict, client: dict) -> dict:
+    parts = {
+        "client_name": bool(client.get("name")),
+        "client_email": bool(client.get("email")),
+        "phone": bool(client.get("phone")),
+        "province": bool(corp.get("province")),
+        "corp_name": bool(corp.get("name")),
+        "fiscal_year_end": bool(corp.get("fiscal_year_end")),
+        "tier": bool(eng.get("tier")),
+    }
+    completed = sum(1 for v in parts.values() if v)
+    total = 6  # display total per spec
+    return {"completed": min(completed, total), "total": total, "ready": completed >= total, "fields": parts}
+
+
+@api.post("/engagements/onboarding")
+async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+    """Create a draft engagement in ONBOARDING status with whatever fields are provided."""
+    db = get_db()
+    if not body.client_email or not body.first_name:
+        raise HTTPException(400, "first_name and client_email required to start a draft")
+    full_name = f"Dr. {body.first_name.strip()} {body.last_name.strip()}".strip() if body.last_name else f"Dr. {body.first_name.strip()}"
+    email = body.client_email.lower()
+    client = await db.users.find_one({"email": email})
+    if not client:
+        uid = str(uuid.uuid4())
+        await db.users.insert_one({
+            "id": uid,
+            "email": email,
+            "password_hash": hash_password(uuid.uuid4().hex),
+            "name": full_name,
+            "role": "CLIENT",
+            "phone": body.phone,
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc),
+            "notification_prefs": {"email": {"return_updates": True, "doc_reminders": True, "announcements": True, "tax_tips": False}, "push": {"doc_requests": True, "cpa_messages": True}},
+            "two_factor_enabled": False,
+        })
+        client = await db.users.find_one({"id": uid})
+    corp_id = str(uuid.uuid4())
+    await db.corporations.insert_one({
+        "id": corp_id,
+        "name": body.corp_name or f"{full_name.replace('Dr. ', '')} Medicine Professional Corporation",
+        "business_number": None,
+        "fiscal_year_start": None,
+        "fiscal_year_end": body.fiscal_year_end,
+        "province": body.province,
+        "practice_type": None,
+        "has_holdco": False,
+        "has_trust": False,
+        "address": None,
+        "client_id": client["id"],
+        "created_at": datetime.now(timezone.utc),
+    })
+    eng_id = str(uuid.uuid4())
+    await db.engagements.insert_one({
+        "id": eng_id,
+        "tier": body.tier,
+        "original_tier": body.tier,
+        "status": "ONBOARDING",
+        "cra_access_status": "NOT_STARTED",
+        "cra_access_method": None,
+        "cra_programs": None,
+        "referral_date": None,
+        "notes": body.notes,
+        "corporation_id": corp_id,
+        "assigned_cpa_id": None,
+        "ws_advisor_id": user["id"],
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    })
+    return {"id": eng_id}
+
+
+@api.patch("/engagements/{eid}/onboarding")
+async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+    db = get_db()
+    eng = await db.engagements.find_one({"id": eid})
+    if not eng:
+        raise HTTPException(404, "Engagement not found")
+    if eng.get("status") != "ONBOARDING":
+        raise HTTPException(400, "Only ONBOARDING engagements can be edited via this route")
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
+
+    # Update client name from first/last
+    if body.first_name or body.last_name:
+        first = (body.first_name or "").strip()
+        last = (body.last_name or "").strip()
+        full = f"Dr. {first} {last}".strip() if last else (f"Dr. {first}" if first else None)
+        if full and client:
+            await db.users.update_one({"id": client["id"]}, {"$set": {"name": full}})
+    if body.client_email and client:
+        await db.users.update_one({"id": client["id"]}, {"$set": {"email": body.client_email.lower()}})
+    if body.phone is not None and client:
+        await db.users.update_one({"id": client["id"]}, {"$set": {"phone": body.phone}})
+
+    if corp:
+        corp_updates = {}
+        if body.corp_name is not None:
+            corp_updates["name"] = body.corp_name
+        if body.province is not None:
+            corp_updates["province"] = body.province
+        if body.fiscal_year_end is not None:
+            corp_updates["fiscal_year_end"] = body.fiscal_year_end
+            corp_updates["fiscal_year_start"] = body.fiscal_year_end - timedelta(days=364)
+        if corp_updates:
+            await db.corporations.update_one({"id": corp["id"]}, {"$set": corp_updates})
+
+    eng_updates = {}
+    if body.tier is not None:
+        eng_updates["tier"] = body.tier
+        eng_updates["original_tier"] = body.tier
+    if body.notes is not None:
+        eng_updates["notes"] = body.notes
+    if eng_updates:
+        eng_updates["updated_at"] = datetime.now(timezone.utc)
+        await db.engagements.update_one({"id": eid}, {"$set": eng_updates})
+    return {"ok": True}
+
+
+@api.post("/engagements/{eid}/submit")
+async def ws_submit_to_cloudtax(eid: str, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+    """Move ONBOARDING engagement to REFERRED, creating doc + review checklists."""
+    db = get_db()
+    eng = await db.engagements.find_one({"id": eid})
+    if not eng:
+        raise HTTPException(404, "Engagement not found")
+    if eng.get("status") != "ONBOARDING":
+        raise HTTPException(400, "Engagement is not in onboarding")
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
+    progress = _onboarding_progress(eng, corp or {}, client or {})
+    if not progress["ready"]:
+        raise HTTPException(400, f"Onboarding incomplete ({progress['completed']}/{progress['total']})")
+    now = datetime.now(timezone.utc)
+    await db.engagements.update_one({"id": eid}, {"$set": {
+        "status": "REFERRED",
+        "referral_date": now,
+        "updated_at": now,
+    }})
+    await log_status_change(eid, user["id"], "ONBOARDING", "REFERRED", "Submitted to CloudTax by WS partner")
+    # Seed documents + checklist
+    docs = [
+        {"id": str(uuid.uuid4()), "engagement_id": eid, **d, "status": "PENDING", "is_new_request": False, "issue_note": None, "request_note": None, "deferred_at": None, "created_at": now}
+        for d in docs_for_tier(eng["tier"])
+    ]
+    if docs:
+        await db.documents.insert_many(docs)
+    cl = [{"id": str(uuid.uuid4()), "engagement_id": eid, **c, "completed_at": None, "completed_by_id": None} for c in review_checklist_for_tier(eng["tier"])]
+    if cl:
+        await db.checklist.insert_many(cl)
+    return {"ok": True}
+
+
+@api.get("/engagements/{eid}/onboarding-progress")
+async def ws_onboarding_progress(eid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    eng = await db.engagements.find_one({"id": eid})
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
+    return _onboarding_progress(eng or {}, corp or {}, client or {})
 
 
 @api.patch("/engagements/{eid}")

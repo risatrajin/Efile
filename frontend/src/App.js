@@ -7,6 +7,7 @@ import ClientPortal from "./pages/ClientPortal";
 import MessagesPage from "./pages/Messages";
 import AccountPage from "./pages/Account";
 import WsDashboard from "./pages/WsDashboard";
+import WsFileDetail from "./pages/WsFileDetail";
 import CpaFiles from "./pages/CpaFiles";
 import CpaEngagement from "./pages/CpaEngagement";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -54,6 +55,7 @@ export default function App() {
           </Route>
 
           <Route path="/ws/dashboard" element={<Protected roles={["WS_PARTNER"]}><WsDashboard /></Protected>} />
+          <Route path="/ws/file/:eid" element={<Protected roles={["WS_PARTNER", "ADMIN"]}><WsFileDetail /></Protected>} />
 
           <Route path="/cpa/files" element={<Protected roles={["CPA", "ADMIN"]}><CpaFiles /></Protected>} />
           <Route path="/cpa/engagement/:eid" element={<Protected roles={["CPA", "ADMIN"]}><CpaEngagement /></Protected>} />

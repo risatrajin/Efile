@@ -42,6 +42,7 @@ export const TIER_LABELS = {
 };
 
 export const STATUS_LABELS = {
+  ONBOARDING: "Onboarding",
   REFERRED: "Referred",
   INTAKE: "Intake",
   IN_PREP: "In prep",
