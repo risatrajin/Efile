@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { initials } from "../../lib/api";
-import { LogOut, User } from "lucide-react";
+import { LogOut } from "lucide-react";
 
 export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   const { user, logout } = useAuth();
@@ -58,23 +58,33 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
         <button
           onClick={() => setOpen((o) => !o)}
           className="flex items-center gap-2"
-          style={{ padding: "6px 10px", borderRadius: 10, transition: "background-color 120ms ease" }}
-          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
-          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+          style={{ padding: "4px 10px 4px 4px", borderRadius: 999, transition: "background-color 120ms ease", border: "1px solid transparent" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; e.currentTarget.style.borderColor = "var(--border-default)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; }}
           data-testid="user-menu-trigger"
         >
-          <User size={14} style={{ color: "var(--text-secondary)" }} />
-          <span style={{ fontSize: 13 }} data-testid="user-name">{user?.name}</span>
+          <div className="avatar avatar-sm" data-testid="user-avatar">{initials(user?.name || "")}</div>
+          <span style={{ fontSize: 13, fontWeight: 500 }} data-testid="user-name">{user?.name}</span>
         </button>
         {open && (
           <div data-testid="user-menu" style={{
-            position: "absolute", top: "calc(100% + 6px)", right: 0,
+            position: "absolute", top: "calc(100% + 8px)", right: 0,
             background: "#fff", border: "1px solid var(--border-default)", borderRadius: 12,
-            padding: 8, minWidth: 240, boxShadow: "0 12px 32px rgba(0,0,0,0.08)", zIndex: 30,
+            padding: 8, minWidth: 260, boxShadow: "0 12px 32px rgba(0,0,0,0.10)", zIndex: 30,
           }}>
-            <div style={{ padding: "10px 12px" }}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{user?.name}</div>
-              <div className="tertiary" style={{ fontSize: 11, marginTop: 2 }}>{user?.email}</div>
+            <div style={{ padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="avatar">{initials(user?.name || "")}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.name}</div>
+                <div className="tertiary" style={{ fontSize: 11, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email}</div>
+                {user?.role && user.role !== "CLIENT" && (
+                  <div style={{ marginTop: 6 }}>
+                    <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                      {user.role === "WS_PARTNER" ? "Wealthsimple" : user.role === "CPA" ? "CPA" : "Admin"}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="divider" style={{ margin: "4px 0" }} />
             <button

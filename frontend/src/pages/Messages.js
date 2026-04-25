@@ -88,15 +88,33 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
     if (!file) return;
     setBusy(true); setErr("");
     try {
-      // Reuse a simple direct path: upload via documents endpoint isn't right here.
-      // For attachments we use a temp object key under engagements/{eid}/messages/
-      const objectKey = `engagements/${engagementId}/messages/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      // Get presigned via documents endpoint requires a doc id; instead we expose a simple share by sending the file name only for now
-      // Send a message including the file name; real upload would call a dedicated /attachments/upload-url
-      await api.post(`/engagements/${engagementId}/messages`, { content: `📎 ${file.name}`, attachment_name: file.name });
+      const ct = file.type || "application/octet-stream";
+      const { data: presigned } = await api.post(`/engagements/${engagementId}/messages/attach-url`, {
+        file_name: file.name,
+        content_type: ct,
+      });
+      const putResp = await fetch(presigned.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": ct, "x-amz-server-side-encryption": "AES256" },
+        body: file,
+      });
+      if (!putResp.ok) throw new Error(`Upload failed (${putResp.status})`);
+      await api.post(`/engagements/${engagementId}/messages`, {
+        content: text.trim() || `Sent ${file.name}`,
+        attachment_url: presigned.object_key,
+        attachment_name: file.name,
+      });
+      setText("");
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
     if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const downloadAttachment = async (mid) => {
+    try {
+      const { data } = await api.get(`/messages/${mid}/attachment-url`);
+      window.open(data.download_url, "_blank");
+    } catch (x) { setErr(fmtError(x)); }
   };
 
   const myColor = mineColor === "blue" ? "#1565c0" : "var(--accent-dark)";
@@ -127,6 +145,25 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
                 </div>
                 <div style={{ background: bg, color: fg, padding: "10px 14px", borderRadius: 16, fontSize: 13, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                   {m.content}
+                  {m.attachment_name && (
+                    <button
+                      onClick={() => downloadAttachment(m.id)}
+                      data-testid={`attachment-${m.id}`}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        marginTop: m.content ? 8 : 0,
+                        padding: "6px 10px",
+                        background: mine ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.06)",
+                        color: fg,
+                        borderRadius: 10, fontSize: 12,
+                        textDecoration: "none", cursor: "pointer",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      <Paperclip size={12} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.attachment_name}</span>
+                    </button>
+                  )}
                 </div>
                 <div className="tertiary" style={{ fontSize: 10, marginTop: 4, textAlign: align === "flex-end" ? "right" : "left" }}>{fmtTs(m.created_at)}</div>
               </div>

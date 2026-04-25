@@ -1166,6 +1166,39 @@ class MessageIn(BaseModel):
     attachment_name: Optional[str] = None
 
 
+class AttachUrlIn(BaseModel):
+    file_name: str
+    content_type: str
+
+
+@api.post("/engagements/{eid}/messages/attach-url")
+async def message_attach_url(eid: str, body: AttachUrlIn, user: dict = Depends(get_current_user)):
+    await get_engagement_or_404(eid, user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "Not permitted")
+    safe = "".join(c for c in body.file_name if c.isalnum() or c in "._-")[:80] or "file"
+    object_key = f"engagements/{eid}/messages/{uuid.uuid4().hex}_{safe}"
+    res = s3_service.generate_upload_url(object_key, body.content_type)
+    if not res:
+        raise HTTPException(500, "Could not generate upload URL")
+    return res
+
+
+@api.get("/messages/{mid}/attachment-url")
+async def message_attach_download(mid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    msg = await db.messages.find_one({"id": mid})
+    if not msg or not msg.get("attachment_url"):
+        raise HTTPException(404, "Attachment not found")
+    await get_engagement_or_404(msg["engagement_id"], user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "Not permitted")
+    url = s3_service.generate_download_url(msg["attachment_url"], msg.get("attachment_name"))
+    if not url:
+        raise HTTPException(500, "Could not generate download URL")
+    return {"download_url": url}
+
+
 def _serialize_msg(m: dict, sender: dict | None) -> dict:
     out = {k: v for k, v in m.items() if k != "_id"}
     if isinstance(out.get("created_at"), datetime):
