@@ -196,6 +196,8 @@ export default function CpaEngagement() {
   const totalHours = time.reduce((s, t) => s + (t.hours || 0), 0);
   const hoursByCat = time.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + t.hours; return acc; }, {});
   const nextStatus = STATUS_FLOW[Math.min(STATUS_FLOW.indexOf(eng.status) + 1, STATUS_FLOW.length - 1)];
+  const deferredCount = docs.filter((d) => d.deferred_at).length;
+  const docsUploaded = docs.filter((d) => ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(d.status)).length;
 
   return (
     <div className="app-root">
@@ -207,10 +209,14 @@ export default function CpaEngagement() {
               <Link to="/cpa/files" className="link-underline">Files</Link> · {client.name}
             </div>
             <h1 className="page-title" style={{ marginTop: 4 }}>{corp.name}</h1>
-            <div className="flex items-center gap-3 mt-2">
+            <div className="flex items-center gap-3 mt-2" style={{ flexWrap: "wrap" }}>
               <TierBadge tier={eng.tier} />
               <StatusBadge status={eng.status} />
               <span className="muted" style={{ fontSize: 12 }}>Day {eng.days_elapsed || 0} · Fiscal year {fmtDate(corp.fiscal_year_end)}</span>
+              <span className="badge badge-neutral" data-testid="docs-progress">{docsUploaded}/{docs.length} docs</span>
+              {deferredCount > 0 && (
+                <span className="badge badge-attention" data-testid="deferred-counter">Deferred ({deferredCount})</span>
+              )}
             </div>
           </div>
           <div className="flex gap-2">

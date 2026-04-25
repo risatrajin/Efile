@@ -260,13 +260,37 @@ export default function ClientPortal() {
           <div className="section-label" style={{ marginBottom: 4 }}>DOCUMENTS WE NEED</div>
           <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Upload each item as you have it. PDFs, images, or spreadsheets up to 25 MB.</p>
           <div>
-            {docs.map((d) => <DocRow key={d.id} doc={d} onUpload={onUpload} busy={busy === d.id} onDefer={onDefer} />)}
+            {docs.filter((d) => !d.deferred_at).map((d) => <DocRow key={d.id} doc={d} onUpload={onUpload} busy={busy === d.id} onDefer={onDefer} />)}
           </div>
         </div>
 
         {issueDocs.length > 0 && (
           <div className="stack-md animate-in-3" data-testid="issue-section">
             {issueDocs.map((d) => <IssueAlert key={d.id} doc={d} />)}
+          </div>
+        )}
+
+        {docs.some((d) => d.deferred_at) && (
+          <div className="card animate-in-3" data-testid="deferred-section">
+            <div className="section-label" style={{ marginBottom: 4 }}>DEFERRED FOR LATER</div>
+            <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
+              You said you would come back to these. Upload them whenever you are ready, no rush.
+            </p>
+            <div>
+              {docs.filter((d) => d.deferred_at).map((d) => (
+                <div className="list-row" key={d.id} data-testid={`deferred-row-${d.id}`}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{d.name}</div>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{d.description}</div>
+                    <div className="tertiary" style={{ fontSize: 11, marginTop: 4 }}>Deferred {fmtDate(d.deferred_at)}</div>
+                  </div>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }} data-testid={`undefer-${d.id}`}>
+                    <Upload size={12} /> Upload now
+                    <HiddenFileInput onPick={(f) => onUpload(d, "upload", f)} />
+                  </label>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
