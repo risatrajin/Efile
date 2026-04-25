@@ -94,3 +94,16 @@ def send_opportunity(to_email: str, client_name: str, opp_title: str, app_link: 
     <p><em>{opp_title}</em></p>
     <p><a class="btn" href="{app_link}">View in dashboard</a></p>"""
     return send(to_email, f"Advisory opportunity: {client_name}", _wrap(inner), f"{opp_title} — {app_link}")
+
+
+def send_deferred_reminder(to_email: str, name: str, doc_names: list, portal_link: str) -> dict:
+    items_html = "".join(f"<li style='margin: 4px 0;'>{n}</li>" for n in doc_names)
+    items_text = "\n".join(f"- {n}" for n in doc_names)
+    inner = f"""<h1>A friendly reminder</h1>
+    <p>Hi {name},</p>
+    <p>You set these documents aside to upload later. Whenever you have a moment, please share them so we can keep your filing moving:</p>
+    <ul style="font-family: -apple-system, sans-serif; font-size: 13px; color: #1a1a1a; padding-left: 20px;">{items_html}</ul>
+    <p><a class="btn" href="{portal_link}">Open your portal</a></p>
+    <p class="muted">No rush, just wanted to keep these on your radar.</p>"""
+    text = f"Hi {name},\n\nYou set these documents aside to upload later:\n{items_text}\n\nUpload here when ready: {portal_link}"
+    return send(to_email, "A friendly reminder about your tax documents", _wrap(inner), text)

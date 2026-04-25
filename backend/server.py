@@ -685,6 +685,55 @@ async def defer_document(doc_id: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+REMINDER_COOLDOWN_HOURS = 48
+
+
+@api.post("/engagements/{eid}/remind-deferred")
+async def remind_deferred(eid: str, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    # Cooldown
+    last = eng.get("deferred_reminder_sent_at")
+    if last:
+        last_dt = last if isinstance(last, datetime) else datetime.fromisoformat(str(last))
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        next_ok = last_dt + timedelta(hours=REMINDER_COOLDOWN_HOURS)
+        if datetime.now(timezone.utc) < next_ok:
+            raise HTTPException(429, f"Reminder already sent. Try again after {next_ok.isoformat()}")
+    deferred_docs = [d async for d in db.documents.find({"engagement_id": eid, "deferred_at": {"$ne": None}}, {"_id": 0, "name": 1})]
+    if not deferred_docs:
+        raise HTTPException(400, "No deferred documents to remind about")
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if not corp:
+        raise HTTPException(500, "Corporation missing")
+    client = await db.users.find_one({"id": corp["client_id"]})
+    if not client:
+        raise HTTPException(500, "Client missing")
+    portal_link = f"{FRONTEND_URL}/portal"
+    result = ses_service.send_deferred_reminder(client["email"], client["name"], [d["name"] for d in deferred_docs], portal_link)
+    now = datetime.now(timezone.utc)
+    await db.engagements.update_one({"id": eid}, {"$set": {"deferred_reminder_sent_at": now}})
+    await notify(client["id"], "Friendly reminder", f"{len(deferred_docs)} documents still pending upload", "deferred_reminder", eid)
+    return {"ok": True, "sent_at": now, "doc_count": len(deferred_docs), "email_sent": result.get("success", False)}
+
+
+@api.get("/engagements/{eid}/history")
+async def engagement_history(eid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    if user["role"] in ("CLIENT", "WS_PARTNER"):
+        raise HTTPException(403, "Not permitted")
+    rows = [r async for r in db.status_history.find({"engagement_id": eid}, {"_id": 0}).sort("created_at", -1)]
+    user_ids = list({r["changed_by_id"] for r in rows if r.get("changed_by_id")})
+    users = {}
+    async for u in db.users.find({"id": {"$in": user_ids}}, {"password_hash": 0, "_id": 0}):
+        users[u["id"]] = u
+    for r in rows:
+        r["changed_by"] = users.get(r.get("changed_by_id"))
+    return rows
+
+
 @api.post("/documents/{doc_id}/extract")
 async def extract_document(doc_id: str, user: dict = Depends(require_role("CPA", "ADMIN"))):
     db = get_db()

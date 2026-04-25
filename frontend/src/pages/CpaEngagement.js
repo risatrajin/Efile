@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, TIME_LABELS, OPP_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
-import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus } from "lucide-react";
+import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, History, ChevronDown } from "lucide-react";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
 
@@ -123,21 +123,25 @@ export default function CpaEngagement() {
   const [showOppModal, setShowOppModal] = useState(false);
   const [flagDoc, setFlagDoc] = useState(null);
   const [showNewReq, setShowNewReq] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [reminderBusy, setReminderBusy] = useState(false);
   const [newTime, setNewTime] = useState({ category: "T2_PREPARATION", hours: "", description: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   const load = async () => {
     try {
-      const [a, b, c, d, e, f] = await Promise.all([
+      const [a, b, c, d, e, f, h] = await Promise.all([
         api.get(`/engagements/${eid}`),
         api.get(`/engagements/${eid}/documents`),
         api.get(`/engagements/${eid}/extracted-data`),
         api.get(`/engagements/${eid}/opportunities`),
         api.get(`/engagements/${eid}/time-entries`),
         api.get(`/engagements/${eid}/checklist`),
+        api.get(`/engagements/${eid}/history`),
       ]);
-      setEng(a.data); setDocs(b.data); setExtracted(c.data); setOpps(d.data); setTime(e.data); setCl(f.data);
+      setEng(a.data); setDocs(b.data); setExtracted(c.data); setOpps(d.data); setTime(e.data); setCl(f.data); setHistory(h.data);
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); }, [eid]);
@@ -174,6 +178,15 @@ export default function CpaEngagement() {
 
   const markReviewed = async (doc) => {
     try { await api.patch(`/documents/${doc.id}`, { status: "REVIEWED" }); await load(); } catch (x) { setErr(fmtError(x)); }
+  };
+
+  const sendDeferredReminder = async () => {
+    setReminderBusy(true); setErr("");
+    try {
+      await api.post(`/engagements/${eid}/remind-deferred`);
+      await load();
+    } catch (x) { setErr(fmtError(x)); }
+    setReminderBusy(false);
   };
 
   const shareOpp = async (opp) => {
@@ -244,7 +257,7 @@ export default function CpaEngagement() {
                 </button>
               </div>
               <div className="mt-3">
-                {docs.map((d) => (
+                {docs.filter((d) => !d.deferred_at).map((d) => (
                   <div className="list-row" key={d.id} data-testid={`cpa-doc-${d.id}`}>
                     <div style={{ flex: 1 }}>
                       <div className="flex items-center gap-2">
@@ -252,7 +265,6 @@ export default function CpaEngagement() {
                         <span style={{ fontWeight: 500 }}>{d.name}</span>
                         {d.is_new_request && <span className="badge badge-active" style={{ fontSize: 10 }}>New request</span>}
                         {d.status === "ISSUE" && <span className="badge badge-risk" style={{ fontSize: 10 }}>Issue flagged</span>}
-                        {d.deferred_at && <span className="badge badge-attention" style={{ fontSize: 10 }}>Deferred</span>}
                       </div>
                       <div className="muted" style={{ fontSize: 12 }}>{d.description}{d.file_name ? ` · ${d.file_name}` : ""}</div>
                       {d.status === "ISSUE" && d.issue_note && (
@@ -288,6 +300,46 @@ export default function CpaEngagement() {
                 ))}
               </div>
             </div>
+
+            {/* Deferred docs */}
+            {docs.some((d) => d.deferred_at) && (() => {
+              const lastReminder = eng.deferred_reminder_sent_at;
+              let cooldownActive = false;
+              let cooldownLabel = null;
+              if (lastReminder) {
+                const sentDt = new Date(lastReminder);
+                const nextOk = sentDt.getTime() + 48 * 3600 * 1000;
+                if (Date.now() < nextOk) {
+                  cooldownActive = true;
+                  cooldownLabel = `Reminder sent ${sentDt.toLocaleDateString("en-CA", { month: "short", day: "numeric" })}`;
+                }
+              }
+              return (
+                <div className="card" style={{ background: "var(--bg-subtle)" }} data-testid="cpa-deferred-section">
+                  <h2 className="card-title">Deferred by client ({docs.filter((d) => d.deferred_at).length})</h2>
+                  <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>The client said they would upload these later. One reminder sends a single email listing all of them, with a 48-hour cooldown.</p>
+                  <div>
+                    {docs.filter((d) => d.deferred_at).map((d) => (
+                      <div className="list-row" key={d.id} data-testid={`cpa-deferred-${d.id}`} style={{ borderBottomColor: "var(--border-default)" }}>
+                        <div style={{ flex: 1 }}>
+                          <div className="flex items-center gap-2"><CircleDashed size={14} style={{ color: "#f57f17" }} /><span style={{ fontWeight: 500 }}>{d.name}</span></div>
+                          <div className="muted" style={{ fontSize: 12 }}>Deferred {fmtDate(d.deferred_at)}</div>
+                        </div>
+                        {cooldownActive ? (
+                          <span className="badge badge-complete" data-testid={`reminder-sent-${d.id}`}>
+                            <Bell size={11} /> {cooldownLabel}
+                          </span>
+                        ) : (
+                          <button className="btn btn-secondary btn-sm" onClick={sendDeferredReminder} disabled={reminderBusy} data-testid={`remind-${d.id}`}>
+                            {reminderBusy ? <span className="spinner" /> : <><Bell size={12} /> Send reminder</>}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Extracted data */}
             <div className="card" data-testid="extracted-card">
@@ -408,6 +460,38 @@ export default function CpaEngagement() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Status history timeline */}
+        <div className="card" data-testid="status-history-card">
+          <button onClick={() => setHistoryOpen(!historyOpen)} className="flex items-center between" style={{ width: "100%", textAlign: "left" }} data-testid="history-toggle">
+            <div className="flex items-center gap-2">
+              <History size={14} />
+              <h2 className="card-title" style={{ margin: 0 }}>Status history</h2>
+              <span className="muted" style={{ fontSize: 12 }}>({history.length} {history.length === 1 ? "transition" : "transitions"})</span>
+            </div>
+            <ChevronDown size={16} style={{ transform: historyOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 200ms ease", color: "var(--text-secondary)" }} />
+          </button>
+          {historyOpen && (
+            <div className="mt-4">
+              {history.length === 0 && <div className="muted">No status transitions recorded yet.</div>}
+              <div style={{ position: "relative", paddingLeft: 20 }}>
+                <div style={{ position: "absolute", left: 4, top: 6, bottom: 6, width: 1, background: "var(--border-default)" }} />
+                {history.map((h, idx) => (
+                  <div key={h.id || idx} className="stack-sm" style={{ position: "relative", paddingBottom: 18 }} data-testid={`history-row-${idx}`}>
+                    <div style={{ position: "absolute", left: -20, top: 4, width: 9, height: 9, borderRadius: "50%", background: idx === 0 ? "var(--accent-dark)" : "var(--bg-card)", border: `2px solid ${idx === 0 ? "var(--accent-dark)" : "var(--border-strong)"}` }} />
+                    <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                      {h.from_status && <><span className="badge badge-neutral" style={{ fontSize: 10 }}>{h.from_status.replace(/_/g, " ").toLowerCase()}</span><span className="tertiary">→</span></>}
+                      <span className="badge badge-active" style={{ fontSize: 10 }}>{h.to_status.replace(/_/g, " ").toLowerCase()}</span>
+                      <span className="tertiary" style={{ fontSize: 11 }}>by {h.changed_by?.name || "—"}</span>
+                      <span className="tertiary" style={{ fontSize: 11 }}>· {new Date(h.created_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}</span>
+                    </div>
+                    {h.note && <div className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>“{h.note}”</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
