@@ -4,6 +4,7 @@ import { api, fmtError, fmtDate, TIME_LABELS, OPP_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
+import { ChatThread } from "./Messages";
 import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell } from "lucide-react";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
@@ -460,6 +461,23 @@ export default function CpaEngagement() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="card" style={{ padding: 0 }} data-testid="cpa-messages-card">
+          <div style={{ padding: "20px 28px 0 28px" }}>
+            <h2 className="card-title">Messages</h2>
+            <p className="muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 16 }}>Real-time chat with {client.name}.</p>
+          </div>
+          <div style={{ padding: "0 28px 28px 28px" }}>
+            <ChatThread
+              engagementId={eid}
+              headerUser={{ name: client.name, subtitle: corp.name }}
+              mineRightAlign={true}
+              mineColor="dark"
+              height={520}
+            />
           </div>
         </div>
 

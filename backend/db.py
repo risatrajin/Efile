@@ -29,3 +29,5 @@ async def create_indexes():
     await db.checklist.create_index("engagement_id")
     await db.notifications.create_index([("user_id", 1), ("is_read", 1)])
     await db.status_history.create_index("engagement_id")
+    await db.messages.create_index([("engagement_id", 1), ("created_at", 1)])
+    await db.messages.create_index([("engagement_id", 1), ("is_read", 1), ("sender_id", 1)])

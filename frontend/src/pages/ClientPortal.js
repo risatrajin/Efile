@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
-import AppHeader from "../components/shared/AppHeader";
 import { Upload, Check, CircleDashed, AlertCircle, MessageSquare, ChevronDown, RefreshCw } from "lucide-react";
 
 const PHASES = [
@@ -144,6 +144,7 @@ function IssueAlert({ doc }) {
 
 export default function ClientPortal() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [eng, setEng] = useState(null);
   const [docs, setDocs] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -200,13 +201,10 @@ export default function ClientPortal() {
   };
 
   if (!eng) return (
-    <div className="app-root">
-      <AppHeader />
-      <div className="page-narrow">
-        <div className="card">
-          <h2 className="section-title">No active engagement</h2>
-          <p className="muted">We will reach out when your engagement begins.</p>
-        </div>
+    <div className="page-narrow">
+      <div className="card">
+        <h2 className="section-title">No active engagement</h2>
+        <p className="muted">We will reach out when your engagement begins.</p>
       </div>
     </div>
   );
@@ -219,10 +217,8 @@ export default function ClientPortal() {
   const pendingReq = docs.filter((d) => d.status === "PENDING" && d.is_required && !d.deferred_at);
 
   return (
-    <div className="app-root">
-      <AppHeader />
-      <div className="page-narrow stack-lg">
-        <div className="card animate-in">
+    <div className="page-narrow stack-lg">
+      <div className="card animate-in">
           <div className="section-label" style={{ marginBottom: 8 }}>YOUR ENGAGEMENT</div>
           <h1 className="page-title">Your corporate tax filing</h1>
           <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
@@ -305,7 +301,7 @@ export default function ClientPortal() {
                   <div className="muted" style={{ fontSize: 12 }}>Your tax professional</div>
                 </div>
               </div>
-              <button className="btn btn-secondary btn-sm mt-3" data-testid="message-cpa"><MessageSquare size={12} /> Message</button>
+              <button className="btn btn-secondary btn-sm mt-3" onClick={() => navigate("/portal/messages")} data-testid="message-cpa"><MessageSquare size={12} /> Message</button>
             </div>
           )}
           <div className="card" data-testid="cra-card">
@@ -334,7 +330,6 @@ export default function ClientPortal() {
         )}
 
         <div className="portal-footer">Powered by CloudTax, in partnership with Wealthsimple</div>
-      </div>
     </div>
   );
 }

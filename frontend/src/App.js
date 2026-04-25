@@ -2,7 +2,10 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Login, { SetPassword } from "./pages/Login";
+import ClientLayout from "./pages/ClientLayout";
 import ClientPortal from "./pages/ClientPortal";
+import MessagesPage from "./pages/Messages";
+import AccountPage from "./pages/Account";
 import WsDashboard from "./pages/WsDashboard";
 import CpaFiles from "./pages/CpaFiles";
 import CpaEngagement from "./pages/CpaEngagement";
@@ -44,8 +47,11 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/set-password" element={<SetPassword />} />
 
-          <Route path="/portal" element={<Protected roles={["CLIENT"]}><ClientPortal /></Protected>} />
-          <Route path="/portal/:eid" element={<Protected roles={["CLIENT"]}><ClientPortal /></Protected>} />
+          <Route element={<Protected roles={["CLIENT"]}><ClientLayout /></Protected>}>
+            <Route path="/portal" element={<ClientPortal />} />
+            <Route path="/portal/messages" element={<MessagesPage />} />
+            <Route path="/portal/account" element={<AccountPage />} />
+          </Route>
 
           <Route path="/ws/dashboard" element={<Protected roles={["WS_PARTNER"]}><WsDashboard /></Protected>} />
 

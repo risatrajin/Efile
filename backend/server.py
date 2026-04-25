@@ -1130,4 +1130,234 @@ async def health():
     return {"ok": True, "service": "cloudtax-pilot"}
 
 
+# ==================== Messaging ====================
+import asyncio
+import json as _json
+
+# Per-engagement subscribers for SSE
+_subs: dict[str, list[asyncio.Queue]] = {}
+
+
+def _sub(eid: str) -> asyncio.Queue:
+    q = asyncio.Queue()
+    _subs.setdefault(eid, []).append(q)
+    return q
+
+
+def _unsub(eid: str, q: asyncio.Queue):
+    if eid in _subs and q in _subs[eid]:
+        _subs[eid].remove(q)
+
+
+async def _publish(eid: str, event: str, payload: dict):
+    if eid not in _subs:
+        return
+    msg = {"event": event, "data": payload}
+    for q in list(_subs[eid]):
+        try:
+            q.put_nowait(msg)
+        except Exception:
+            pass
+
+
+class MessageIn(BaseModel):
+    content: str
+    attachment_url: Optional[str] = None
+    attachment_name: Optional[str] = None
+
+
+def _serialize_msg(m: dict, sender: dict | None) -> dict:
+    out = {k: v for k, v in m.items() if k != "_id"}
+    if isinstance(out.get("created_at"), datetime):
+        out["created_at"] = out["created_at"].isoformat()
+    out["sender"] = {"id": sender["id"], "name": sender["name"], "role": sender["role"]} if sender else None
+    return out
+
+
+@api.get("/engagements/{eid}/messages")
+async def list_messages(eid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "Not permitted")
+    rows = [r async for r in db.messages.find({"engagement_id": eid}, {"_id": 0}).sort("created_at", 1)]
+    sender_ids = list({r["sender_id"] for r in rows})
+    senders = {}
+    async for u in db.users.find({"id": {"$in": sender_ids}}, {"_id": 0, "password_hash": 0}):
+        senders[u["id"]] = u
+    return [_serialize_msg(r, senders.get(r["sender_id"])) for r in rows]
+
+
+@api.get("/engagements/{eid}/messages/unread-count")
+async def unread_count(eid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    n = await db.messages.count_documents({
+        "engagement_id": eid,
+        "is_read": False,
+        "sender_id": {"$ne": user["id"]},
+    })
+    return {"count": n}
+
+
+@api.post("/engagements/{eid}/messages")
+async def send_message(eid: str, body: MessageIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] not in ("CLIENT", "CPA", "ADMIN"):
+        raise HTTPException(403, "Not permitted")
+    if not body.content.strip() and not body.attachment_url:
+        raise HTTPException(400, "Empty message")
+    row = {
+        "id": str(uuid.uuid4()),
+        "engagement_id": eid,
+        "sender_id": user["id"],
+        "content": body.content.strip(),
+        "attachment_url": body.attachment_url,
+        "attachment_name": body.attachment_name,
+        "is_read": False,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.messages.insert_one(row)
+    sender = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    serialized = _serialize_msg(row, sender)
+    # Notify the other party via in-app
+    if user["role"] == "CLIENT" and eng.get("assigned_cpa_id"):
+        await notify(eng["assigned_cpa_id"], "New client message", body.content[:80], "cpa_message", eid)
+    elif user["role"] in ("CPA", "ADMIN"):
+        corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+        if corp:
+            await notify(corp["client_id"], "New message from your CPA", body.content[:80], "client_message", eid)
+    # Publish over SSE
+    await _publish(eid, "message", serialized)
+    return serialized
+
+
+class MarkReadIn(BaseModel):
+    engagement_id: str
+
+
+@api.patch("/messages/read")
+async def mark_read(body: MarkReadIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await get_engagement_or_404(body.engagement_id, user)
+    res = await db.messages.update_many(
+        {"engagement_id": body.engagement_id, "sender_id": {"$ne": user["id"]}, "is_read": False},
+        {"$set": {"is_read": True}},
+    )
+    await _publish(body.engagement_id, "read", {"by_user_id": user["id"]})
+    return {"updated": res.modified_count}
+
+
+@api.get("/engagements/{eid}/messages/stream")
+async def stream_messages(eid: str, request: Request, token: Optional[str] = None):
+    """Server-Sent Events for real-time message delivery.
+
+    Auth via ?token= query param (EventSource cannot send custom headers).
+    """
+    import jwt as pyjwt
+    db = get_db()
+    if not token:
+        raise HTTPException(401, "Missing token")
+    try:
+        payload = pyjwt.decode(token, os.environ["JWT_SECRET"], algorithms=["HS256"])
+    except pyjwt.PyJWTError:
+        raise HTTPException(401, "Invalid token")
+    user = await db.users.find_one({"id": payload["sub"]}, {"password_hash": 0, "_id": 0})
+    if not user:
+        raise HTTPException(401, "User not found")
+    await get_engagement_or_404(eid, user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "Not permitted")
+
+    from fastapi.responses import StreamingResponse
+
+    async def gen():
+        q = _sub(eid)
+        try:
+            # Initial heartbeat
+            yield ": connected\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=20.0)
+                    yield f"event: {msg['event']}\ndata: {_json.dumps(msg['data'])}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            _unsub(eid, q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    })
+
+
+# ==================== Profile / settings ====================
+
+class UpdateProfileIn(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    notification_prefs: Optional[dict] = None
+    corporation: Optional[dict] = None  # name, business_number, address
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+@api.patch("/users/me")
+async def update_me(body: UpdateProfileIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    updates = {}
+    if body.name is not None:
+        updates["name"] = body.name.strip()
+    if body.phone is not None:
+        updates["phone"] = body.phone.strip() or None
+    if body.notification_prefs is not None:
+        updates["notification_prefs"] = body.notification_prefs
+    if updates:
+        await db.users.update_one({"id": user["id"]}, {"$set": updates})
+
+    if body.corporation and user["role"] == "CLIENT":
+        corp = await db.corporations.find_one({"client_id": user["id"]})
+        if corp:
+            corp_updates = {}
+            for f in ("name", "business_number", "address"):
+                v = body.corporation.get(f)
+                if v is not None:
+                    corp_updates[f] = v.strip() if isinstance(v, str) else v
+            if corp_updates:
+                await db.corporations.update_one({"id": corp["id"]}, {"$set": corp_updates})
+
+    me = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    if me and me["role"] == "CLIENT":
+        corp = await db.corporations.find_one({"client_id": user["id"]}, {"_id": 0})
+        me["corporation"] = corp
+    return me
+
+
+@api.get("/users/me/full")
+async def me_full(user: dict = Depends(get_current_user)):
+    db = get_db()
+    me = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    if me and me["role"] == "CLIENT":
+        corp = await db.corporations.find_one({"client_id": user["id"]}, {"_id": 0})
+        me["corporation"] = corp
+    return me
+
+
+@api.post("/auth/change-password")
+async def change_password(body: ChangePasswordIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    full = await db.users.find_one({"id": user["id"]})
+    if not full or not verify_password(body.current_password, full["password_hash"]):
+        raise HTTPException(400, "Current password is incorrect")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.new_password)}})
+    return {"ok": True}
+
+
 app.include_router(api)
