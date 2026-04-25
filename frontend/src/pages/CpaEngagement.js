@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, TIME_LABELS, OPP_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
-import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download } from "lucide-react";
+import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus } from "lucide-react";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
 
@@ -55,6 +55,63 @@ function AddOppModal({ onClose, onCreate }) {
   );
 }
 
+function FlagIssueModal({ doc, onClose, onSave }) {
+  const [note, setNote] = useState(doc?.issue_note || "");
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="section-title">Flag issue: {doc?.name}</h2>
+        <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>The client will see this note on their portal and be prompted to re-upload.</p>
+        <div className="stack-md mt-4">
+          <div className="field">
+            <label className="field-label">What is wrong with this document?</label>
+            <textarea className="textarea" rows={5} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Missing months June, July, August 2025" data-testid="issue-note" />
+          </div>
+          <div className="flex gap-2" style={{ justifyContent: "flex-end" }}>
+            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" disabled={busy || !note.trim()} onClick={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); onClose(); }} data-testid="issue-save">Send to client</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewDocRequestModal({ onClose, onCreate }) {
+  const [form, setForm] = useState({ name: "", description: "", request_note: "", is_required: true });
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="section-title">Request additional document</h2>
+        <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>The client will see this on their portal as a new request with your note.</p>
+        <div className="stack-md mt-4">
+          <div className="field">
+            <label className="field-label">Document name</label>
+            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. T5 slips" data-testid="newreq-name" />
+          </div>
+          <div className="field">
+            <label className="field-label">Short description (visible to client)</label>
+            <input className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Investment income documentation" data-testid="newreq-desc" />
+          </div>
+          <div className="field">
+            <label className="field-label">Why you need it (visible to client)</label>
+            <textarea className="textarea" rows={4} value={form.request_note} onChange={(e) => setForm({ ...form, request_note: e.target.value })} placeholder="During preparation we noticed..." data-testid="newreq-note" />
+          </div>
+          <label className="flex items-center gap-2" style={{ fontSize: 12 }}>
+            <input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })} /> Required
+          </label>
+          <div className="flex gap-2" style={{ justifyContent: "flex-end" }}>
+            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" disabled={busy || !form.name.trim() || !form.request_note.trim()} onClick={async () => { setBusy(true); await onCreate(form); setBusy(false); onClose(); }} data-testid="newreq-save">Send request</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CpaEngagement() {
   const { eid } = useParams();
   const [eng, setEng] = useState(null);
@@ -64,6 +121,8 @@ export default function CpaEngagement() {
   const [time, setTime] = useState([]);
   const [cl, setCl] = useState([]);
   const [showOppModal, setShowOppModal] = useState(false);
+  const [flagDoc, setFlagDoc] = useState(null);
+  const [showNewReq, setShowNewReq] = useState(false);
   const [newTime, setNewTime] = useState({ category: "T2_PREPARATION", hours: "", description: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -104,6 +163,18 @@ export default function CpaEngagement() {
   };
 
   const createOpp = async (f) => { try { await api.post(`/engagements/${eid}/opportunities`, f); await load(); } catch (x) { setErr(fmtError(x)); } };
+
+  const flagIssue = async (note) => {
+    try { await api.patch(`/documents/${flagDoc.id}`, { status: "ISSUE", issue_note: note }); await load(); } catch (x) { setErr(fmtError(x)); }
+  };
+
+  const requestNewDoc = async (form) => {
+    try { await api.post(`/engagements/${eid}/documents/request`, form); await load(); } catch (x) { setErr(fmtError(x)); }
+  };
+
+  const markReviewed = async (doc) => {
+    try { await api.patch(`/documents/${doc.id}`, { status: "REVIEWED" }); await load(); } catch (x) { setErr(fmtError(x)); }
+  };
 
   const shareOpp = async (opp) => {
     try { await api.patch(`/opportunities/${opp.id}`, { shared_with_ws: true }); await load(); } catch (x) { setErr(fmtError(x)); }
@@ -160,19 +231,50 @@ export default function CpaEngagement() {
           <div className="stack-lg">
             {/* Document checklist */}
             <div className="card" data-testid="doc-checklist">
-              <h2 className="card-title">Document checklist</h2>
+              <div className="flex items-center between">
+                <h2 className="card-title">Document checklist</h2>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowNewReq(true)} data-testid="request-new-doc">
+                  <FilePlus size={12} /> Request additional
+                </button>
+              </div>
               <div className="mt-3">
                 {docs.map((d) => (
-                  <div className="list-row" key={d.id}>
+                  <div className="list-row" key={d.id} data-testid={`cpa-doc-${d.id}`}>
                     <div style={{ flex: 1 }}>
-                      <div className="flex items-center gap-2"><DocIcon status={d.status} /><span style={{ fontWeight: 500 }}>{d.name}</span></div>
+                      <div className="flex items-center gap-2">
+                        <DocIcon status={d.status} />
+                        <span style={{ fontWeight: 500 }}>{d.name}</span>
+                        {d.is_new_request && <span className="badge badge-active" style={{ fontSize: 10 }}>New request</span>}
+                        {d.status === "ISSUE" && <span className="badge badge-risk" style={{ fontSize: 10 }}>Issue flagged</span>}
+                        {d.deferred_at && <span className="badge badge-attention" style={{ fontSize: 10 }}>Deferred</span>}
+                      </div>
                       <div className="muted" style={{ fontSize: 12 }}>{d.description}{d.file_name ? ` · ${d.file_name}` : ""}</div>
+                      {d.status === "ISSUE" && d.issue_note && (
+                        <div className="alert alert-risk mt-2" style={{ fontSize: 12 }}>
+                          <AlertCircle size={14} /> <div><strong>Issue note: </strong>{d.issue_note}</div>
+                        </div>
+                      )}
+                      {d.is_new_request && d.request_note && (
+                        <div className="alert alert-active mt-2" style={{ fontSize: 12 }}>
+                          <FileText size={14} /> <div><strong>Your note: </strong>{d.request_note}</div>
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       {d.object_key && <button className="btn btn-ghost btn-sm" onClick={() => downloadDoc(d)} data-testid={`download-${d.id}`}><Download size={12} /></button>}
                       {d.object_key && d.status !== "EXTRACTED" && (
                         <button className="btn btn-secondary btn-sm" onClick={() => runExtract(d)} disabled={busy} data-testid={`extract-${d.id}`}>
                           <Sparkles size={12} /> AI extract
+                        </button>
+                      )}
+                      {d.object_key && (d.status === "UPLOADED" || d.status === "EXTRACTED") && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => markReviewed(d)} data-testid={`review-${d.id}`}>
+                          <Check size={12} /> Mark reviewed
+                        </button>
+                      )}
+                      {(d.object_key || d.status === "UPLOADED" || d.status === "REVIEWED" || d.status === "EXTRACTED" || d.status === "ISSUE") && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setFlagDoc(d)} data-testid={`flag-${d.id}`}>
+                          <Flag size={12} /> {d.status === "ISSUE" ? "Edit issue" : "Flag issue"}
                         </button>
                       )}
                     </div>
@@ -304,6 +406,8 @@ export default function CpaEngagement() {
       </div>
 
       {showOppModal && <AddOppModal onClose={() => setShowOppModal(false)} onCreate={createOpp} />}
+      {flagDoc && <FlagIssueModal doc={flagDoc} onClose={() => setFlagDoc(null)} onSave={flagIssue} />}
+      {showNewReq && <NewDocRequestModal onClose={() => setShowNewReq(false)} onCreate={requestNewDoc} />}
     </div>
   );
 }

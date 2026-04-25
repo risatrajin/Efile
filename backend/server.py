@@ -574,6 +574,8 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
         "file_size": body.file_size,
         "mime_type": body.mime_type,
         "uploaded_at": now,
+        "issue_note": None,
+        "deferred_at": None,
     }})
     # Notify CPA
     if eng.get("assigned_cpa_id"):
@@ -608,12 +610,79 @@ async def update_document(doc_id: str, body: dict, user: dict = Depends(require_
     doc = await db.documents.find_one({"id": doc_id})
     if not doc:
         raise HTTPException(404, "Document not found")
-    allowed = {"status"}
+    allowed = {"status", "issue_note", "request_note"}
     updates = {k: v for k, v in body.items() if k in allowed}
+    # Clear issue_note when moving away from ISSUE
+    if updates.get("status") and updates["status"] != "ISSUE":
+        updates["issue_note"] = None
     if updates:
         await db.documents.update_one({"id": doc_id}, {"$set": updates})
+    # Notify client when CPA flags an issue
+    if updates.get("status") == "ISSUE":
+        eng = await db.engagements.find_one({"id": doc["engagement_id"]})
+        if eng:
+            corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+            if corp:
+                await notify(corp["client_id"], "Document needs attention", f"{doc['name']}: {updates.get('issue_note', 'Please review')}", "document_issue", eng["id"])
     d = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     return d
+
+
+class NewDocRequestIn(BaseModel):
+    category: str = "OTHER"
+    name: str
+    description: Optional[str] = None
+    request_note: str
+    is_required: bool = True
+
+
+@api.post("/engagements/{eid}/documents/request")
+async def request_new_document(eid: str, body: NewDocRequestIn, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    # Place new request at the top (negative sort_order)
+    new_doc = {
+        "id": str(uuid.uuid4()),
+        "engagement_id": eid,
+        "category": body.category,
+        "name": body.name,
+        "description": body.description,
+        "status": "PENDING",
+        "is_required": body.is_required,
+        "is_new_request": True,
+        "request_note": body.request_note,
+        "sort_order": -1,
+        "file_url": None,
+        "object_key": None,
+        "file_size": None,
+        "file_name": None,
+        "mime_type": None,
+        "uploaded_at": None,
+        "extracted_data": None,
+        "issue_note": None,
+        "deferred_at": None,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.documents.insert_one(new_doc)
+    eng = await db.engagements.find_one({"id": eid})
+    if eng:
+        corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+        if corp:
+            await notify(corp["client_id"], "New document requested", f"{body.name}: {body.request_note}", "new_doc_request", eid)
+    return {k: v for k, v in new_doc.items() if k != "_id"}
+
+
+@api.post("/documents/{doc_id}/defer")
+async def defer_document(doc_id: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    await get_engagement_or_404(doc["engagement_id"], user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "Not permitted")
+    await db.documents.update_one({"id": doc_id}, {"$set": {"deferred_at": datetime.now(timezone.utc)}})
+    return {"ok": True}
 
 
 @api.post("/documents/{doc_id}/extract")
