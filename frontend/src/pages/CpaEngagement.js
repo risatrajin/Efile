@@ -3,7 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, TIME_LABELS, OPP_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
-import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, History, ChevronDown } from "lucide-react";
+import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
+import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell } from "lucide-react";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
 
@@ -464,32 +465,10 @@ export default function CpaEngagement() {
 
         {/* Status history timeline */}
         <div className="card" data-testid="status-history-card">
-          <button onClick={() => setHistoryOpen(!historyOpen)} className="flex items-center between" style={{ width: "100%", textAlign: "left" }} data-testid="history-toggle">
-            <div className="flex items-center gap-2">
-              <History size={14} />
-              <h2 className="card-title" style={{ margin: 0 }}>Status history</h2>
-              <span className="muted" style={{ fontSize: 12 }}>({history.length} {history.length === 1 ? "transition" : "transitions"})</span>
-            </div>
-            <ChevronDown size={16} style={{ transform: historyOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 200ms ease", color: "var(--text-secondary)" }} />
-          </button>
+          <StatusHistoryHeader count={history.length} open={historyOpen} onToggle={() => setHistoryOpen(!historyOpen)} />
           {historyOpen && (
             <div className="mt-4">
-              {history.length === 0 && <div className="muted">No status transitions recorded yet.</div>}
-              <div style={{ position: "relative", paddingLeft: 20 }}>
-                <div style={{ position: "absolute", left: 4, top: 6, bottom: 6, width: 1, background: "var(--border-default)" }} />
-                {history.map((h, idx) => (
-                  <div key={h.id || idx} className="stack-sm" style={{ position: "relative", paddingBottom: 18 }} data-testid={`history-row-${idx}`}>
-                    <div style={{ position: "absolute", left: -20, top: 4, width: 9, height: 9, borderRadius: "50%", background: idx === 0 ? "var(--accent-dark)" : "var(--bg-card)", border: `2px solid ${idx === 0 ? "var(--accent-dark)" : "var(--border-strong)"}` }} />
-                    <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-                      {h.from_status && <><span className="badge badge-neutral" style={{ fontSize: 10 }}>{h.from_status.replace(/_/g, " ").toLowerCase()}</span><span className="tertiary">→</span></>}
-                      <span className="badge badge-active" style={{ fontSize: 10 }}>{h.to_status.replace(/_/g, " ").toLowerCase()}</span>
-                      <span className="tertiary" style={{ fontSize: 11 }}>by {h.changed_by?.name || "—"}</span>
-                      <span className="tertiary" style={{ fontSize: 11 }}>· {new Date(h.created_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}</span>
-                    </div>
-                    {h.note && <div className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>“{h.note}”</div>}
-                  </div>
-                ))}
-              </div>
+              <StatusHistoryTimeline rows={history} />
             </div>
           )}
         </div>

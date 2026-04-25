@@ -2,23 +2,70 @@ import React, { useEffect, useState } from "react";
 import { api, fmtError } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
+import StatusHistoryTimeline from "../components/shared/StatusHistoryTimeline";
+import { Download, ChevronRight, ChevronDown } from "lucide-react";
 
-function ExportCsv({ rows }) {
-  const doExport = () => {
-    const headers = ["client", "corporation", "tier", "status", "days", "cpa_hours", "opps"];
-    const csv = [headers.join(",")]
-      .concat(rows.map((r) => [
-        r.client?.name, r.corporation?.name, r.tier, r.status,
-        r.days_elapsed ?? "", r.cpa_hours ?? "", r.opps_count ?? ""
-      ].map((v) => `"${String(v || "").replace(/"/g, '""')}"`).join(",")))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "pilot-clients.csv"; a.click();
-    URL.revokeObjectURL(url);
+function ExportCsvButton() {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const onExport = async () => {
+    setBusy(true); setErr("");
+    try {
+      const resp = await api.get("/metrics/export", { responseType: "blob" });
+      const cd = resp.headers["content-disposition"] || "";
+      const m = /filename="([^"]+)"/.exec(cd);
+      const filename = m ? m[1] : `cloudtax-pilot-debrief-${new Date().toISOString().slice(0, 10)}.csv`;
+      const url = URL.createObjectURL(resp.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setErr(fmtError(e)); }
+    setBusy(false);
   };
-  return <button className="btn btn-secondary btn-sm" onClick={doExport} data-testid="export-csv">Export CSV</button>;
+  return (
+    <div className="flex items-center gap-3">
+      {err && <span className="muted" style={{ fontSize: 11, color: "var(--status-risk-text)" }}>{err}</span>}
+      <button className="btn btn-primary btn-sm" onClick={onExport} disabled={busy} data-testid="export-csv">
+        <Download size={12} /> {busy ? "Exporting…" : "Export pilot debrief CSV"}
+      </button>
+    </div>
+  );
+}
+
+function ClientRow({ e, isOpen, onToggle, history, loadingHistory }) {
+  return (
+    <>
+      <tr data-testid={`admin-row-${e.id}`} onClick={onToggle} style={{ cursor: "pointer" }}>
+        <td style={{ width: 24 }}>
+          {isOpen ? <ChevronDown size={14} style={{ color: "var(--text-secondary)" }} /> : <ChevronRight size={14} style={{ color: "var(--text-secondary)" }} />}
+        </td>
+        <td>{e.client?.name || "—"}</td>
+        <td>{e.corporation?.name || "—"}</td>
+        <td><TierBadge tier={e.tier} /></td>
+        <td><StatusBadge status={e.status} /></td>
+        <td className="muted">{e.assigned_cpa?.name || "—"}</td>
+        <td className="muted">{e.days_elapsed ?? "—"}</td>
+        <td>
+          <div className="flex items-center gap-2">
+            <div className="mini-bar"><div className="fill" style={{ width: `${Math.min(100, (e.cpa_hours || 0) * 10)}%` }} /></div>
+            <span className="muted">{Number(e.cpa_hours || 0).toFixed(1)}h</span>
+          </div>
+        </td>
+        <td className="muted">{e.opps_count || 0}</td>
+      </tr>
+      {isOpen && (
+        <tr data-testid={`history-expand-${e.id}`}>
+          <td colSpan={9} style={{ background: "var(--bg-subtle)", padding: 24 }}>
+            {loadingHistory ? (
+              <span className="spinner" />
+            ) : (
+              <StatusHistoryTimeline rows={history} compact />
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
 }
 
 export default function AdminDashboard() {
@@ -26,6 +73,9 @@ export default function AdminDashboard() {
   const [metrics, setMetrics] = useState(null);
   const [econ, setEcon] = useState(null);
   const [util, setUtil] = useState([]);
+  const [openId, setOpenId] = useState(null);
+  const [historyMap, setHistoryMap] = useState({});
+  const [loadingId, setLoadingId] = useState(null);
   const [err, setErr] = useState("");
 
   const load = async () => {
@@ -41,6 +91,22 @@ export default function AdminDashboard() {
   };
   useEffect(() => { load(); }, []);
 
+  const toggle = async (eid) => {
+    if (openId === eid) {
+      setOpenId(null);
+      return;
+    }
+    setOpenId(eid);
+    if (!historyMap[eid]) {
+      setLoadingId(eid);
+      try {
+        const { data } = await api.get(`/engagements/${eid}/history`);
+        setHistoryMap((m) => ({ ...m, [eid]: data }));
+      } catch (x) { setErr(fmtError(x)); }
+      finally { setLoadingId(null); }
+    }
+  };
+
   const tabs = [
     { key: "dashboard", to: "/admin/dashboard", label: "Dashboard" },
     { key: "users", to: "/admin/users", label: "Users" },
@@ -53,9 +119,12 @@ export default function AdminDashboard() {
     <div className="app-root">
       <AppHeader tabs={tabs} />
       <div className="page-wide stack-lg">
-        <div>
-          <h1 className="page-title">Pilot command center</h1>
-          <p className="muted" style={{ fontSize: 13 }}>Operational and unit economics for the Wealthsimple T2 pilot</p>
+        <div className="flex between items-center" style={{ flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1 className="page-title">Pilot command center</h1>
+            <p className="muted" style={{ fontSize: 13 }}>Operational and unit economics for the Wealthsimple T2 pilot</p>
+          </div>
+          <ExportCsvButton />
         </div>
         {err && <div className="alert alert-risk">{err}</div>}
 
@@ -67,33 +136,25 @@ export default function AdminDashboard() {
         </div>
 
         <div className="card">
-          <div className="flex items-center between">
-            <h2 className="card-title">All pilot clients</h2>
-            <ExportCsv rows={engs} />
-          </div>
+          <h2 className="card-title">All pilot clients</h2>
+          <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Click any row to view the engagement&apos;s status timeline.</p>
           <table className="table mt-3" data-testid="admin-client-table">
             <thead>
               <tr>
+                <th></th>
                 <th>Client</th><th>Corporation</th><th>Tier</th><th>Stage</th><th>CPA</th><th>Days</th><th>Hours</th><th>Opps</th>
               </tr>
             </thead>
             <tbody>
               {engs.map((e) => (
-                <tr key={e.id} data-testid={`admin-row-${e.id}`}>
-                  <td>{e.client?.name || "—"}</td>
-                  <td>{e.corporation?.name || "—"}</td>
-                  <td><TierBadge tier={e.tier} /></td>
-                  <td><StatusBadge status={e.status} /></td>
-                  <td className="muted">{e.assigned_cpa?.name || "—"}</td>
-                  <td className="muted">{e.days_elapsed ?? "—"}</td>
-                  <td>
-                    <div className="flex items-center gap-2">
-                      <div className="mini-bar"><div className="fill" style={{ width: `${Math.min(100, (e.cpa_hours || 0) * 10)}%` }} /></div>
-                      <span className="muted">{Number(e.cpa_hours || 0).toFixed(1)}h</span>
-                    </div>
-                  </td>
-                  <td className="muted">{e.opps_count || 0}</td>
-                </tr>
+                <ClientRow
+                  key={e.id}
+                  e={e}
+                  isOpen={openId === e.id}
+                  onToggle={() => toggle(e.id)}
+                  history={historyMap[e.id] || []}
+                  loadingHistory={loadingId === e.id}
+                />
               ))}
             </tbody>
           </table>

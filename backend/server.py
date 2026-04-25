@@ -713,7 +713,10 @@ async def remind_deferred(eid: str, user: dict = Depends(require_role("CPA", "AD
     portal_link = f"{FRONTEND_URL}/portal"
     result = ses_service.send_deferred_reminder(client["email"], client["name"], [d["name"] for d in deferred_docs], portal_link)
     now = datetime.now(timezone.utc)
-    await db.engagements.update_one({"id": eid}, {"$set": {"deferred_reminder_sent_at": now}})
+    await db.engagements.update_one(
+        {"id": eid},
+        {"$set": {"deferred_reminder_sent_at": now}, "$inc": {"deferred_reminder_count": 1}},
+    )
     await notify(client["id"], "Friendly reminder", f"{len(deferred_docs)} documents still pending upload", "deferred_reminder", eid)
     return {"ok": True, "sent_at": now, "doc_count": len(deferred_docs), "email_sent": result.get("success", False)}
 
@@ -998,6 +1001,126 @@ async def utilization(user: dict = Depends(require_role("ADMIN"))):
         total_hours = hours_agg[0]["total"] if hours_agg else 0
         out.append({"user": c, "files": files, "hours": round(total_hours, 2)})
     return out
+
+
+@api.get("/metrics/export")
+async def export_csv(user: dict = Depends(require_role("ADMIN"))):
+    """Pilot debrief CSV export — one row per engagement, all relevant columns."""
+    import csv
+    from io import StringIO
+    from fastapi.responses import StreamingResponse
+
+    db = get_db()
+
+    def fmt_dt(v):
+        if not v:
+            return ""
+        if isinstance(v, datetime):
+            return v.strftime("%Y-%m-%d")
+        return str(v)[:10]
+
+    def fmt_dt_full(v):
+        if not v:
+            return ""
+        if isinstance(v, datetime):
+            return v.strftime("%Y-%m-%dT%H:%M")
+        return str(v)[:16]
+
+    engs = [e async for e in db.engagements.find({}, {"_id": 0}).sort("referral_date", 1)]
+    corp_ids = list({e["corporation_id"] for e in engs})
+    user_ids = list({uid for e in engs for uid in [e.get("assigned_cpa_id"), e.get("ws_advisor_id")] if uid})
+    corps = {c["id"]: c async for c in db.corporations.find({"id": {"$in": corp_ids}}, {"_id": 0})}
+    user_ids += [c.get("client_id") for c in corps.values() if c.get("client_id")]
+    users = {}
+    async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0}):
+        users[u["id"]] = u
+
+    columns = [
+        "client_name", "corporation", "tier", "original_tier", "tier_changed",
+        "current_status", "assigned_cpa", "ws_advisor",
+        "referral_date", "filing_date", "turnaround_days",
+        "total_cpa_hours", "hours_by_category",
+        "documents_requested", "documents_received", "documents_deferred",
+        "reminders_sent", "opportunities_identified", "opportunities_shared_with_ws",
+        "status_transitions",
+    ]
+
+    buf = StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(columns)
+
+    for e in engs:
+        corp = corps.get(e["corporation_id"]) or {}
+        client = users.get(corp.get("client_id")) or {}
+        cpa = users.get(e.get("assigned_cpa_id")) or {}
+        ws = users.get(e.get("ws_advisor_id")) or {}
+
+        # Hours
+        hours_pipeline = [
+            {"$match": {"engagement_id": e["id"]}},
+            {"$group": {"_id": "$category", "total": {"$sum": "$hours"}}},
+        ]
+        hours_rows = await db.time_entries.aggregate(hours_pipeline).to_list(50)
+        total_hours = round(sum(r["total"] for r in hours_rows), 2)
+        by_cat = " | ".join(f"{r['_id']}:{round(r['total'], 2)}h" for r in sorted(hours_rows, key=lambda x: x["_id"]))
+
+        # Docs
+        docs_total = await db.documents.count_documents({"engagement_id": e["id"]})
+        docs_received = await db.documents.count_documents(
+            {"engagement_id": e["id"], "status": {"$in": ["UPLOADED", "REVIEWED", "EXTRACTED"]}}
+        )
+        docs_deferred = await db.documents.count_documents(
+            {"engagement_id": e["id"], "deferred_at": {"$ne": None}}
+        )
+
+        # Opps
+        opps_total = await db.opportunities.count_documents({"engagement_id": e["id"]})
+        opps_shared = await db.opportunities.count_documents(
+            {"engagement_id": e["id"], "shared_with_ws": True}
+        )
+
+        # Status history (oldest first for the export)
+        history = [
+            h async for h in db.status_history.find(
+                {"engagement_id": e["id"]}, {"_id": 0}
+            ).sort("created_at", 1)
+        ]
+        transitions = " | ".join(
+            f"{(h.get('from_status') or 'NEW')}->{h['to_status']}@{fmt_dt_full(h.get('created_at'))}"
+            for h in history
+        )
+
+        writer.writerow([
+            client.get("name", ""),
+            corp.get("name", ""),
+            e.get("tier", "") or "",
+            e.get("original_tier", "") or "",
+            "yes" if (e.get("original_tier") and e.get("tier") != e.get("original_tier")) else "no",
+            e.get("status", ""),
+            cpa.get("name", ""),
+            ws.get("name", ""),
+            fmt_dt(e.get("referral_date")),
+            fmt_dt(e.get("filing_date")),
+            e.get("turnaround_days") if e.get("turnaround_days") is not None else "",
+            total_hours,
+            by_cat,
+            docs_total,
+            docs_received,
+            docs_deferred,
+            e.get("deferred_reminder_count", 0),
+            opps_total,
+            opps_shared,
+            transitions,
+        ])
+
+    output = buf.getvalue()
+    buf.close()
+    filename = f"cloudtax-pilot-debrief-{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([output]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ==================== Health ====================
