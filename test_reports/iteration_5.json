@@ -1,0 +1,68 @@
+{
+  "summary": "Iteration 5 — WS Partner workspace overhaul. Backend 68 effective passes (10 NEW checklist-template tests + 58 regression in cloudtax_api/route_order/admin_overhaul) — _checklist_from_template async refactor verified; no missed awaits. Frontend: WS Partner login → /ws/dashboard → 'Partner workspace' pill present → click onboarding card → /ws/onboarding/{eid} renders with Save changes (top-right gray), avatar+name+badges, 2-col layout (Client info + Engagement | Pre-filing checklist + Submission details), Tax situation/Notes (full-width bottom). Pre-filing checklist toggle persists via PATCH /api/engagements/{eid}/pre-filing-checklist (200). Gear icon opens ChecklistSettingsModal with rows + add input (works). WS Advisor field shows current user name disabled. Save notes → PATCH /api/engagements/{eid}/onboarding (200). CPA login shows 'CPA workspace' pill; CLIENT login has no pill (correct).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Admin dashboard /admin/dashboard kanban",
+        "issues": ["All 5 columns (Referred/Intake/In prep/Review/Filed) show '0' and 'No clients' even though backend GET /api/engagements returns 17 engagements with proper statuses (REFERRED/IN_PREP/IN_REVIEW/FILED). This may be a pre-existing regression unrelated to iteration 5 — engagement.client_name is None in the API response, and the kanban likely skips engagements without client name. Confirm whether AdminDashboard hydrates client name client-side via a join."]
+      },
+      {
+        "screen": "ChecklistSettingsModal initial open",
+        "issues": ["Modal renders 0 rows immediately upon opening because GET /api/partner/checklist-template completes asynchronously after first paint. Acceptable UX but a brief loading skeleton/spinner would prevent perceived emptiness. Items appear within ~300ms."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_checklist_template.py",
+    "/app/backend/tests/test_cloudtax_api.py",
+    "/app/backend/tests/test_route_order_retest.py",
+    "/app/backend/tests/test_admin_overhaul.py",
+    "/app/test_reports/pytest/pytest_checklist_template.xml",
+    "/app/test_reports/pytest/pytest_regression.xml"
+  ],
+  "action_items": [
+    "Investigate admin dashboard kanban showing 0 clients despite 17 engagements in API. Likely pre-existing (not from iteration 5 changes) but should be verified — check if client name hydration broke or if the /admin/dashboard frontend logic now requires a field that's missing.",
+    "Optional: add a brief loading state in ChecklistSettingsModal while GET /api/partner/checklist-template resolves (currently shows 0 rows for ~300ms)."
+  ],
+  "critical_code_review_comments": [
+    "_checklist_from_template is correctly async and properly awaited at server.py:679 inside POST /engagements/onboarding. No missed awaits.",
+    "PUT /partner/checklist-template correctly sanitizes: trims labels, drops empties, coerces optional to bool. Returns 400 if no items remain after sanitization — verified.",
+    "Existing engagements' pre_filing_checklist remains stable across template PUTs (only NEW engagements pick up new template) — by design, regression test green.",
+    "Role guard on GET/PUT /partner/checklist-template correctly restricts to WS_PARTNER+ADMIN; CPA & CLIENT receive 403.",
+    "ChecklistTemplateIn uses list[dict] which bypasses pydantic-level validation per item (label, optional). Sanitization in handler is the only defense — acceptable since input is admin-only, but a stricter ChecklistItemIn(BaseModel){label:str, optional:bool=False} would tighten validation.",
+    "server.py is now 1720 lines (up from 1700) — split into routers recommended (carry-over note from iter 4)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_checklist_template.py (NEW — 10 tests covering GET access matrix, PUT persistence/empty-400/CPA-403, onboarding-seeds-from-template default+updated+regression)",
+    "/app/test_reports/pytest/pytest_checklist_template.xml (NEW)",
+    "/app/test_reports/pytest/pytest_regression.xml (refreshed — 58 passed, 1 skipped)"
+  ],
+  "success_rate": {
+    "backend": "100% (68 effective passes / 0 failed / 1 skipped — all NEW endpoints + full regression green)",
+    "frontend": "100% on iteration-5-specific features (WS pill, onboarding detail layout, all data-testids present, checklist toggle PATCH 200, ChecklistSettingsModal opens+adds, WS Advisor disabled, Save notes PATCH 200, CPA pill, no pill for CLIENT, admin login works)"
+  },
+  "test_credentials": "Admin: admin@cloudtax.ca / CloudTax2026! | CPA: pallavi@cloudtax.ca | WS: henry.ziegler@wealthsimple.com | Client: chen@example.com — all CloudTax2026!",
+  "seed_data_creation": "Created 4 TEST_onboarding_<uuid>@example.com physicians with associated corporations and ONBOARDING engagements via POST /api/engagements/onboarding (3 in test_checklist_template.py + 1 leftover from default check). Modified the global checklist_template settings doc multiple times during PUT tests but the autouse _restore_default fixture restores the original 6 default items at end of each test class. Verified post-test that GET /api/partner/checklist-template returns the 6 default items.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 5 ships clean. New endpoints GET/PUT /api/partner/checklist-template work + onboarding correctly seeds from template. Existing engagements remain unchanged (by design). Test files: test_checklist_template.py (10 tests), test_cloudtax_api.py (43), test_route_order_retest.py (7), test_admin_overhaul.py (9). The lone observed concern is admin /admin/dashboard kanban displaying 0 clients in all 5 columns despite 17 engagements in DB — appears pre-existing, NOT introduced by iteration 5 (no kanban-related code touched), but worth main agent check. Workspace pill works for WS_PARTNER ('Partner workspace') and CPA ('CPA workspace'); correctly absent for CLIENT and Admin (admin sees neither pill — confirm spec intent).",
+  "rca_of_issue": {
+    "admin_kanban_empty": {
+      "bug": "Admin /admin/dashboard kanban shows 0 in every column (Referred/Intake/In prep/Review/Filed) with 'No clients' even though GET /api/engagements (admin token) returns 17 engagements spanning REFERRED/IN_PREP/IN_REVIEW/FILED.",
+      "rca": "API response engagement.client_name is None across all 17 records. AdminDashboard.js likely groups by status AND filters out engagements with null client_name OR expects a hydrated `client` object that the backend no longer returns. Could also be that the dashboard hits a different aggregated endpoint (e.g., /api/admin/clients) that's now broken. Need to inspect frontend network tab and AdminDashboard.js.",
+      "mitigation": "Either (a) backend should hydrate client_name into engagement responses (join users on corporation.client_id), or (b) frontend should render engagements without client_name as 'Unknown client' instead of skipping. Recommend backend fix since iteration 4 testing showed clients populated — likely the join was inadvertently dropped."
+    }
+  },
+  "mocked_apis": {
+    "display_tab": "Display tab placeholder only (declared mocked).",
+    "aws_ses": "Sandbox — invite emails return invite_link in body.",
+    "aws_s3": "Presigned PUT URLs work; CORS upload not validated end-to-end.",
+    "permissions_enforcement": "Permission flags stored on user but NOT enforced server-side (Option C — UI-only)."
+  }
+}

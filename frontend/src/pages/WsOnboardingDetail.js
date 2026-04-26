@@ -4,78 +4,35 @@ import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
-import { ArrowLeft, ArrowRight, Plus, X, GripVertical, Check } from "lucide-react";
+import ChecklistSettingsModal from "../components/shared/ChecklistSettingsModal";
+import { ArrowLeft, ArrowRight, Settings as SettingsIcon, Lock, Check } from "lucide-react";
 
 const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"];
 
-function ChecklistEditor({ items, onChange, readOnly = false }) {
-  const [editingIdx, setEditingIdx] = useState(null);
-  const [draftText, setDraftText] = useState("");
-
-  const toggle = (i) => {
-    if (readOnly) return;
-    const next = items.map((c, idx) => idx === i ? { ...c, is_completed: !c.is_completed } : c);
-    onChange(next);
-  };
-  const startEdit = (i) => { setEditingIdx(i); setDraftText(items[i].item); };
-  const saveEdit = () => {
-    if (editingIdx === null) return;
-    const next = items.map((c, idx) => idx === editingIdx ? { ...c, item: draftText } : c);
-    onChange(next);
-    setEditingIdx(null);
-  };
-  const remove = (i) => onChange(items.filter((_, idx) => idx !== i));
-  const addNew = () => onChange([...items, { id: `new-${Date.now()}`, item: "New item", is_completed: false, sort_order: items.length }]);
-  const move = (i, dir) => {
-    const j = i + dir;
-    if (j < 0 || j >= items.length) return;
-    const next = [...items];
-    [next[i], next[j]] = [next[j], next[i]];
-    onChange(next);
-  };
-
+function ChecklistRow({ item, onToggle }) {
   return (
-    <div className="stack-sm" data-testid="checklist-editor">
-      {items.map((c, i) => (
-        <div key={c.id || i} className="flex items-center gap-2" style={{ padding: "10px 12px", background: c.is_completed ? "var(--bg-subtle)" : "transparent", borderRadius: 8, border: "1px solid var(--border-default)" }} data-testid={`checklist-row-${i}`}>
-          {!readOnly && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              <button onClick={() => move(i, -1)} className="muted" style={{ fontSize: 9 }} disabled={i === 0}>▲</button>
-              <button onClick={() => move(i, +1)} className="muted" style={{ fontSize: 9 }} disabled={i === items.length - 1}>▼</button>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => toggle(i)}
-            data-testid={`checklist-toggle-${i}`}
-            style={{
-              width: 18, height: 18, borderRadius: 4,
-              border: `1.5px solid ${c.is_completed ? "#1565c0" : "#d9d5cf"}`,
-              background: c.is_completed ? "#1565c0" : "#fff",
-              display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            }}
-          >
-            {c.is_completed && <Check size={11} style={{ color: "#fff" }} />}
-          </button>
-          {editingIdx === i ? (
-            <input className="input" style={{ flex: 1, height: 32 }} autoFocus value={draftText} onChange={(e) => setDraftText(e.target.value)} onBlur={saveEdit} onKeyDown={(e) => e.key === "Enter" && saveEdit()} data-testid={`checklist-edit-input-${i}`} />
-          ) : (
-            <span
-              onClick={() => !readOnly && startEdit(i)}
-              style={{ flex: 1, fontSize: 13, color: c.is_completed ? "var(--text-tertiary)" : "var(--text-primary)", textDecoration: c.is_completed ? "line-through" : "none", cursor: readOnly ? "default" : "text" }}
-              data-testid={`checklist-label-${i}`}
-            >
-              {c.item}
-            </span>
-          )}
-          {!readOnly && (
-            <button onClick={() => remove(i)} className="btn-ghost" style={{ padding: 4, color: "var(--text-tertiary)" }} data-testid={`checklist-remove-${i}`}><X size={12} /></button>
-          )}
-        </div>
-      ))}
-      {!readOnly && (
-        <button onClick={addNew} className="btn-link" style={{ fontSize: 12, marginTop: 4 }} data-testid="checklist-add"><Plus size={11} /> Add item</button>
-      )}
+    <div className="flex items-center gap-3" style={{ padding: "8px 0" }} data-testid={`checklist-item-${item.id}`}>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={item.is_completed}
+        onClick={onToggle}
+        data-testid={`checklist-toggle-${item.id}`}
+        style={{
+          width: 20, height: 20, borderRadius: 4,
+          border: `1.5px solid ${item.is_completed ? "#1565c0" : "#c5c0b8"}`,
+          background: item.is_completed ? "#1565c0" : "#fff",
+          display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          cursor: "pointer",
+        }}
+      >
+        {item.is_completed && <Check size={13} style={{ color: "#fff" }} strokeWidth={3} />}
+      </button>
+      <span style={{
+        fontSize: 13,
+        color: item.is_completed ? "var(--text-tertiary)" : "var(--text-primary)",
+        textDecoration: item.is_completed ? "line-through" : "none",
+      }}>{item.item}</span>
     </div>
   );
 }
@@ -90,6 +47,7 @@ export default function WsOnboardingDetail() {
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [err, setErr] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
 
   const load = async () => {
     try {
@@ -114,9 +72,16 @@ export default function WsOnboardingDetail() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
 
-  const persistChecklist = async (next) => {
+  const toggleItem = async (idx) => {
+    const next = checklist.map((c, i) => i === idx ? { ...c, is_completed: !c.is_completed } : c);
     setChecklist(next);
-    try { await api.patch(`/engagements/${eid}/pre-filing-checklist`, { items: next }); } catch (x) { setErr(fmtError(x)); }
+    try { await api.patch(`/engagements/${eid}/pre-filing-checklist`, { items: next }); }
+    catch (x) { setErr(fmtError(x)); }
+  };
+
+  const onTemplateSaved = async () => {
+    // Reload engagement to pick up any new template items the backend may have synced
+    await load();
   };
 
   const saveAll = async () => {
@@ -145,126 +110,174 @@ export default function WsOnboardingDetail() {
     setBusy(false);
   };
 
-  if (!eng || !form) return <div className="app-root"><AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>;
+  if (!eng || !form) return (
+    <div className="app-root">
+      <AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} />
+      <div className="page-wide">Loading…</div>
+    </div>
+  );
 
   const completed = checklist.filter((c) => c.is_completed).length;
   const total = checklist.length;
   const ready = total > 0 && completed >= total;
-  const remaining = Math.max(0, total - completed);
-  const corp = eng.corporation || {};
+  const fullName = `${form.first_name} ${form.last_name}`.trim();
+  const displayName = (/^dr\.?\s/i).test(fullName) ? fullName : `Dr. ${fullName}`;
 
   return (
     <div className="app-root">
       <AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} />
-      <div className="page-wide stack-lg" data-testid="ws-onboarding-detail">
-        <Link to="/ws/dashboard" className="btn-link" style={{ width: "fit-content" }}><ArrowLeft size={12} /> Onboarding</Link>
+      <div className="page-wide stack-lg" data-testid="ws-onboarding-detail" style={{ maxWidth: 1200 }}>
+        <Link to="/ws/dashboard" className="muted flex items-center gap-2" style={{ width: "fit-content", fontSize: 13, textDecoration: "none" }} data-testid="back-onboarding">
+          <ArrowLeft size={14} /> Onboarding
+        </Link>
         {err && <div className="alert alert-risk">{err}</div>}
 
+        {/* Header — name, badges, save changes */}
         <div className="flex between items-start" style={{ flexWrap: "wrap", gap: 16 }}>
           <div className="flex items-start gap-4">
-            <div className="avatar" style={{ width: 56, height: 56, fontSize: 16 }}>{initials(`${form.first_name} ${form.last_name}`)}</div>
+            <div className="avatar" style={{ width: 56, height: 56, fontSize: 16, background: "#dde8f7", color: "#1565c0" }}>{initials(fullName)}</div>
             <div>
-              <h1 className="page-title">{form.first_name} {form.last_name}</h1>
+              <h1 style={{ fontSize: 28, fontWeight: 700 }} data-testid="ws-detail-name">{displayName}</h1>
               <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>{form.corp_name || "Corporation pending"}</p>
               <div className="flex items-center gap-2 mt-3">
                 {form.tier && <TierBadge tier={form.tier} />}
-                <span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`}>{ready ? "Ready" : "Draft"}</span>
+                <span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`} data-testid="ws-detail-status-badge">{ready ? "Ready" : "Draft"}</span>
               </div>
             </div>
           </div>
-          <div className="flex gap-2 items-center">
-            {savedAt && <span className="tertiary" style={{ fontSize: 11 }}>Saved {savedAt.toLocaleTimeString()}</span>}
-            <button className="btn btn-secondary" onClick={saveAll} disabled={busy} data-testid="save-changes">Save changes</button>
-          </div>
+          <button
+            onClick={saveAll}
+            disabled={busy}
+            data-testid="save-changes"
+            style={{ padding: "10px 18px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, fontWeight: 500, color: "var(--text-primary)", border: "1px solid var(--border-default)" }}
+          >{busy ? "Saving…" : "Save changes"}</button>
         </div>
+        {savedAt && <span className="tertiary" style={{ fontSize: 11 }}>Saved {savedAt.toLocaleTimeString()}</span>}
 
-        <div className="two-col">
+        {/* Two columns */}
+        <div className="two-col" style={{ alignItems: "flex-start" }}>
           <div className="stack-lg">
+            {/* Client info */}
             <div className="card" data-testid="form-client-info">
-              <h2 className="card-title">Client information</h2>
+              <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Client information</h2>
               <div className="grid-2 mt-3" style={{ rowGap: 18 }}>
                 <div className="field"><label className="field-label">First name</label><input className="input" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} data-testid="f-first" /></div>
                 <div className="field"><label className="field-label">Last name</label><input className="input" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} data-testid="f-last" /></div>
-                <div className="field"><label className="field-label">Email</label><input className="input" type="email" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} data-testid="f-email" /></div>
-                <div className="field"><label className="field-label">Phone</label><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="f-phone" /></div>
-                <div className="field"><label className="field-label">Province</label>
+                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Email</label><input className="input" type="email" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} data-testid="f-email" /></div>
+                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Phone</label><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="f-phone" /></div>
+                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Province</label>
                   <select className="select" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} data-testid="f-prov">{PROVINCES.map((p) => <option key={p}>{p}</option>)}</select>
                 </div>
               </div>
             </div>
 
+            {/* Engagement */}
             <div className="card" data-testid="form-engagement">
-              <h2 className="card-title">Engagement</h2>
-              <div className="grid-2 mt-3" style={{ rowGap: 18 }}>
-                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Corporation name</label><input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} data-testid="f-corp" /></div>
+              <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Engagement</h2>
+              <div className="stack-md mt-3">
+                <div className="field"><label className="field-label">Corporation name</label><input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} data-testid="f-corp" /></div>
                 <div className="field"><label className="field-label">Fiscal year end</label><input className="input" type="date" value={form.fiscal_year_end} onChange={(e) => setForm({ ...form, fiscal_year_end: e.target.value })} data-testid="f-fye" /></div>
-                <div className="field"><label className="field-label">WS Advisor</label><div style={{ fontSize: 13, fontWeight: 500, paddingTop: 2 }}>{user?.name}</div></div>
-              </div>
-              <div className="field mt-3">
-                <label className="field-label">Service tier</label>
-                <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-                  {[
-                    { v: "WHITE_GLOVE", label: "White-Glove" },
-                    { v: "BOOKS_COMPLETE", label: "Books Complete" },
-                    { v: "STANDARD", label: "Standard" },
-                  ].map((t) => (
-                    <button key={t.v} type="button" onClick={() => setForm({ ...form, tier: t.v })} data-testid={`f-tier-${t.v}`}
-                      style={{
-                        padding: "10px 16px", borderRadius: 8, fontSize: 12, fontWeight: 500,
-                        border: `1.5px solid ${form.tier === t.v ? "#1565c0" : "var(--border-default)"}`,
-                        background: form.tier === t.v ? "#e3f2fd" : "#fff",
-                        color: form.tier === t.v ? "#1565c0" : "var(--text-primary)",
-                      }}>
-                      {t.label}
-                    </button>
-                  ))}
+                <div className="field">
+                  <label className="field-label">Service tier</label>
+                  <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+                    {[
+                      { v: "WHITE_GLOVE", label: "White-Glove" },
+                      { v: "BOOKS_COMPLETE", label: "Books Complete" },
+                      { v: "STANDARD", label: "Standard" },
+                    ].map((t) => (
+                      <button key={t.v} type="button" onClick={() => setForm({ ...form, tier: t.v })} data-testid={`f-tier-${t.v}`}
+                        style={{
+                          flex: 1, padding: "12px 16px", borderRadius: 10, fontSize: 13, fontWeight: 500,
+                          border: `1.5px solid ${form.tier === t.v ? "#1565c0" : "var(--border-default)"}`,
+                          background: form.tier === t.v ? "#e3f2fd" : "#fff",
+                          color: form.tier === t.v ? "#1565c0" : "var(--text-primary)",
+                        }}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="field">
+                  <label className="field-label">WS Advisor</label>
+                  <div style={{ position: "relative" }}>
+                    <input className="input" value={user?.name || ""} disabled data-testid="f-advisor" style={{ background: "var(--bg-subtle)", paddingRight: 40 }} />
+                    <Lock size={14} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }} />
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div className="card" data-testid="form-notes">
-              <h2 className="card-title">Tax situation / Notes</h2>
-              <textarea className="textarea" rows={5} style={{ marginTop: 12 }} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Background, planning notes, special considerations..." data-testid="f-notes" />
-              <button className="btn btn-secondary btn-sm mt-3" onClick={saveAll} disabled={busy}>Save notes</button>
             </div>
           </div>
 
           <div className="stack-lg">
+            {/* Pre-filing checklist (read-only with gear) */}
             <div className="card" data-testid="checklist-card">
               <div className="flex items-center between">
-                <h2 className="card-title">Pre-filing checklist</h2>
-                <span className="muted" style={{ fontSize: 12 }}>{completed}/{total}</span>
+                <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Pre-filing checklist</h2>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  data-testid="checklist-settings-open"
+                  style={{ width: 30, height: 30, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", transition: "background-color 120ms ease" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                >
+                  <SettingsIcon size={16} />
+                </button>
               </div>
-              <div className="mini-bar" style={{ width: "100%", marginTop: 8, marginBottom: 12 }}>
-                <div className="fill" style={{ width: `${total ? (completed / total) * 100 : 0}%`, background: ready ? "#2e7d32" : "#1565c0" }} />
+              <div className="flex items-center gap-2 mt-2">
+                <div className="mini-bar" style={{ flex: 1 }}>
+                  <div className="fill" style={{ width: `${total ? (completed / total) * 100 : 0}%`, background: "#1565c0" }} />
+                </div>
+                <span className="muted" style={{ fontSize: 12, fontWeight: 500 }}>{completed}/{total}</span>
               </div>
-              <ChecklistEditor items={checklist} onChange={persistChecklist} />
+              <div style={{ marginTop: 12 }}>
+                {checklist.map((c, i) => <ChecklistRow key={c.id || i} item={c} onToggle={() => toggleItem(i)} />)}
+                {checklist.length === 0 && <div className="muted" style={{ fontSize: 12, padding: 12, textAlign: "center" }}>No checklist items configured. Click the gear icon to set up.</div>}
+              </div>
               <button
-                className="btn btn-primary w-full mt-4"
-                style={{
-                  background: ready ? "#1565c0" : "#9bc4ea",
-                  cursor: ready ? "pointer" : "not-allowed",
-                  justifyContent: "center",
-                }}
-                disabled={!ready || busy}
                 onClick={submit}
+                disabled={!ready || busy}
                 data-testid="submit-to-cloudtax"
-              >
-                {ready ? <>Move to CloudTax <ArrowRight size={11} /></> : `Complete all checklist items to submit · ${remaining} remaining`}
-              </button>
+                style={{
+                  marginTop: 16, width: "100%", padding: "12px 16px", borderRadius: 10,
+                  background: ready ? "#1e88e5" : "#bbdefb",
+                  color: "#fff", fontWeight: 500, fontSize: 14,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  cursor: ready ? "pointer" : "not-allowed",
+                }}
+              >Move to CloudTax <ArrowRight size={14} /></button>
+              <p className="muted" style={{ fontSize: 12, textAlign: "center", marginTop: 10 }}>CPA assigned within 1–2 business days</p>
             </div>
 
+            {/* Submission details */}
             <div className="card" data-testid="submission-card">
-              <h2 className="card-title">Submission details</h2>
-              <div className="mt-3 stack-sm" style={{ fontSize: 13 }}>
-                <div className="list-row"><span className="muted">Status</span><span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`}>{ready ? "Ready" : "Draft"}</span></div>
-                <div className="list-row"><span className="muted">Added</span><span style={{ fontWeight: 500 }}>{fmtDate(eng.created_at)}</span></div>
-                <div className="list-row"><span className="muted">WS Advisor</span><span style={{ fontWeight: 500 }}>{user?.name}</span></div>
+              <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Submission details</h2>
+              <div className="stack-sm" style={{ fontSize: 13 }}>
+                <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">Status</span><span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`} data-testid="submission-status">{ready ? "Ready" : "Draft"}</span></div>
+                <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">Added</span><span style={{ fontWeight: 500 }}>{fmtDate(eng.created_at)}</span></div>
+                <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">WS Advisor</span><span style={{ fontWeight: 500 }}>{user?.name}</span></div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Tax situation / Notes — full width */}
+        <div className="card" data-testid="form-notes">
+          <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Tax situation / Notes</h2>
+          <textarea className="textarea" rows={5} style={{ marginTop: 12 }} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Background, planning notes, special considerations..." data-testid="f-notes" />
+          <div className="flex" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+            <button
+              onClick={saveAll}
+              disabled={busy}
+              data-testid="save-notes"
+              style={{ padding: "10px 22px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }}
+            >{busy ? "Saving…" : "Save notes"}</button>
+          </div>
+        </div>
+
+        <div style={{ height: 40 }} />
       </div>
+
+      {showSettings && <ChecklistSettingsModal onClose={() => setShowSettings(false)} onSaved={onTemplateSaved} />}
     </div>
   );
 }

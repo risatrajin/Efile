@@ -601,6 +601,17 @@ def _new_checklist():
             for i, label in enumerate(DEFAULT_PRE_FILING_CHECKLIST)]
 
 
+async def _checklist_from_template():
+    """Build a fresh per-engagement checklist from the global partner template, falling back to DEFAULT_PRE_FILING_CHECKLIST."""
+    db = get_db()
+    doc = await db.settings.find_one({"key": "checklist_template"}, {"_id": 0})
+    items = (doc or {}).get("items") or []
+    if not items:
+        return _new_checklist()
+    return [{"id": str(uuid.uuid4()), "item": it["label"], "is_completed": False, "sort_order": i}
+            for i, it in enumerate(items)]
+
+
 ONBOARDING_FIELDS = ["client_name", "client_email", "phone", "province", "corp_name", "fiscal_year_end", "tier"]
 
 
@@ -665,7 +676,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         "corporation_id": corp_id,
         "assigned_cpa_id": None,
         "ws_advisor_id": user["id"],
-        "pre_filing_checklist": _new_checklist(),
+        "pre_filing_checklist": await _checklist_from_template(),
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     })
@@ -1236,6 +1247,45 @@ async def list_notifications(user: dict = Depends(get_current_user)):
     db = get_db()
     rows = [r async for r in db.notifications.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).limit(30)]
     return rows
+
+
+# ==================== Partner-managed global checklist template ====================
+
+DEFAULT_CHECKLIST_TEMPLATE = [
+    {"label": "Client consented to pilot", "optional": False},
+    {"label": "Corporation info confirmed", "optional": False},
+    {"label": "Service tier assigned", "optional": False},
+    {"label": "Client's accountant notified", "optional": False},
+    {"label": "CRA Group ID instructions sent", "optional": False},
+    {"label": "Document checklist sent (optional)", "optional": True},
+]
+
+
+class ChecklistTemplateIn(BaseModel):
+    items: list[dict]
+
+
+@api.get("/partner/checklist-template")
+async def get_checklist_template(user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+    db = get_db()
+    doc = await db.settings.find_one({"key": "checklist_template"}, {"_id": 0})
+    if not doc:
+        return {"items": DEFAULT_CHECKLIST_TEMPLATE}
+    return {"items": doc.get("items", DEFAULT_CHECKLIST_TEMPLATE)}
+
+
+@api.put("/partner/checklist-template")
+async def update_checklist_template(body: ChecklistTemplateIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+    db = get_db()
+    items = [{"label": str(it.get("label", "")).strip(), "optional": bool(it.get("optional", False))} for it in body.items if str(it.get("label", "")).strip()]
+    if not items:
+        raise HTTPException(400, "Template must have at least one item")
+    await db.settings.update_one(
+        {"key": "checklist_template"},
+        {"$set": {"items": items, "updated_by": user["id"], "updated_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return {"items": items}
 
 
 @api.get("/notifications/unread-count")

@@ -24,12 +24,23 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
 
   const onSignOut = async () => { await logout(); navigate("/login"); };
 
+  const workspaceLabel = user?.role === "WS_PARTNER" ? "Partner workspace"
+    : user?.role === "CPA" ? "CPA workspace"
+    : user?.role === "ADMIN" ? "Admin" : null;
+
   return (
     <header className="app-header" data-testid="app-header">
       <div className="app-header-inner">
         <Link to="/" className="brand-link" data-testid="brand-logo" style={{ display: "inline-flex", alignItems: "center" }}>
           <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 28, width: "auto" }} />
         </Link>
+        {workspaceLabel && user?.role !== "ADMIN" && (
+          <span data-testid="workspace-pill" style={{
+            padding: "6px 14px", borderRadius: 999,
+            background: "var(--bg-subtle)", color: "var(--text-primary)",
+            fontSize: 13, fontWeight: 500, marginLeft: 8,
+          }}>{workspaceLabel}</span>
+        )}
         {tabs.length > 0 && (
           <nav className="nav-tabs" data-testid="nav-tabs">
             {tabs.map((t) => {
