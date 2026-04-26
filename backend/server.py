@@ -631,6 +631,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         raise HTTPException(400, "first_name and client_email required to start a draft")
     full_name = f"{body.first_name.strip()} {body.last_name.strip()}".strip() if body.last_name else body.first_name.strip()
     email = body.client_email.lower()
+    invite_link = None
     client = await db.users.find_one({"email": email})
     if not client:
         uid = str(uuid.uuid4())
@@ -647,6 +648,22 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
             "two_factor_enabled": False,
         })
         client = await db.users.find_one({"id": uid})
+        # Issue a set-password invite for the new client (idempotent — only on first creation)
+        token = new_invite_token()
+        await db.password_reset_tokens.insert_one({
+            "id": str(uuid.uuid4()),
+            "token": token,
+            "user_id": uid,
+            "used": False,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=14),
+            "created_at": datetime.now(timezone.utc),
+        })
+        invite_link = f"{FRONTEND_URL}/set-password?token={token}"
+        try:
+            ses_service.send_invite(email, full_name, invite_link, "client")
+        except Exception as e:
+            log.warning("send_invite failed (likely SES sandbox): %s", e)
+        log.info("WS onboarding invite issued: %s -> %s", email, invite_link)
     corp_id = str(uuid.uuid4())
     await db.corporations.insert_one({
         "id": corp_id,
@@ -680,7 +697,43 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     })
-    return {"id": eng_id}
+    return {"id": eng_id, "invite_link": invite_link}
+
+
+@api.post("/engagements/{eid}/resend-invite")
+async def resend_client_invite(eid: str, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+    """Re-issue a fresh set-password invite for the client on this engagement."""
+    db = get_db()
+    eng = await db.engagements.find_one({"id": eid})
+    if not eng:
+        raise HTTPException(404, "Engagement not found")
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if not corp:
+        raise HTTPException(404, "Corporation not found")
+    client = await db.users.find_one({"id": corp["client_id"]})
+    if not client:
+        raise HTTPException(404, "Client not found")
+    # Invalidate previous unused tokens for this user
+    await db.password_reset_tokens.update_many(
+        {"user_id": client["id"], "used": False},
+        {"$set": {"used": True}},
+    )
+    token = new_invite_token()
+    await db.password_reset_tokens.insert_one({
+        "id": str(uuid.uuid4()),
+        "token": token,
+        "user_id": client["id"],
+        "used": False,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=14),
+        "created_at": datetime.now(timezone.utc),
+    })
+    invite_link = f"{FRONTEND_URL}/set-password?token={token}"
+    try:
+        ses_service.send_invite(client["email"], client.get("name") or "Client", invite_link, "client")
+    except Exception as e:
+        log.warning("send_invite failed (likely SES sandbox): %s", e)
+    log.info("Invite re-issued: %s -> %s", client["email"], invite_link)
+    return {"invite_link": invite_link, "client_email": client["email"]}
 
 
 @api.patch("/engagements/{eid}/onboarding")

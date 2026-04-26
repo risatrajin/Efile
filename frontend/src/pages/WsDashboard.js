@@ -30,6 +30,8 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [eid, setEid] = useState(existing?.id || null);
+  const [inviteLink, setInviteLink] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [form, setForm] = useState(() => {
     const c = existing?.client || {};
     const corp = existing?.corporation || {};
@@ -57,6 +59,7 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
           client_email: form.client_email, phone: form.phone, province: form.province,
         });
         setEid(data.id);
+        if (data.invite_link) setInviteLink(data.invite_link);
       } else {
         await api.patch(`/engagements/${eid}/onboarding`, {
           first_name: form.first_name, last_name: form.last_name,
@@ -122,6 +125,23 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
           )}
           {step === 2 && (
             <>
+              {inviteLink && (
+                <div data-testid="invite-link-banner" style={{ padding: 14, borderLeft: "3px solid #1e88e5", background: "#e3f2fd", borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Client invite created</div>
+                  <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>
+                    An invite email was sent to <strong>{form.client_email}</strong>. If they don&apos;t receive it, share this link manually:
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <code style={{ flex: 1, padding: "8px 10px", background: "#fff", borderRadius: 6, fontSize: 11, wordBreak: "break-all", border: "1px solid var(--border-default)" }}>{inviteLink}</code>
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard.writeText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500); }}
+                      data-testid="copy-invite-link"
+                      style={{ padding: "8px 12px", borderRadius: 6, background: linkCopied ? "#2e7d32" : "#1e88e5", color: "#fff", fontSize: 12, fontWeight: 500 }}
+                    >{linkCopied ? "Copied" : "Copy"}</button>
+                  </div>
+                </div>
+              )}
               <div className="field"><label className="field-label">Corporation name</label>
                 <input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="ac-corp" /></div>
               <div className="field"><label className="field-label">Fiscal year end</label>

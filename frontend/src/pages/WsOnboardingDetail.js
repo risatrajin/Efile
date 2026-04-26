@@ -5,7 +5,7 @@ import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
 import ChecklistSettingsModal from "../components/shared/ChecklistSettingsModal";
-import { ArrowLeft, ArrowRight, Settings as SettingsIcon, Lock, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Settings as SettingsIcon, Lock, Check, Mail } from "lucide-react";
 
 const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"];
 
@@ -48,6 +48,8 @@ export default function WsOnboardingDetail() {
   const [savedAt, setSavedAt] = useState(null);
   const [err, setErr] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [resentLink, setResentLink] = useState(null);
+  const [resending, setResending] = useState(false);
 
   const load = async () => {
     try {
@@ -108,6 +110,15 @@ export default function WsOnboardingDetail() {
       navigate("/ws/dashboard");
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
+  };
+
+  const resendInvite = async () => {
+    setResending(true); setErr("");
+    try {
+      const { data } = await api.post(`/engagements/${eid}/resend-invite`);
+      setResentLink(data.invite_link);
+    } catch (x) { setErr(fmtError(x)); }
+    setResending(false);
   };
 
   if (!eng || !form) return (
@@ -255,6 +266,26 @@ export default function WsOnboardingDetail() {
                 <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">Status</span><span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`} data-testid="submission-status">{ready ? "Ready" : "Draft"}</span></div>
                 <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">Added</span><span style={{ fontWeight: 500 }}>{fmtDate(eng.created_at)}</span></div>
                 <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">WS Advisor</span><span style={{ fontWeight: 500 }}>{user?.name}</span></div>
+              </div>
+              <div style={{ borderTop: "1px solid var(--border-default)", marginTop: 12, paddingTop: 12 }}>
+                <button
+                  onClick={resendInvite}
+                  disabled={resending}
+                  data-testid="resend-invite"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                >
+                  <Mail size={14} /> {resending ? "Sending…" : "Resend client invite"}
+                </button>
+                {resentLink && (
+                  <div data-testid="resent-invite-link" style={{ marginTop: 10, padding: 10, background: "#e3f2fd", borderRadius: 8 }}>
+                    <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Email sent. If sandboxed, copy this link:</div>
+                    <code style={{ display: "block", padding: 8, background: "#fff", borderRadius: 6, fontSize: 10, wordBreak: "break-all" }}>{resentLink}</code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(resentLink)}
+                      style={{ marginTop: 6, color: "#1565c0", fontSize: 12, fontWeight: 500 }}
+                    >Copy link</button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
