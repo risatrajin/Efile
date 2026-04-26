@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { initials } from "../../lib/api";
-import { LogOut } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 
 export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   const { user, logout } = useAuth();
@@ -61,7 +61,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
           style={{ padding: "4px 10px 4px 4px", borderRadius: 999, transition: "background-color 120ms ease", border: "1px solid transparent" }}
           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; e.currentTarget.style.borderColor = "var(--border-default)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; }}
-          data-testid="user-menu-trigger"
+          data-testid="header-avatar"
         >
           <div className="avatar avatar-sm" data-testid="user-avatar">{initials(user?.name || "")}</div>
           <span style={{ fontSize: 13, fontWeight: 500 }} data-testid="user-name">{user?.name}</span>
@@ -88,12 +88,22 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
             </div>
             <div className="divider" style={{ margin: "4px 0" }} />
             <button
+              onClick={() => { setOpen(false); navigate("/account"); }}
+              className="flex items-center gap-2"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-primary)", fontSize: 13, textAlign: "left", transition: "background-color 120ms ease" }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+              data-testid="header-account-link"
+            >
+              <Settings size={14} /> Account settings
+            </button>
+            <button
               onClick={async () => { setOpen(false); await logout(); navigate("/login"); }}
               className="flex items-center gap-2"
               style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "#c62828", fontSize: 13, textAlign: "left", transition: "background-color 120ms ease" }}
               onMouseEnter={(e) => e.currentTarget.style.background = "var(--status-risk-bg)"}
               onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-              data-testid="logout-btn"
+              data-testid="header-logout-button"
             >
               <LogOut size={14} /> Sign out
             </button>

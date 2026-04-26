@@ -320,8 +320,58 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
     return {"user_id": uid, "invite_link": invite_link}
 
 
+class UpdateProfileIn(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    notification_prefs: Optional[dict] = None
+    corporation: Optional[dict] = None  # name, business_number, address
+
+
+@api.patch("/users/me")
+async def update_me(body: UpdateProfileIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    updates = {}
+    if body.name is not None:
+        updates["name"] = body.name.strip()
+    if body.phone is not None:
+        updates["phone"] = body.phone.strip() or None
+    if body.notification_prefs is not None:
+        updates["notification_prefs"] = body.notification_prefs
+    if updates:
+        await db.users.update_one({"id": user["id"]}, {"$set": updates})
+
+    if body.corporation and user["role"] == "CLIENT":
+        corp = await db.corporations.find_one({"client_id": user["id"]})
+        if corp:
+            corp_updates = {}
+            for f in ("name", "business_number", "address"):
+                v = body.corporation.get(f)
+                if v is not None:
+                    corp_updates[f] = v.strip() if isinstance(v, str) else v
+            if corp_updates:
+                await db.corporations.update_one({"id": corp["id"]}, {"$set": corp_updates})
+
+    me = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    if me and me["role"] == "CLIENT":
+        corp = await db.corporations.find_one({"client_id": user["id"]}, {"_id": 0})
+        me["corporation"] = corp
+    return me
+
+
+@api.get("/users/me/full")
+async def me_full(user: dict = Depends(get_current_user)):
+    db = get_db()
+    me = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    if me and me["role"] == "CLIENT":
+        corp = await db.corporations.find_one({"client_id": user["id"]}, {"_id": 0})
+        me["corporation"] = corp
+    return me
+
+
 @api.patch("/users/{uid}")
 async def update_user(uid: str, body: dict, user: dict = Depends(require_role("ADMIN"))):
+    if uid == "me":
+        raise HTTPException(404, "Not found")
     db = get_db()
     allowed = {"name", "role", "phone", "is_active"}
     updates = {k: v for k, v in body.items() if k in allowed}
@@ -1546,57 +1596,10 @@ async def stream_messages(eid: str, request: Request, token: Optional[str] = Non
 
 # ==================== Profile / settings ====================
 
-class UpdateProfileIn(BaseModel):
-    name: Optional[str] = None
-    phone: Optional[str] = None
-    notification_prefs: Optional[dict] = None
-    corporation: Optional[dict] = None  # name, business_number, address
-
 
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
-
-
-@api.patch("/users/me")
-async def update_me(body: UpdateProfileIn, user: dict = Depends(get_current_user)):
-    db = get_db()
-    updates = {}
-    if body.name is not None:
-        updates["name"] = body.name.strip()
-    if body.phone is not None:
-        updates["phone"] = body.phone.strip() or None
-    if body.notification_prefs is not None:
-        updates["notification_prefs"] = body.notification_prefs
-    if updates:
-        await db.users.update_one({"id": user["id"]}, {"$set": updates})
-
-    if body.corporation and user["role"] == "CLIENT":
-        corp = await db.corporations.find_one({"client_id": user["id"]})
-        if corp:
-            corp_updates = {}
-            for f in ("name", "business_number", "address"):
-                v = body.corporation.get(f)
-                if v is not None:
-                    corp_updates[f] = v.strip() if isinstance(v, str) else v
-            if corp_updates:
-                await db.corporations.update_one({"id": corp["id"]}, {"$set": corp_updates})
-
-    me = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
-    if me and me["role"] == "CLIENT":
-        corp = await db.corporations.find_one({"client_id": user["id"]}, {"_id": 0})
-        me["corporation"] = corp
-    return me
-
-
-@api.get("/users/me/full")
-async def me_full(user: dict = Depends(get_current_user)):
-    db = get_db()
-    me = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
-    if me and me["role"] == "CLIENT":
-        corp = await db.corporations.find_one({"client_id": user["id"]}, {"_id": 0})
-        me["corporation"] = corp
-    return me
 
 
 @api.post("/auth/change-password")

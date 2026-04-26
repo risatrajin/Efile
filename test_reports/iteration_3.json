@@ -1,0 +1,64 @@
+{
+  "summary": "Retest after iteration_2 P0/P1 fixes. Backend route-ordering bug FIXED — full pytest 42/43 passed (1 skipped is environmental, 0 failed). Targeted retest file (test_route_order_retest.py) added with 7 tests covering PATCH /users/me as Client/CPA/WS_PARTNER/Admin, GET /users/me/full, PATCH /users/{uid} still 403 for Client, and 'me' guard in admin route — all 7 pass. Frontend AppHeader avatar dropdown is now WORKING: clicking [data-testid=header-avatar] opens dropdown showing Account settings (header-account-link) + Sign out (header-logout-button). Sign out works perfectly for all 4 roles (logs out, redirects to /login). HOWEVER, Account Settings link is BROKEN: AppHeader.js line 91 calls `navigate('/account')` but App.js only registers `/portal/account` — so the click falls through the catch-all and redirects back to role home (/portal, /admin/dashboard, /cpa/files, /ws/dashboard). The Account page itself at /portal/account is fully functional with Account info, Notification settings, AND Two-factor authentication section.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "Brute-force lockout (carry-over from iteration_2)",
+        "issue": "6th-attempt 401-vs-429 still flaky behind ingress (per identifier ip:email). Test passes but root cause is request.client.host instability behind Cloudflare. Consider trusting X-Forwarded-For first hop or email-only key. Not blocking."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AppHeader -> Account settings link",
+        "issue": "navigate('/account') points to non-existent route. Only /portal/account is registered. Catch-all (path='*') sends user to RootRedirect which routes to roleHome. Result: Client lands on /portal, Admin on /admin/dashboard, CPA on /cpa/files, WS on /ws/dashboard. Account page is unreachable from header for every role. FIX: in /app/frontend/src/components/shared/AppHeader.js line 91 change `navigate('/account')` to a role-aware path (e.g., user.role === 'CLIENT' ? '/portal/account' : '/account') AND/OR add `<Route path='/account' element={<AccountPage />} />` inside protected wrappers in /app/frontend/src/App.js so non-clients can also reach it. AccountPage.js itself is fine and already has 2FA section.",
+        "selector": "[data-testid='header-account-link']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cloudtax_api.py",
+    "/app/backend/tests/test_route_order_retest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX P1 (frontend): Account Settings link in AppHeader points to /account but route is /portal/account. Either update navigate target to be role-aware, or register a top-level /account route. Simple ~2-line fix in AppHeader.js OR App.js.",
+    "Optional cleanup: Two pytest warnings (PytestReturnNotNoneWarning) in test_create_opportunity and test_invite_user_creates_user_and_link — change `return value` to `assert ...; self.value = value` or similar. Cosmetic.",
+    "Optional: Brute-force identifier behind ingress (carried from iteration_2) — switch to X-Forwarded-For first hop or email-only key."
+  ],
+  "critical_code_review_comments": [
+    "Route-ordering fix is correctly applied: PATCH /users/me at server.py:330, GET /users/me/full at :361, PATCH /users/{uid} at :371 with `if uid == 'me': raise 404` defensive guard. Verified by 7 targeted retests.",
+    "AppHeader still uses hard-coded `/account` path which only matches one role's route. Should be derived from a role->account-path map or the route should be normalized to /account at the App.js level.",
+    "server.py is still 1613+ lines — recommendation to split into route modules carries over from iteration_2.",
+    "ObjectId leak sweep (9 endpoints) and SSE messaging tests all green. No new regressions introduced by route-ordering fix."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_route_order_retest.py (NEW — 7 targeted retest checks for the route-ordering fix)",
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)"
+  ],
+  "success_rate": {
+    "backend": "100% (42/43 passed, 1 skipped environmental, 0 failed) + 7/7 targeted retests passed",
+    "frontend": "85% (login redirect ✅ all 4 roles, avatar dropdown opens ✅, Sign out ✅ all 4 roles, Account Settings link ❌ broken — wrong route path)"
+  },
+  "test_credentials": "Admin: admin@cloudtax.ca / CloudTax2026! | CPA: pallavi@cloudtax.ca | WS: henry.ziegler@wealthsimple.com | Client: chen@example.com — all use CloudTax2026!",
+  "seed_data_creation": "No new seed data. Existing 14 engagements (10 seeded + 4 from prior smoke tests) reused. No test pollution observed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes the AppHeader Account Settings nav target (or adds /account route), retest the 4-role dropdown flow: login → click [data-testid=header-avatar] → click [data-testid=header-account-link] → assert page contains 'Account settings' heading and URL ends with /account or /portal/account → click [data-testid=header-avatar] → click [data-testid=header-logout-button] → assert URL is /login. Backend pytest is 100% green so no need to re-run unless backend code changes. Test files: /app/backend/tests/test_cloudtax_api.py (43 tests) and /app/backend/tests/test_route_order_retest.py (7 tests).",
+  "rca_of_issue": {
+    "bug": "Avatar dropdown 'Account settings' click does not navigate to Account page; user stays on (or returns to) their role home.",
+    "rca": "AppHeader.js line 91: `onClick={() => { setOpen(false); navigate('/account'); }}`. App.js routes only register `/portal/account` (line 56) under the CLIENT-protected layout. There is no top-level `/account` route. The catch-all `<Route path='*' element={<RootRedirect />} />` at App.js:71 catches /account and redirects to roleHome(user.role) → /portal, /admin/dashboard, /cpa/files, or /ws/dashboard. AccountPage component itself exists and works correctly when accessed directly via /portal/account — Two-factor authentication section is present, notification toggles render, account info card renders.",
+    "reproduction": "1) Login as any role (e.g., chen@example.com / CloudTax2026!). 2) Click [data-testid=header-avatar]. 3) Click [data-testid=header-account-link]. 4) Observe URL is back at /portal (or role home) instead of /account.",
+    "mitigation": "Option A (preferred, 1-line): in /app/frontend/src/components/shared/AppHeader.js change `navigate('/account')` to `navigate(user?.role === 'CLIENT' ? '/portal/account' : '/account')` AND register `/account` route in App.js for non-CLIENT roles. Option B (simpler): in App.js add `<Route path='/account' element={<Protected><AccountPage /></Protected>} />` and update Protected to allow all roles, then leave AppHeader unchanged."
+  },
+  "mocked_apis": {
+    "client_account_2fa": "2FA toggle in Account Settings remains UI placeholder only (per review request, declared mocked) — confirmed visible at /portal/account under Security & Privacy.",
+    "aws_ses": "Sandbox — invite emails return invite_link in response, no real send for unverified recipients.",
+    "aws_s3": "Presigned PUT URLs generate successfully. Browser CORS upload not validated end-to-end (out of scope)."
+  }
+}
