@@ -51,6 +51,15 @@
 - Admin Kanban + CPA assignment + WS editable pre-filing checklist
 - Client empty state UI
 
+### Iter 12 (Feb 2026 — WS Partner workspace overhaul to match user screenshots)
+- **AppHeader**: workspace pill ("Partner workspace" for WS_PARTNER, "CPA workspace" for CPA) shown next to logo
+- **WsOnboardingDetail full rewrite**: Save changes (gray, top-right), avatar+name+badges header, two-column layout (Client info + Engagement | Pre-filing checklist + Submission details), Tax situation/Notes full-width at bottom with right-aligned blue Save notes button
+- **Pre-filing checklist** is now read-only inline (toggle + line-through) with a gear icon → opens `ChecklistSettingsModal` for global template editing; "Move to CloudTax →" + "CPA assigned within 1–2 business days" caption
+- **WS Advisor** field is locked input with lock icon
+- **ChecklistSettingsModal**: drag-handle reorder + edit + delete + "Add new item" + "X items" footer + Cancel/Save
+- **Backend**: new `GET/PUT /api/partner/checklist-template` (admin+WS), `_checklist_from_template()` async helper now used by `POST /api/engagements/onboarding` so new engagements seed from current template; existing engagements unchanged on template update
+- **Tests**: pytest 68/68 (10 new template tests + 58 regression). Frontend Playwright 100% on iter-5 flows.
+
 ### Iter 11 (Feb 2026 — Admin UI overhaul to match user screenshots)
 - **New AppHeader**: cloud logo + brand | avatar+name+email + dropdown | gear icon → /admin/settings | notification bell with red unread badge + dropdown | accessibility icon | inline Sign out
 - **NotificationBell** with category icons, timestamps, "Mark all read", 30s auto-poll
