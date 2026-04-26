@@ -67,6 +67,8 @@ export default function App() {
           <Route path="/admin/client/:eid" element={<Protected roles={["ADMIN"]}><AdminClientDetail /></Protected>} />
           <Route path="/admin/users" element={<Protected roles={["ADMIN"]}><AdminUsers /></Protected>} />
 
+          <Route path="/account" element={<Protected><AccountPage /></Protected>} />
+
           <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<RootRedirect />} />
         </Routes>

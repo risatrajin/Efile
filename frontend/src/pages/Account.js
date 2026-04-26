@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError } from "../lib/api";
 import { LogOut, ShieldCheck, KeyRound, BookOpen, Download, Phone } from "lucide-react";
+import AppHeader from "../components/shared/AppHeader";
 
 function Toggle({ checked, onChange, testid }) {
   return (
@@ -117,7 +118,8 @@ export default function AccountPage() {
 
   const prefs = me.notification_prefs || { email: {}, push: {} };
 
-  return (
+  const isClient = user?.role === "CLIENT";
+  const content = (
     <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="account-page">
       <h1 className="page-title">Account settings</h1>
       {err && <div className="alert alert-risk">{err}</div>}
@@ -234,6 +236,14 @@ export default function AccountPage() {
       </button>
 
       <div style={{ height: 40 }} />
+    </div>
+  );
+
+  if (isClient) return content;
+  return (
+    <div className="app-root">
+      <AppHeader />
+      {content}
     </div>
   );
 }

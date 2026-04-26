@@ -88,7 +88,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
             </div>
             <div className="divider" style={{ margin: "4px 0" }} />
             <button
-              onClick={() => { setOpen(false); navigate("/account"); }}
+              onClick={() => { setOpen(false); navigate(user?.role === "CLIENT" ? "/portal/account" : "/account"); }}
               className="flex items-center gap-2"
               style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-primary)", fontSize: 13, textAlign: "left", transition: "background-color 120ms ease" }}
               onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
