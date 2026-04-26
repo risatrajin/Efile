@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, fmtError, fmtDate } from "../lib/api";
+import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
+import { Plus, X } from "lucide-react";
 
 const COLUMNS = [
   { key: "REFERRED", label: "Referred" },
@@ -18,11 +19,12 @@ function AdminCard({ eng, onClick }) {
   const needsCpa = !eng.assigned_cpa_id && eng.status === "REFERRED";
   const isFiled = eng.status === "FILED";
   const craRef = eng.cra_confirmation_number || (isFiled ? `CRA-${(eng.id || "").slice(0, 6).toUpperCase()}` : null);
+  const displayName = (/^dr\.?\s/i).test(client.name || "") ? client.name : `Dr. ${client.name || "—"}`;
   return (
     <div className="kanban-card" onClick={onClick} data-testid={`admin-card-${eng.id}`} style={{ cursor: "pointer", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{(/^dr\.?\s/i).test(client.name || "") ? client.name : `Dr. ${client.name || "—"}`}</div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{displayName}</div>
           <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{corp.name}</div>
         </div>
         <TierBadge tier={eng.tier} />
@@ -34,9 +36,7 @@ function AdminCard({ eng, onClick }) {
         </div>
       ) : isFiled ? (
         <div style={{ marginTop: 12 }}>
-          {craRef && (
-            <span className="badge" style={{ background: "#fff3e0", color: "#ef6c00", fontSize: 11, fontWeight: 600 }}>{craRef}</span>
-          )}
+          {craRef && <span className="badge" style={{ background: "#fff3e0", color: "#ef6c00", fontSize: 11, fontWeight: 600 }}>{craRef}</span>}
           <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Filed {fmtDate(eng.filing_date)}</div>
         </div>
       ) : (
@@ -49,34 +49,211 @@ function AdminCard({ eng, onClick }) {
   );
 }
 
-function CpasTab() {
+function AddCpaModal({ onClose, onDone }) {
+  const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [link, setLink] = useState(null);
+
+  const submit = async () => {
+    setErr(""); setBusy(true);
+    try {
+      const { data } = await api.post("/users/invite", {
+        email: form.email,
+        name: `${form.first_name} ${form.last_name}`.trim(),
+        role: "CPA",
+        display_role: "CPA",
+        phone: form.phone || null,
+      });
+      setLink(data.invite_link);
+      await onDone();
+    } catch (e) { setErr(fmtError(e)); }
+    setBusy(false);
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} data-testid="add-cpa-modal">
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: 460, maxHeight: "90vh", overflowY: "auto", padding: 28 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 600 }}>Add CPA</h2>
+          <button onClick={onClose} data-testid="add-cpa-close"><X size={18} /></button>
+        </div>
+        {link ? (
+          <div className="stack-md">
+            <div className="muted" style={{ fontSize: 13 }}>Invitation created. Share this link if SES is in sandbox:</div>
+            <code style={{ display: "block", padding: 12, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all" }} data-testid="cpa-invite-link">{link}</code>
+            <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500 }} data-testid="add-cpa-done">Done</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>CPA information</div>
+            <div className="stack-md">
+              <div className="field"><label className="field-label">FIRST NAME</label>
+                <input className="input" placeholder="First name" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} data-testid="cpa-first-name" /></div>
+              <div className="field"><label className="field-label">LAST NAME</label>
+                <input className="input" placeholder="Last name" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} data-testid="cpa-last-name" /></div>
+              <div className="field"><label className="field-label">EMAIL</label>
+                <input type="email" className="input" placeholder="email@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="cpa-email" /></div>
+              <div className="field"><label className="field-label">PHONE (OPTIONAL)</label>
+                <input className="input" placeholder="(555) 123-4567" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="cpa-phone" /></div>
+            </div>
+            <div style={{ marginTop: 20, padding: 14, borderLeft: "3px solid #1e88e5", background: "var(--bg-subtle)", borderRadius: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Default CPA permissions will be granted</div>
+              <div className="muted" style={{ fontSize: 11, lineHeight: 1.6 }}>View Clients · Send Reminders · Send Messages · View Docs · View CPA Hours</div>
+            </div>
+            {err && <div className="alert alert-risk" style={{ marginTop: 12 }}>{err}</div>}
+            <button onClick={submit} disabled={busy || !form.email || !form.first_name}
+              style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500, fontSize: 14, marginTop: 20 }}
+              data-testid="add-cpa-submit"
+            >{busy ? "Adding…" : "Add CPA"}</button>
+            <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, marginTop: 8 }}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditProfileModal({ user, onClose, onSaved }) {
+  const [form, setForm] = useState({ name: user.name || "", phone: user.phone || "", is_active: !!user.is_active });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const submit = async () => {
+    setErr(""); setBusy(true);
+    try {
+      await api.patch(`/users/${user.id}`, { name: form.name, phone: form.phone || null, is_active: form.is_active });
+      await onSaved();
+      onClose();
+    } catch (e) { setErr(fmtError(e)); }
+    setBusy(false);
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} data-testid="edit-profile-modal">
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: 420, padding: 28 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 600 }}>Edit profile</h2>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="stack-md">
+          <div className="field"><label className="field-label">NAME</label>
+            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="edit-name" /></div>
+          <div className="field"><label className="field-label">EMAIL</label>
+            <input className="input" value={user.email} disabled /></div>
+          <div className="field"><label className="field-label">PHONE</label>
+            <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="edit-phone" /></div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", padding: "10px 0" }}>
+            <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} data-testid="edit-active" />
+            <span>Account active</span>
+          </label>
+          {err && <div className="alert alert-risk">{err}</div>}
+          <button onClick={submit} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1a1a1a", color: "#fff", fontWeight: 500, fontSize: 14 }} data-testid="edit-save">{busy ? "Saving…" : "Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CpasTab({ engs }) {
   const [users, setUsers] = useState([]);
   const [err, setErr] = useState("");
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get("/users");
-        setUsers(data.filter((u) => u.role === "CPA"));
-      } catch (x) { setErr(fmtError(x)); }
-    })();
-  }, []);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const load = async () => {
+    try {
+      const { data } = await api.get("/users");
+      // Show CPAs and Admins as "Experts"
+      setUsers(data.filter((u) => u.role === "CPA" || u.role === "ADMIN").sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (x) { setErr(fmtError(x)); }
+  };
+  useEffect(() => { load(); }, []);
+
+  // Compute team capacity
+  const cpaCount = users.filter((u) => u.role === "CPA").length;
+  const totalClients = engs.length;
+  const avgPerCpa = cpaCount > 0 ? (totalClients / cpaCount).toFixed(1) : "0";
+  const pendingAssignment = engs.filter((e) => !e.assigned_cpa_id).length;
+
+  // Clients per CPA / Admin
+  const clientsForUser = (uid) => engs.filter((e) => e.assigned_cpa_id === uid).length;
+
+  const roleBadge = (role) => {
+    const map = {
+      ADMIN: { bg: "#fce4ec", fg: "#c2185b", label: "Admin" },
+      CPA: { bg: "#ede7f6", fg: "#5e35b1", label: "CPA" },
+    };
+    return map[role] || { bg: "#eceff1", fg: "#546e7a", label: role };
+  };
+
   return (
-    <div className="card" style={{ padding: 8, marginTop: 24 }} data-testid="admin-cpas-tab">
-      {err && <div className="alert alert-risk" style={{ margin: 12 }}>{err}</div>}
-      <table className="table">
-        <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.id}>
-              <td>{u.name}</td>
-              <td className="muted">{u.email}</td>
-              <td className="muted">{u.phone || "—"}</td>
-              <td>{u.is_active ? <span className="badge badge-complete">active</span> : <span className="badge badge-risk">disabled</span>}</td>
+    <div data-testid="admin-cpas-tab">
+      {err && <div className="alert alert-risk">{err}</div>}
+
+      {/* Team capacity */}
+      <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 16 }}>Team capacity</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 40 }} data-testid="team-capacity">
+        <div style={{ background: "#fff", borderRadius: 14, padding: "32px 28px" }}>
+          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1 }} data-testid="cap-total-clients">{totalClients}</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 18 }}>Total clients</div>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 14, padding: "32px 28px" }}>
+          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1 }} data-testid="cap-avg-per-cpa">{avgPerCpa}</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 18 }}>Avg per CPA</div>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 14, padding: "32px 28px" }}>
+          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1 }} data-testid="cap-pending">{pendingAssignment}</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 18 }}>Pending assignment</div>
+        </div>
+      </div>
+
+      {/* Experts */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700 }}>Experts</h2>
+        <button
+          onClick={() => setShowAdd(true)}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }}
+          data-testid="add-cpa-open"
+        ><Plus size={14} /> Add CPA</button>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid var(--border-default)" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }} data-testid="experts-table">
+          <thead>
+            <tr style={{ background: "var(--bg-subtle)" }}>
+              <th style={{ textAlign: "left", padding: "14px 24px", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: 0.5 }}>NAME</th>
+              <th style={{ textAlign: "left", padding: "14px 24px", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: 0.5 }}>ROLE</th>
+              <th style={{ textAlign: "left", padding: "14px 24px", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: 0.5 }}>CLIENTS</th>
+              <th style={{ width: 100 }}></th>
             </tr>
-          ))}
-          {users.length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: 24, textAlign: "center" }}>No CPAs yet</td></tr>}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {users.map((u) => {
+              const rb = roleBadge(u.role);
+              return (
+                <tr key={u.id} style={{ borderTop: "1px solid var(--border-default)" }} data-testid={`expert-row-${u.id}`}>
+                  <td style={{ padding: "18px 24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div className="avatar avatar-sm">{initials(u.name)}</div>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: "18px 24px" }}>
+                    <span style={{ background: rb.bg, color: rb.fg, padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>{rb.label}</span>
+                  </td>
+                  <td style={{ padding: "18px 24px", fontSize: 14 }}>{clientsForUser(u.id)}</td>
+                  <td style={{ padding: "18px 24px", textAlign: "right" }}>
+                    <button onClick={() => setEditing(u)} style={{ color: "#1e88e5", fontSize: 13, fontWeight: 500 }} data-testid={`edit-profile-${u.id}`}>Edit profile</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {users.length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: 32, textAlign: "center" }}>No experts yet</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {showAdd && <AddCpaModal onClose={() => setShowAdd(false)} onDone={load} />}
+      {editing && <EditProfileModal user={editing} onClose={() => setEditing(null)} onSaved={load} />}
     </div>
   );
 }
@@ -93,8 +270,8 @@ export default function AdminDashboard() {
   useEffect(() => { load(); }, []);
 
   const adminTabs = [
-    { key: "clients", label: "Clients", to: "/admin/dashboard", matcher: () => tab === "clients", onClick: () => setTab("clients") },
-    { key: "cpas", label: "CPA's", to: "/admin/dashboard", matcher: () => tab === "cpas", onClick: () => setTab("cpas") },
+    { key: "clients", label: "Clients" },
+    { key: "cpas", label: "CPA's" },
   ];
 
   return (
@@ -106,7 +283,7 @@ export default function AdminDashboard() {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              data-testid={`admin-tab-${t.key}`}
+              data-testid={`admin-${t.key}-tab`}
               style={{
                 padding: "12px 4px",
                 fontSize: 14,
@@ -143,7 +320,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {tab === "cpas" && <CpasTab />}
+        {tab === "cpas" && <CpasTab engs={engs} />}
       </div>
     </div>
   );
