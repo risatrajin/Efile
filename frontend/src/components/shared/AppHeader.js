@@ -26,6 +26,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
 
   const workspaceLabel = user?.role === "WS_PARTNER" ? "Partner workspace"
     : user?.role === "CPA" ? "CPA workspace"
+    : user?.role === "CLIENT" ? "Client Portal"
     : user?.role === "ADMIN" ? "Admin" : null;
 
   return (

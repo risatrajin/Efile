@@ -1288,6 +1288,120 @@ async def update_checklist_template(body: ChecklistTemplateIn, user: dict = Depe
     return {"items": items}
 
 
+# ==================== CPA Questions (preparation stage) ====================
+
+class CpaQuestionIn(BaseModel):
+    question: str
+    helper_text: Optional[str] = None
+
+
+class AnswerIn(BaseModel):
+    answer: str
+
+
+@api.get("/engagements/{eid}/cpa-questions")
+async def list_cpa_questions(eid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    rows = [r async for r in db.cpa_questions.find({"engagement_id": eid}, {"_id": 0}).sort("created_at", 1)]
+    return rows
+
+
+@api.post("/engagements/{eid}/cpa-questions")
+async def create_cpa_question(eid: str, body: CpaQuestionIn, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    qid = str(uuid.uuid4())
+    doc = {
+        "id": qid,
+        "engagement_id": eid,
+        "question": body.question.strip(),
+        "helper_text": (body.helper_text or "").strip() or None,
+        "answer": None,
+        "status": "pending",
+        "created_by": user["id"],
+        "created_at": datetime.now(timezone.utc),
+        "answered_at": None,
+    }
+    await db.cpa_questions.insert_one(doc)
+    # notify client
+    eng = await db.engagements.find_one({"id": eid})
+    if eng:
+        corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+        if corp:
+            await notify(corp["client_id"], "New question from your CPA", body.question[:80], "cpa_question", eid)
+    return {k: v for k, v in doc.items() if k != "_id"}
+
+
+@api.patch("/engagements/{eid}/cpa-questions/{qid}")
+async def answer_cpa_question(eid: str, qid: str, body: AnswerIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await get_engagement_or_404(eid, user)
+    if user["role"] not in ("CLIENT", "ADMIN"):
+        raise HTTPException(403, "Only the client can answer")
+    res = await db.cpa_questions.update_one(
+        {"id": qid, "engagement_id": eid},
+        {"$set": {"answer": body.answer.strip(), "status": "answered", "answered_at": datetime.now(timezone.utc)}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Question not found")
+    q = await db.cpa_questions.find_one({"id": qid}, {"_id": 0})
+    eng = await db.engagements.find_one({"id": eid})
+    if eng and eng.get("assigned_cpa_id"):
+        await notify(eng["assigned_cpa_id"], "Client answered a question", body.answer[:80], "client_answer", eid)
+    return q
+
+
+# ==================== Tax summary + authorization (review/filed stages) ====================
+
+class TaxSummaryIn(BaseModel):
+    net_income: Optional[float] = None
+    total_tax: Optional[float] = None
+    instalments_paid: Optional[float] = None
+    balance_owing: Optional[float] = None
+    payment_due_date: Optional[str] = None  # ISO date
+    t2_draft_doc_id: Optional[str] = None
+
+
+@api.put("/engagements/{eid}/tax-summary")
+async def set_tax_summary(eid: str, body: TaxSummaryIn, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    summary = eng.get("tax_summary") or {}
+    for k in ("net_income", "total_tax", "instalments_paid", "balance_owing", "payment_due_date"):
+        v = getattr(body, k)
+        if v is not None:
+            summary[k] = v
+    updates = {"tax_summary": summary, "updated_at": datetime.now(timezone.utc)}
+    if body.t2_draft_doc_id is not None:
+        updates["t2_draft_doc_id"] = body.t2_draft_doc_id
+    await db.engagements.update_one({"id": eid}, {"$set": updates})
+    return {"tax_summary": summary, "t2_draft_doc_id": updates.get("t2_draft_doc_id", eng.get("t2_draft_doc_id"))}
+
+
+class AuthorizeFilingIn(BaseModel):
+    confirmations: dict  # keys → bool
+
+
+@api.post("/engagements/{eid}/authorize-filing")
+async def authorize_filing(eid: str, body: AuthorizeFilingIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] != "CLIENT":
+        raise HTTPException(403, "Only the client can authorize")
+    confs = {k: bool(v) for k, v in (body.confirmations or {}).items()}
+    if not all(confs.values()):
+        raise HTTPException(400, "All confirmations are required")
+    await db.engagements.update_one({"id": eid}, {"$set": {
+        "authorization_confirmations": confs,
+        "authorized_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }})
+    if eng.get("assigned_cpa_id"):
+        await notify(eng["assigned_cpa_id"], "Client authorized filing", "Ready to submit to CRA", "authorized", eid)
+    return {"ok": True}
+
+
 @api.get("/notifications/unread-count")
 async def unread_count(user: dict = Depends(get_current_user)):
     db = get_db()

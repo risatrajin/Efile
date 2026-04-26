@@ -51,6 +51,25 @@
 - Admin Kanban + CPA assignment + WS editable pre-filing checklist
 - Client empty state UI
 
+### Iter 13 (Feb 2026 — Client Portal full overhaul to match all 5 stage screenshots)
+- **Header**: "Client Portal" pill next to logo for CLIENT role; existing tabs (Dashboard / Messages / Account) preserved
+- **ClientPortal full rewrite** with stage-aware sections:
+  - **Profile (REFERRED)**: success card "Your profile has been created" + 6-field profile grid + Documents-we-need list (all "Not uploaded") + "Start uploading →" button
+  - **Documents (INTAKE)**: interactive document list — "Choose option" dropdown for new uploads, "View ✓ Updated" for re-uploaded, red "Re-upload now" issue cards
+  - **Preparation (IN_PREP)**: documents (Uploaded badges) + **Questions from your CPA** section with pending/answered states, helper text, "X pending" counter
+  - **Review (IN_REVIEW)**: blue CPA message bubble, Tax Summary card with PDF Preview button, Documents Submitted, **Authorize filing** checklist (5 items) + "Authorize filing with CRA" button
+  - **Filed (FILED)**: green "T2 return filed with CRA" card with confirmation #, **Filed return summary** (Net income, Total tax, Instalments, Balance owing in orange, Payment due in orange), Download/View CRA buttons, **What's Next** (3 items: Pay balance, Notice of Assessment, Plan instalments)
+- **5-stage Stepper** with connecting lines (Profile → Documents → Preparation → Review → Filed)
+- **Stage badge pill** on engagement card (top-right) indicating current phase
+- **Backend additions**:
+  - `GET /api/engagements/{eid}/cpa-questions` (CPA, CLIENT, ADMIN)
+  - `POST /api/engagements/{eid}/cpa-questions` (CPA, ADMIN)
+  - `PATCH /api/engagements/{eid}/cpa-questions/{qid}` (CLIENT submits answer)
+  - `PUT /api/engagements/{eid}/tax-summary` (CPA sets net_income/total_tax/instalments_paid/balance_owing/payment_due_date/t2_draft_doc_id)
+  - `POST /api/engagements/{eid}/authorize-filing` (CLIENT confirms 5 statements, sets `authorized_at`)
+  - SES + in-app notifications wired for new question / answer / authorization events
+- Visually validated against user screenshots: Filed (Emily Chen) ✅, Preparation (Wei Liu) ✅; remaining stages render with same primitives.
+
 ### Iter 12 (Feb 2026 — WS Partner workspace overhaul to match user screenshots)
 - **AppHeader**: workspace pill ("Partner workspace" for WS_PARTNER, "CPA workspace" for CPA) shown next to logo
 - **WsOnboardingDetail full rewrite**: Save changes (gray, top-right), avatar+name+badges header, two-column layout (Client info + Engagement | Pre-filing checklist + Submission details), Tax situation/Notes full-width at bottom with right-aligned blue Save notes button
