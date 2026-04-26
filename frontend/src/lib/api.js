@@ -31,7 +31,9 @@ export function initials(name) {
 export function fmtDate(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+    // Backend may return naive ISO strings (no Z); values are UTC. Force UTC parsing.
+    const isoUtc = typeof iso === "string" && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso + "Z" : iso;
+    return new Date(isoUtc).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
   } catch { return "—"; }
 }
 

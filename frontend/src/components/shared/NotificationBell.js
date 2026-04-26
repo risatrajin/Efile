@@ -4,15 +4,21 @@ import { api } from "../../lib/api";
 
 function timeAgo(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
-  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  // Backend returns naive ISO strings (no Z) but values are UTC. Force UTC interpretation.
+  const isoUtc = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + "Z";
+  const d = new Date(isoUtc);
+  const s = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (s < 10) return "just now";
   if (s < 60) return `${s}s ago`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min ago`;
+  if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   const dd = Math.floor(h / 24);
-  return `${dd}d ago`;
+  if (dd < 7) return `${dd}d ago`;
+  const w = Math.floor(dd / 7);
+  if (w < 5) return `${w}w ago`;
+  return d.toLocaleDateString();
 }
 
 function iconFor(type) {
