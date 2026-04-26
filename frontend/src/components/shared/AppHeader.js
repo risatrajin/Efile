@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { initials } from "../../lib/api";
-import { LogOut, Settings, Cloud, Accessibility, Settings as SettingsIcon } from "lucide-react";
+import { LogOut, Settings, Accessibility, Settings as SettingsIcon } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 
 export default function AppHeader({ tabs = [], unreadByKey = {} }) {
@@ -27,9 +27,8 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   return (
     <header className="app-header" data-testid="app-header">
       <div className="app-header-inner">
-        <Link to="/" className="brand-link" data-testid="brand-logo" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Cloud size={22} strokeWidth={2.4} style={{ color: "#1a1a1a" }} />
-          <span className="brand">CloudTax</span>
+        <Link to="/" className="brand-link" data-testid="brand-logo" style={{ display: "inline-flex", alignItems: "center" }}>
+          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 28, width: "auto" }} />
         </Link>
         {tabs.length > 0 && (
           <nav className="nav-tabs" data-testid="nav-tabs">
