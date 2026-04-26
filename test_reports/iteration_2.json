@@ -1,0 +1,88 @@
+{
+  "summary": "Comprehensive backend pytest (43 tests, 41 pass, 1 skip, 1 fail) + frontend smoke test. Found ONE confirmed P0 backend bug (PATCH /api/users/me unreachable due to FastAPI route-ordering — /users/{uid} admin-only catches 'me' before /users/me). New test coverage added for SSE messaging, S3 attach-url presigned PUT, CSV export, status history, deferred reminders, ObjectId leak sweep across 9 endpoints. Frontend Admin & CPA login redirects verified; AppHeader avatar dropdown (logout, account settings) appears MISSING/non-functional — could not log out via UI on any role. /account page rendered but no 2FA placeholder text found. SSE messaging connects with ?token= query param (text/event-stream) and rejects without token. No ObjectId leaks found anywhere. CSV export returns proper CSV for admin and 403 for client.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PATCH /api/users/me",
+        "issue": "Route is unreachable for non-admin users. Declared at server.py:1561 AFTER PATCH /api/users/{uid} at server.py:323 (require_role ADMIN). FastAPI matches in declaration order so /users/me hits /users/{uid} with uid='me' and returns 403 'Insufficient role'. Blocks Client/CPA/WS from updating their own notification_prefs, name, phone, corporation. FIX: move @api.patch('/users/me') and @api.get('/users/me/full') ABOVE @api.patch('/users/{uid}') in server.py.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/login (brute-force)",
+        "issue": "6th failed attempt sometimes returns 401 instead of 429. Identifier is 'ip:email' and behind the Cloudflare ingress request.client.host may vary across calls, defeating per-IP lockout. Consider trusting X-Forwarded-For header or locking by email-only with stricter window."
+      },
+      {
+        "endpoint": "Naming mismatch with review request",
+        "issue": "Review request lists endpoints that do not exist: PATCH /api/engagements/{eid}/assign-cpa, PATCH /api/engagements/{eid}/checklist, PATCH /api/users/me/preferences, GET /api/status-history, POST /api/documents/upload-url. Actual endpoints are: PATCH /api/engagements/{eid} (set assigned_cpa_id), PATCH /api/engagements/{eid}/pre-filing-checklist, PATCH /api/users/me, GET /api/engagements/{eid}/history, POST /api/documents/{doc_id}/upload-url. All actual endpoints work — naming docs should be updated."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AppHeader",
+        "issue": "Avatar dropdown does not open / has no Logout or Account Settings menu items. Clicking the avatar (initials + name) shows no popover. After logging in as Admin/CPA we could not sign out via UI — had to clear localStorage manually. Role badge IS visible (e.g., 'Admin', 'CPA workspace') but dropdown trigger is missing.",
+        "selector": "header avatar (no [data-testid='header-avatar'] found)",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Client Account Settings (/account)",
+        "issue": "Page loads but no 2FA placeholder text matched (regex /2FA|two[- ]factor/). Either the page is missing the 2FA section or copy uses different wording. Notification toggles state not verified end-to-end (also blocked by PATCH /users/me bug above).",
+        "selector": "/account page",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Account Settings save → notification_prefs persistence",
+        "issue": "Even if UI form exists, the PATCH /api/users/me backend route is shadowed by /users/{uid} (admin-only) → 403 for Client. Save will fail until route order is fixed.",
+        "affected_selectors": ["/account save button"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cloudtax_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX P0: Reorder routes in /app/backend/server.py — move @api.patch('/users/me') and @api.get('/users/me/full') ABOVE @api.patch('/users/{uid}'). Add a guard `if uid == 'me': raise 404` in the admin route.",
+    "FIX P1: AppHeader avatar dropdown — wire onClick handler to show menu with 'Account Settings' link and 'Logout' button. Add data-testid='header-avatar', 'header-account-link', 'header-logout-button'.",
+    "FIX P1: Client /account page — add 2FA placeholder section (Card or section labelled 'Two-factor authentication') and notification preference toggles bound to PATCH /api/users/me.",
+    "FIX P2: Brute-force lockout behind ingress — switch identifier to email-only or trust X-Forwarded-For.",
+    "DOCS: Update review request endpoint names to match actual server.py routes."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1613 lines — exceeds 700-line guideline. Recommend splitting into modules: routes_auth.py, routes_engagements.py, routes_documents.py, routes_messages.py, routes_metrics.py.",
+    "Route declaration order issue (PATCH /users/me shadowed) indicates absence of route-collision tests — add a smoke test that hits every documented endpoint as the role expected to use it.",
+    "ObjectId exclusion is consistently applied (verified across 9 endpoints) — good.",
+    "SSE /messages/stream correctly accepts ?token= query param and returns text/event-stream — matches EventSource browser limitation.",
+    "Brute-force identifier `f'{ip}:{email}'` may be ineffective behind Cloudflare ingress where request.client.host can be a single proxy IP (or rotate). Consider using X-Forwarded-For first hop.",
+    "Two test functions return values instead of asserting (test_create_opportunity, test_invite_user_creates_user_and_link) → pytest warnings. Cosmetic but should be cleaned up."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cloudtax_api.py (added 11 new tests: TestMessaging x5, TestCsvExport x2, TestRemindDeferred x1, TestStatusHistory x1, TestUserPreferences x1, TestObjectIdLeak x1; relaxed seed-count assertions from ==10 to >=10)"
+  ],
+  "success_rate": {
+    "backend": "95% (41/43 passed, 1 skipped (status-change to IN_PREP — already in IN_PREP), 1 failed (route-ordering bug))",
+    "frontend": "60% (Admin and CPA login redirects work; WS/Client redirects verified via backend; logout/avatar dropdown missing; /account 2FA missing)"
+  },
+  "test_credentials": "Admin: admin@cloudtax.ca / CloudTax2026! | CPA: pallavi@cloudtax.ca | WS: henry.ziegler@wealthsimple.com | Client: chen@example.com — all use CloudTax2026!",
+  "seed_data_creation": "14 engagements found (10 originally seeded + 4 added by previous WS Add Client modal smoke). Seed is idempotent.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend test file at /app/backend/tests/test_cloudtax_api.py covers Health, Auth (login×4 roles, me, logout, brute-force), RBAC (CPA filter, WS doc deny, Client tier-redact), Engagements (list, get-enriched, status patch), Documents (list, presigned URL), Opportunities (create, share, WS view), Time entries, Checklist (list, toggle), Metrics (pilot, economics admin-only, utilization), Users (invite, dup-409, toggle-active), Messaging (post/list, attach-url, unread-count, SSE stream + reject-no-token), CSV export (admin, client-deny), Remind-deferred (cooldown), Status history (no _id leak), User preferences (CURRENTLY FAILING — route-order bug), ObjectId leak sweep across 9 endpoints. Run: REACT_APP_BACKEND_URL=https://health-wealth-tax.preview.emergentagent.com python -m pytest backend/tests/test_cloudtax_api.py -v. After main agent fixes route ordering, all 42 tests should pass (1 skipped is environmental — no INTAKE engagement available since seed.py creates more advanced statuses).",
+  "rca_of_issue": {
+    "bug": "PATCH /api/users/me returns 403 'Insufficient role' for any non-admin user.",
+    "rca": "FastAPI matches paths in route-decorator declaration order. server.py:323 declares `@api.patch('/users/{uid}', dependencies=require_role('ADMIN'))` BEFORE server.py:1561 `@api.patch('/users/me')`. A request to /users/me is captured by /users/{uid} with uid='me' before reaching the dedicated /me handler. The require_role('ADMIN') dep then 403s any non-admin caller.",
+    "reproduction": "1) Login as chen@example.com → get token. 2) PATCH /api/users/me with {notification_prefs: {...}} and Bearer token. 3) Observe 403 'Insufficient role'.",
+    "mitigation": "Move @api.patch('/users/me') and @api.get('/users/me/full') ABOVE @api.patch('/users/{uid}') and @api.get('/users/{uid}') in server.py. Optionally also `if uid == 'me': raise HTTPException(404)` defensively in the admin handler."
+  },
+  "mocked_apis": {
+    "client_account_2fa": "2FA toggle in Account Settings is documented as UI placeholder only — confirmed no backend logic exists. Page may also be missing the placeholder UI altogether.",
+    "aws_ses": "Sandbox — deferred reminder send may fail silently (returns email_sent=false) but does not crash backend.",
+    "aws_s3": "Presigned PUT URLs generate successfully. Browser CORS upload not validated end-to-end (out of scope per instructions)."
+  }
+}
