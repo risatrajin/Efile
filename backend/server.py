@@ -69,6 +69,8 @@ class InviteUserIn(BaseModel):
     name: str
     role: str
     phone: Optional[str] = None
+    display_role: Optional[str] = None  # Admin / Manager / Other / CPA / Partner (UI label)
+    permissions: Optional[dict] = None  # 14-flag boolean dict
 
 
 class CreateEngagementIn(BaseModel):
@@ -190,6 +192,26 @@ async def notify(user_id: str, title: str, message: str, type_: str, engagement_
     })
 
 
+PERMISSION_KEYS = [
+    "view_clients", "onboard_clients", "assign_cpa", "reassign_cpa",
+    "send_reminders", "send_messages", "view_docs", "move_clients",
+    "workload", "view_cpa_hours", "export_data", "settings",
+    "audit_logs", "manage_roles",
+]
+
+
+def default_permissions_for(role: str) -> dict:
+    if role == "ADMIN":
+        return {k: True for k in PERMISSION_KEYS}
+    if role == "CPA":
+        on = {"view_clients", "send_reminders", "send_messages", "view_docs", "view_cpa_hours"}
+        return {k: (k in on) for k in PERMISSION_KEYS}
+    if role == "WS_PARTNER":
+        on = {"view_clients", "onboard_clients", "assign_cpa", "view_docs", "move_clients", "export_data", "settings"}
+        return {k: (k in on) for k in PERMISSION_KEYS}
+    return {k: False for k in PERMISSION_KEYS}
+
+
 async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
     db = get_db()
     eng = await db.engagements.find_one({"id": engagement_id})
@@ -295,6 +317,8 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
         raise HTTPException(409, "User already exists")
     uid = str(uuid.uuid4())
     temp_pass = uuid.uuid4().hex  # random placeholder
+    # Default display_role from canonical role
+    default_display = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner", "CLIENT": "Client"}.get(body.role, body.role)
     await db.users.insert_one({
         "id": uid,
         "email": body.email.lower(),
@@ -302,6 +326,8 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
         "name": body.name,
         "role": body.role,
         "phone": body.phone,
+        "display_role": body.display_role or default_display,
+        "permissions": body.permissions or default_permissions_for(body.role),
         "is_active": True,
         "created_at": datetime.now(timezone.utc),
     })
@@ -373,13 +399,27 @@ async def update_user(uid: str, body: dict, user: dict = Depends(require_role("A
     if uid == "me":
         raise HTTPException(404, "Not found")
     db = get_db()
-    allowed = {"name", "role", "phone", "is_active"}
+    allowed = {"name", "role", "phone", "is_active", "display_role", "permissions"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields")
     await db.users.update_one({"id": uid}, {"$set": updates})
     u = await db.users.find_one({"id": uid}, {"password_hash": 0, "_id": 0})
     return u
+
+
+@api.get("/users/team")
+async def list_team(user: dict = Depends(require_role("ADMIN"))):
+    """Members shown in Roles & Permissions table — excludes CLIENT role."""
+    db = get_db()
+    out = []
+    async for u in db.users.find({"role": {"$ne": "CLIENT"}}, {"password_hash": 0, "_id": 0}).sort("name", 1):
+        if not u.get("permissions"):
+            u["permissions"] = default_permissions_for(u["role"])
+        if not u.get("display_role"):
+            u["display_role"] = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(u["role"], u["role"])
+        out.append(u)
+    return out
 
 
 # ==================== Engagements ====================
@@ -1198,6 +1238,20 @@ async def list_notifications(user: dict = Depends(get_current_user)):
     return rows
 
 
+@api.get("/notifications/unread-count")
+async def unread_count(user: dict = Depends(get_current_user)):
+    db = get_db()
+    n = await db.notifications.count_documents({"user_id": user["id"], "is_read": False})
+    return {"count": n}
+
+
+@api.post("/notifications/{nid}/read")
+async def read_one(nid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    await db.notifications.update_one({"id": nid, "user_id": user["id"]}, {"$set": {"is_read": True}})
+    return {"ok": True}
+
+
 @api.post("/notifications/read-all")
 async def read_all(user: dict = Depends(get_current_user)):
     db = get_db()
@@ -1488,7 +1542,7 @@ async def list_messages(eid: str, user: dict = Depends(get_current_user)):
 
 
 @api.get("/engagements/{eid}/messages/unread-count")
-async def unread_count(eid: str, user: dict = Depends(get_current_user)):
+async def messages_unread_count(eid: str, user: dict = Depends(get_current_user)):
     db = get_db()
     await get_engagement_or_404(eid, user)
     n = await db.messages.count_documents({

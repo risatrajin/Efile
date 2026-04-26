@@ -14,6 +14,7 @@ import CpaEngagement from "./pages/CpaEngagement";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminClientDetail from "./pages/AdminClientDetail";
 import AdminUsers from "./pages/AdminUsers";
+import AdminSettings from "./pages/AdminSettings";
 
 function roleHome(role) {
   if (role === "CLIENT") return "/portal";
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/admin/dashboard" element={<Protected roles={["ADMIN"]}><AdminDashboard /></Protected>} />
           <Route path="/admin/client/:eid" element={<Protected roles={["ADMIN"]}><AdminClientDetail /></Protected>} />
           <Route path="/admin/users" element={<Protected roles={["ADMIN"]}><AdminUsers /></Protected>} />
+          <Route path="/admin/settings" element={<Protected roles={["ADMIN"]}><AdminSettings /></Protected>} />
 
           <Route path="/account" element={<Protected><AccountPage /></Protected>} />
 

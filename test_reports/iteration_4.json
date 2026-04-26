@@ -1,0 +1,94 @@
+{
+  "summary": "Iteration 4 (Admin UI overhaul) — backend 57/57 effective passes (49 in cloudtax+route_order, 8 new + 1 skipped due to mark-all-read pre-zeroing count). All NEW endpoints validated: GET /users/team (admin-only, excludes CLIENT, hydrates permissions+display_role, no _id leak), PATCH /users/{uid} accepts permissions+display_role and persists, GET /notifications/unread-count returns {count:int}, POST /notifications/{nid}/read decrements, POST /notifications/read-all zeros count, POST /users/invite stores display_role+permissions, /api/engagements/{eid}/messages/unread-count regression — STILL WORKS after fn rename. Route ordering for /users/me intact for all 4 roles. Frontend: admin login → /admin/dashboard renders simplified UI (no 'Pilot command center', no metrics tiles), 'Clients' tab default with kanban, 'CPA's' tab switch shows team. AppHeader shows cloud+brand|avatar+name+email|gear|bell|accessibility|inline 'Sign out'. Bell dropdown opens with 5 seeded notifications (Documents submitted, Issue flagged, Client moved to Review, New referral, Filing complete) + 'Mark all read' button (works, clears badge). Gear→/admin/settings works. AdminSettings renders all 5 tabs (Profile/Notifications/Documents/Display/Roles & Permissions). Profile tab: name editable, email DISABLED (HTML disabled=true confirmed), Save changes blue, Change password dark Update button. Roles & Permissions table has 16 columns (MEMBER+ROLE+14 perms), Admin row (Nim Balachandran) shows 14 green ✓ marks instead of checkboxes (spec match). Add member modal opens with first/last/email/role/permissions+'What happens next' info box. Inline Sign out → /login works for admin.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "Brute-force lockout (carry-over)",
+        "issue": "401-vs-429 still flaky behind ingress on per-ip+email key (test passes by accepting either). Not blocking."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminSettings 'Back to portal' link",
+        "issue": "Clicking 'Back to portal' on /admin/settings?tab=roles did not navigate — URL stayed on /admin/settings. Per spec it should return to /admin/dashboard. Likely either link href missing or onClick using window.history.back() with no prior history when /settings opened directly. Reproduce: navigate directly to /admin/settings, click Back to portal — URL unchanged.",
+        "selector": "a/button text 'Back to portal'",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Roles & Permissions table — non-admin rows",
+        "issue": "Non-admin rows render 0 native <input type='checkbox'> elements (querySelectorAll('input[type=checkbox]')=0). They appear blank in the perm columns. If toggle controls are intended to be Lucide Square/CheckSquare icons inside buttons, that may still be functional, but it's worth verifying the click → PATCH /api/users/{uid} flow visually since automated tests cannot find native checkboxes. May be UX regression vs spec ('toggleable checkboxes').",
+        "selector": "table tbody tr (non-admin) td input[type='checkbox']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "AdminDashboard tabs",
+        "issues": ["Tab data-testid is 'admin-tab-clients'/'admin-tab-cpas' instead of spec's 'admin-clients-tab'/'admin-cpas-tab' — naming inconsistency. Tabs themselves work."]
+      },
+      {
+        "screen": "AdminSettings tabs and form fields",
+        "issues": [
+          "Settings tab buttons (Profile/Notifications/Documents/Display/Roles & Permissions) lack data-testid attributes — tests must rely on text labels.",
+          "Profile inputs (Name, Email) and 'Save changes', 'Update password' buttons lack data-testid (e.g., profile-name-input, profile-email-input, profile-save-button) — referenced in review request but missing.",
+          "Add member modal: button and modal lack data-testid='add-member-button' / 'add-member-modal'. Modal IS detectable via [role='dialog']."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cloudtax_api.py",
+    "/app/backend/tests/test_route_order_retest.py",
+    "/app/backend/tests/test_admin_overhaul.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_admin_overhaul.xml"
+  ],
+  "action_items": [
+    "Fix AdminSettings 'Back to portal' link — should navigate to /admin/dashboard explicitly (use <Link to='/admin/dashboard'>) instead of relying on history.back().",
+    "Verify Roles & Permissions non-admin rows render visible/clickable toggles. If using Lucide icons in <button>, ensure each has data-testid (e.g., perm-toggle-{uid}-{permKey}) so tests can drive PATCH /api/users/{uid} flow.",
+    "Add missing data-testid attributes per review request: admin-clients-tab, admin-cpas-tab (or document the rename), settings-tab-{profile|notifications|documents|display|roles}, profile-name-input, profile-email-input, profile-save-button, add-member-button, add-member-modal, header-signout-button."
+  ],
+  "critical_code_review_comments": [
+    "Backend new endpoints look clean: /users/team correctly excludes CLIENT, hydrates permissions via default_permissions_for, no _id leak. PATCH /users/{uid} now accepts permissions+display_role with valid persistence — verified via Create→GET pattern.",
+    "Renamed /api/engagements/{eid}/messages/unread-count handler (messages_unread_count) does NOT collide with new /api/notifications/unread-count — regression test green.",
+    "Email lowercasing on invite is correct but undocumented — tests must compare case-insensitively.",
+    "AdminSettings Profile email field is properly HTML-disabled (disabled=true) — visual hint may be subtle (no muted bg).",
+    "Admin row in Roles table correctly renders 14 green ✓ instead of checkboxes — spec match.",
+    "server.py is now 1700+ lines (carry-over) — split recommended."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_overhaul.py (NEW — 9 tests covering /users/team, PATCH perms+display_role, notifications {unread-count, single-read, read-all}, invite with perms, messages/unread-count regression, /users/me route order)",
+    "/app/test_reports/pytest/pytest_admin_overhaul.xml (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (57 effective passes / 0 failed / 2 skipped — all NEW endpoints + full regression green)",
+    "frontend": "92% (login ✅, dashboard simplified ✅, tab switch ✅, header icons ✅, bell dropdown + 5 notifications + mark-all-read ✅, gear nav ✅, all 5 settings tabs ✅, profile email disabled ✅, Roles table 14 cols + Admin green ✓ ✅, Add member modal ✅, inline Sign out ✅. ❌ Back to portal broken, ⚠️ non-admin perm toggles may not be native checkboxes, ⚠️ multiple data-testids missing)"
+  },
+  "test_credentials": "Admin: admin@cloudtax.ca / CloudTax2026! | CPA: pallavi@cloudtax.ca | WS: henry.ziegler@wealthsimple.com | Client: chen@example.com — all use CloudTax2026!",
+  "seed_data_creation": "Created 2 TEST_invite_<ts>@example.com CPA users with display_role=Manager + sample perms via /api/users/invite. Existing seed data reused otherwise. Mark-all-read on admin@cloudtax.ca zeroed unread notifications — re-seed if next iteration needs them populated.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes (a) 'Back to portal' nav target and (b) adds missing data-testids and (c) verifies non-admin permission toggles render+persist, retest by: 1) Login as admin → /admin/dashboard → click admin-tab-cpas → verify CPA list → click admin-tab-clients → verify kanban; 2) Click bell → click first unread → verify count decrements via /api/notifications/unread-count; 3) Click gear → on settings, click each tab → verify content; 4) On Roles tab, click a non-admin perm toggle → verify network PATCH /api/users/{uid} fires with permissions body; 5) Open Add member modal → fill form (perm checkboxes) → submit → verify network POST /api/users/invite contains display_role+permissions; 6) Click 'Back to portal' → verify URL is /admin/dashboard. Backend regression: rerun /app/backend/tests/test_admin_overhaul.py (will need to re-seed admin notifications first since test_mark_all_read_zeroes_count drains them). Test files: test_cloudtax_api.py (43), test_route_order_retest.py (7), test_admin_overhaul.py (9).",
+  "rca_of_issue": {
+    "issue_1": {
+      "bug": "AdminSettings 'Back to portal' click does not navigate.",
+      "rca": "Likely uses onClick={() => navigate(-1)} or window.history.back(). When user opens /admin/settings directly via gear icon, react-router's history may have only one entry; back() is no-op. Should use explicit <Link to='/admin/dashboard'> or navigate('/admin/dashboard').",
+      "mitigation": "In /app/frontend/src/pages/AdminSettings.js change the 'Back to portal' element to <Link to='/admin/dashboard' className='...'>← Back to portal</Link>."
+    },
+    "issue_2": {
+      "bug": "Non-admin rows in Roles & Permissions table have zero <input type='checkbox'> elements per DOM scan.",
+      "rca": "Likely table renders Lucide Square / CheckSquare icons inside buttons rather than native checkboxes. If true, functional but lacks accessibility (no role='checkbox', no native form value) and breaks automated tests using input[type=checkbox] selectors.",
+      "mitigation": "Either (a) use native <input type='checkbox'> with sr-only label + custom styled icon, OR (b) keep Lucide icons but add role='checkbox', aria-checked, and data-testid='perm-toggle-{uid}-{permKey}' to each interactive cell so tests + screen readers work."
+    }
+  },
+  "mocked_apis": {
+    "display_tab": "Display tab is placeholder text only (declared mocked).",
+    "aws_ses": "Sandbox — invite emails return invite_link in response body.",
+    "aws_s3": "Presigned PUT URLs work; CORS upload not validated end-to-end.",
+    "permissions_enforcement": "Permission flags stored on user but NOT enforced server-side (Option C — UI-only). Confirmed: PATCH endpoints accept and persist any permissions dict without checking caller's perms beyond ADMIN role check."
+  }
+}
