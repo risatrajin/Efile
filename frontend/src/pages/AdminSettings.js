@@ -447,10 +447,173 @@ function RolesTab() {
   );
 }
 
+const TIER_OPTIONS = [
+  { key: "STANDARD", label: "Standard" },
+  { key: "BOOKS_COMPLETE", label: "Books Complete" },
+  { key: "WHITE_GLOVE", label: "White-Glove" },
+];
+
+const CATEGORY_TAGS = ["Income", "Expenses", "Banking", "Compliance", "Other"];
+const TAG_COLORS = {
+  Income: { bg: "#e8f5e9", fg: "#2e7d32" },
+  Expenses: { bg: "#fff3e0", fg: "#ef6c00" },
+  Banking: { bg: "#e3f2fd", fg: "#1565c0" },
+  Compliance: { bg: "#ede7f6", fg: "#5e35b1" },
+  Other: { bg: "#eceff1", fg: "#546e7a" },
+};
+
+function DocTemplatesTab() {
+  const [tier, setTier] = useState("STANDARD");
+  const [items, setItems] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+  const [err, setErr] = useState("");
+  const [draft, setDraft] = useState({ name: "", description: "", tag: "Compliance", is_required: true });
+
+  const load = async () => {
+    setErr("");
+    try {
+      const { data } = await api.get(`/admin/document-templates/${tier}`);
+      setItems(data.items || []);
+    } catch (x) { setErr(fmtError(x)); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [tier]);
+
+  const save = async () => {
+    setBusy(true); setErr("");
+    try {
+      await api.put(`/admin/document-templates/${tier}`, { items });
+      setSavedAt(new Date());
+    } catch (x) { setErr(fmtError(x)); }
+    setBusy(false);
+  };
+
+  const updateItem = (i, patch) => setItems(items.map((it, idx) => idx === i ? { ...it, ...patch } : it));
+  const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+  const moveItem = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= items.length) return;
+    const next = [...items]; [next[i], next[j]] = [next[j], next[i]]; setItems(next);
+  };
+  const addItem = () => {
+    const name = draft.name.trim();
+    if (!name) return;
+    setItems([...items, { ...draft, name, description: draft.description.trim(), category: `CUSTOM_${Date.now()}` }]);
+    setDraft({ name: "", description: "", tag: "Compliance", is_required: true });
+  };
+
+  return (
+    <div data-testid="settings-doc-templates-tab">
+      <div className="stack-md">
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 600 }}>Document templates</h3>
+          <p className="muted" style={{ fontSize: 13 }}>Configure the documents requested for each service tier. Changes apply only to <strong>new</strong> engagements.</p>
+        </div>
+
+        {/* Sub-tabs per tier */}
+        <div style={{ display: "flex", gap: 8 }} data-testid="tier-tabs">
+          {TIER_OPTIONS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTier(t.key)}
+              data-testid={`tier-tab-${t.key}`}
+              style={{
+                padding: "8px 18px", borderRadius: 999, fontSize: 13,
+                fontWeight: tier === t.key ? 600 : 500,
+                background: tier === t.key ? "#1565c0" : "var(--bg-subtle)",
+                color: tier === t.key ? "#fff" : "var(--text-primary)",
+                border: "1px solid " + (tier === t.key ? "#1565c0" : "var(--border-default)"),
+              }}
+            >{t.label}</button>
+          ))}
+        </div>
+
+        {err && <div className="alert alert-risk">{err}</div>}
+
+        {/* Items list */}
+        <div style={{ border: "1px solid var(--border-default)", borderRadius: 12, overflow: "hidden" }} data-testid="template-items">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 90px 60px", padding: "10px 16px", background: "var(--bg-subtle)", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: 0.5, gap: 12 }}>
+            <span>NAME</span><span>DESCRIPTION</span><span>CATEGORY</span><span>REQUIRED</span><span></span>
+          </div>
+          {items.map((it, i) => {
+            const tagColor = TAG_COLORS[it.tag] || TAG_COLORS.Other;
+            return (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 90px 60px", padding: "12px 16px", borderTop: "1px solid var(--border-default)", gap: 12, alignItems: "center" }} data-testid={`tmpl-row-${i}`}>
+                <input
+                  className="input" value={it.name} onChange={(e) => updateItem(i, { name: e.target.value })}
+                  data-testid={`tmpl-name-${i}`}
+                  style={{ padding: "6px 8px", fontSize: 13 }}
+                />
+                <input
+                  className="input" value={it.description || ""} onChange={(e) => updateItem(i, { description: e.target.value })}
+                  data-testid={`tmpl-desc-${i}`}
+                  style={{ padding: "6px 8px", fontSize: 13 }}
+                />
+                <select
+                  className="select" value={it.tag || "Other"} onChange={(e) => updateItem(i, { tag: e.target.value })}
+                  data-testid={`tmpl-tag-${i}`}
+                  style={{ padding: "6px 8px", fontSize: 12, background: tagColor.bg, color: tagColor.fg, border: "1px solid " + tagColor.fg, borderRadius: 999, fontWeight: 500 }}
+                >
+                  {CATEGORY_TAGS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", justifyContent: "center" }}>
+                  <input
+                    type="checkbox" checked={!!it.is_required} onChange={(e) => updateItem(i, { is_required: e.target.checked })}
+                    data-testid={`tmpl-req-${i}`}
+                    style={{ width: 16, height: 16, accentColor: "#1565c0" }}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                  <button onClick={() => moveItem(i, -1)} disabled={i === 0} data-testid={`tmpl-up-${i}`} style={{ color: "var(--text-tertiary)", padding: 4 }}>↑</button>
+                  <button onClick={() => moveItem(i, 1)} disabled={i === items.length - 1} data-testid={`tmpl-down-${i}`} style={{ color: "var(--text-tertiary)", padding: 4 }}>↓</button>
+                  <button onClick={() => removeItem(i)} data-testid={`tmpl-remove-${i}`} style={{ color: "#c62828", padding: 4 }}><X size={14} /></button>
+                </div>
+              </div>
+            );
+          })}
+          {items.length === 0 && <div className="muted" style={{ padding: 24, textAlign: "center", fontSize: 13 }}>No items. Add some below.</div>}
+        </div>
+
+        {/* Add new row */}
+        <div style={{ border: "1px dashed var(--border-default)", borderRadius: 12, padding: 16 }} data-testid="add-item-row">
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Add new document item</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 90px 90px", gap: 10, alignItems: "center" }}>
+            <input className="input" placeholder="Document name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} data-testid="new-item-name" style={{ padding: "8px 10px", fontSize: 13 }} />
+            <input className="input" placeholder="Description (optional)" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} data-testid="new-item-desc" style={{ padding: "8px 10px", fontSize: 13 }} />
+            <select className="select" value={draft.tag} onChange={(e) => setDraft({ ...draft, tag: e.target.value })} data-testid="new-item-tag" style={{ padding: "8px 10px", fontSize: 12 }}>
+              {CATEGORY_TAGS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", justifyContent: "center" }}>
+              <input type="checkbox" checked={draft.is_required} onChange={(e) => setDraft({ ...draft, is_required: e.target.checked })} data-testid="new-item-req" style={{ width: 16, height: 16, accentColor: "#1565c0" }} /> Required
+            </label>
+            <button onClick={addItem} disabled={!draft.name.trim()} data-testid="new-item-add" style={{ padding: "8px 14px", borderRadius: 8, background: draft.name.trim() ? "#1565c0" : "#bbdefb", color: "#fff", fontSize: 13, fontWeight: 500 }}>+ Add</button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+          <span className="muted" style={{ fontSize: 12 }}>{items.length} items in <strong>{TIER_OPTIONS.find((t) => t.key === tier)?.label}</strong> template</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {savedAt && <span style={{ fontSize: 12, color: "#2e7d32" }}>Saved {savedAt.toLocaleTimeString()}</span>}
+            <button onClick={save} disabled={busy} data-testid="tmpl-save" style={{ padding: "10px 22px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }}>{busy ? "Saving…" : "Save changes"}</button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16, padding: 14, borderLeft: "3px solid #1e88e5", background: "var(--bg-subtle)", borderRadius: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>How this works</div>
+          <div className="muted" style={{ fontSize: 11, lineHeight: 1.6 }}>
+            When a new client is added in this tier, this document list is what they will see in their portal. Existing engagements are unaffected. You can override the template anytime — the next engagement created will pick up your changes.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { key: "profile", label: "Profile" },
   { key: "notifications", label: "Notifications" },
   { key: "documents", label: "Documents" },
+  { key: "doc-templates", label: "Document templates" },
   { key: "display", label: "Display" },
   { key: "roles", label: "Roles & Permissions" },
 ];
@@ -507,6 +670,7 @@ export default function AdminSettings() {
           {tab === "profile" && <ProfileTab me={me} refresh={refresh} />}
           {tab === "notifications" && <NotificationsTab me={me} refresh={refresh} />}
           {tab === "documents" && <DocumentsTab />}
+          {tab === "doc-templates" && <DocTemplatesTab />}
           {tab === "display" && <DisplayTab />}
           {tab === "roles" && <RolesTab />}
         </div>

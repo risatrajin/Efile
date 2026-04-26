@@ -559,7 +559,7 @@ async def create_engagement(body: CreateEngagementIn, user: dict = Depends(requi
     # Seed documents and checklist
     docs = [
         {"id": str(uuid.uuid4()), "engagement_id": eng_id, **d, "status": "PENDING", "created_at": datetime.now(timezone.utc)}
-        for d in docs_for_tier(body.tier)
+        for d in await _docs_for_tier_with_template(body.tier)
     ]
     if docs:
         await db.documents.insert_many(docs)
@@ -754,7 +754,7 @@ async def ws_submit_to_cloudtax(eid: str, user: dict = Depends(require_role("WS_
     # Seed documents + checklist
     docs = [
         {"id": str(uuid.uuid4()), "engagement_id": eid, **d, "status": "PENDING", "is_new_request": False, "issue_note": None, "request_note": None, "deferred_at": None, "created_at": now}
-        for d in docs_for_tier(eng["tier"])
+        for d in await _docs_for_tier_with_template(eng["tier"])
     ]
     if docs:
         await db.documents.insert_many(docs)
@@ -1286,6 +1286,116 @@ async def update_checklist_template(body: ChecklistTemplateIn, user: dict = Depe
         upsert=True,
     )
     return {"items": items}
+
+
+# ==================== Per-tier document templates (admin-managed) ====================
+
+DOC_CATEGORIES = ["Income", "Expenses", "Banking", "Compliance", "Other"]
+TIER_KEYS = ["STANDARD", "BOOKS_COMPLETE", "WHITE_GLOVE"]
+
+# Categorize existing config defaults so they have meaningful tags out-of-the-box
+DEFAULT_DOC_CATEGORY_MAP = {
+    "PRIOR_T2": "Compliance", "PRIOR_FINANCIALS": "Compliance", "PRIOR_NOA": "Compliance",
+    "CURRENT_TRIAL_BALANCE": "Compliance", "ARTICLES_OF_INCORP": "Compliance",
+    "PAYROLL_RECORDS": "Compliance", "SHAREHOLDER_LOAN": "Compliance",
+    "BOOKKEEPING_RECORDS": "Compliance", "PERSONAL_T1": "Compliance",
+    "RRSP_ROOM": "Compliance", "HOLDCO_FINANCIALS": "Compliance",
+    "TRUST_DOCUMENTS": "Compliance", "SHAREHOLDER_AGREEMENT": "Compliance",
+    "CRA_CORRESPONDENCE": "Compliance",
+    "BANK_STATEMENTS": "Banking", "BROKERAGE_STATEMENTS": "Banking",
+    "REGISTERED_ACCOUNTS": "Banking", "CORPORATE_LOANS": "Banking",
+    "TRADE_CONFIRMATIONS": "Income", "ACB_RECORDS": "Income",
+    "CREDIT_CARD_STATEMENTS": "Expenses",
+    "INSURANCE_POLICIES": "Other", "ESTATE_DOCUMENTS": "Other", "OTHER": "Other",
+}
+
+
+def _seed_doc_template(tier: str):
+    """Build a default template by hydrating docs_for_tier() with categories."""
+    items = []
+    for d in docs_for_tier(tier):
+        items.append({
+            "category": d["category"],
+            "name": d["name"],
+            "description": d["description"],
+            "is_required": bool(d["is_required"]),
+            "tag": DEFAULT_DOC_CATEGORY_MAP.get(d["category"], "Other"),
+        })
+    return items
+
+
+class DocTemplateItemIn(BaseModel):
+    category: Optional[str] = None  # internal slug (legacy, optional)
+    name: str
+    description: Optional[str] = ""
+    is_required: bool = False
+    tag: str = "Other"  # one of DOC_CATEGORIES
+
+
+class DocTemplateIn(BaseModel):
+    items: list[DocTemplateItemIn]
+
+
+@api.get("/admin/document-templates/{tier}")
+async def get_doc_template(tier: str, user: dict = Depends(require_role("ADMIN"))):
+    if tier not in TIER_KEYS:
+        raise HTTPException(400, f"tier must be one of {TIER_KEYS}")
+    db = get_db()
+    doc = await db.settings.find_one({"key": f"doc_template_{tier}"}, {"_id": 0})
+    if not doc:
+        return {"tier": tier, "items": _seed_doc_template(tier), "categories": DOC_CATEGORIES}
+    return {"tier": tier, "items": doc.get("items", []), "categories": DOC_CATEGORIES}
+
+
+@api.put("/admin/document-templates/{tier}")
+async def update_doc_template(tier: str, body: DocTemplateIn, user: dict = Depends(require_role("ADMIN"))):
+    if tier not in TIER_KEYS:
+        raise HTTPException(400, f"tier must be one of {TIER_KEYS}")
+    items = []
+    for i, it in enumerate(body.items):
+        name = (it.name or "").strip()
+        if not name:
+            continue
+        tag = it.tag if it.tag in DOC_CATEGORIES else "Other"
+        items.append({
+            "category": it.category or f"CUSTOM_{i}",
+            "name": name,
+            "description": (it.description or "").strip(),
+            "is_required": bool(it.is_required),
+            "tag": tag,
+        })
+    if not items:
+        raise HTTPException(400, "Template must have at least one item")
+    db = get_db()
+    await db.settings.update_one(
+        {"key": f"doc_template_{tier}"},
+        {"$set": {"items": items, "updated_by": user["id"], "updated_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return {"tier": tier, "items": items, "categories": DOC_CATEGORIES}
+
+
+async def _docs_for_tier_with_template(tier: str):
+    """Return the document list for a new engagement: admin-managed template if set, else config defaults."""
+    db = get_db()
+    doc = await db.settings.find_one({"key": f"doc_template_{tier}"}, {"_id": 0})
+    if doc and doc.get("items"):
+        out = []
+        for i, it in enumerate(doc["items"]):
+            out.append({
+                "category": it.get("category") or f"CUSTOM_{i}",
+                "name": it["name"],
+                "description": it.get("description", ""),
+                "is_required": bool(it.get("is_required", False)),
+                "sort_order": i,
+                "tag": it.get("tag", "Other"),
+            })
+        return out
+    # fallback to legacy config (annotated with default tag)
+    out = []
+    for i, d in enumerate(docs_for_tier(tier)):
+        out.append({**d, "tag": DEFAULT_DOC_CATEGORY_MAP.get(d["category"], "Other")})
+    return out
 
 
 # ==================== CPA Questions (preparation stage) ====================
