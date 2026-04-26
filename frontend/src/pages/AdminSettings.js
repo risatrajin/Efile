@@ -4,7 +4,6 @@ import { api, fmtError, initials } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import AppHeader from "../components/shared/AppHeader";
 import { ArrowLeft, Plus, X, Download, Check } from "lucide-react";
-
 const PERMISSION_COLUMNS = [
   { key: "view_clients", label: "VIEW CLIENTS", title: "View Clients" },
   { key: "onboard_clients", label: "ONBOARD CLIENTS", title: "Onboard Clients" },
@@ -39,6 +38,8 @@ function Checkbox({ checked, onChange, disabled, testid }) {
   return (
     <button
       type="button"
+      role="checkbox"
+      aria-checked={checked}
       onClick={() => !disabled && onChange(!checked)}
       data-testid={testid}
       style={{
@@ -479,9 +480,9 @@ export default function AdminSettings() {
     <div className="app-root">
       <AppHeader />
       <div className="page-wide stack-lg" style={{ paddingTop: 24, maxWidth: 1100 }}>
-        <button onClick={() => navigate("/admin/dashboard")} className="muted flex items-center gap-2" style={{ fontSize: 13, width: "fit-content" }} data-testid="back-to-portal">
+        <Link to="/admin/dashboard" className="muted flex items-center gap-2" style={{ fontSize: 13, width: "fit-content", textDecoration: "none" }} data-testid="back-to-portal">
           <ArrowLeft size={14} /> Back to portal
-        </button>
+        </Link>
         <h1 style={{ fontSize: 28, fontWeight: 600, marginTop: 8 }}>Settings</h1>
 
         <div data-testid="settings-tabs" style={{ display: "flex", gap: 28, borderBottom: "1px solid var(--border-default)" }}>

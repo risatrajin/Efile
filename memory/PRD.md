@@ -51,7 +51,17 @@
 - Admin Kanban + CPA assignment + WS editable pre-filing checklist
 - Client empty state UI
 
-### Iter 10 (Feb 2026 — this fork session)
+### Iter 11 (Feb 2026 — Admin UI overhaul to match user screenshots)
+- **New AppHeader**: cloud logo + brand | avatar+name+email + dropdown | gear icon → /admin/settings | notification bell with red unread badge + dropdown | accessibility icon | inline Sign out
+- **NotificationBell** with category icons, timestamps, "Mark all read", 30s auto-poll
+- **AdminDashboard simplified**: removed "Pilot command center" title + metrics cards; in-page tabs "Clients" | "CPA's"
+- **AdminSettings** at `/admin/settings` with 5 tabs (Profile, Notifications, Documents, Display, Roles & Permissions)
+- **Roles & Permissions table**: 14 perm columns + role badge dropdown (Admin/Manager/Other/CPA/Partner — Manager/Other → ADMIN, Partner → WS_PARTNER); Admin row green ✓; non-admin rows toggleable role="checkbox" buttons → PATCH /api/users/{uid}
+- **Add Member modal**: full form + permissions + "What happens next" info box → POST /api/users/invite
+- **Backend additions**: GET /api/users/team, GET /api/notifications/unread-count, POST /api/notifications/{nid}/read; PATCH /api/users/{uid} accepts permissions + display_role; InviteUserIn accepts display_role + permissions
+- **Tests**: pytest 57/57 green (49 existing + 9 new). Frontend Playwright verified all flows.
+
+### Iter 10 (Feb 2026 — earlier in this fork session)
 - **Fixed P0 backend route ordering bug** — PATCH `/users/me` was shadowed by `/users/{uid}` (admin-only). Moved `/users/me` and `/users/me/full` above the admin-only `/users/{uid}` route, added `if uid == "me"` defensive guard.
 - **Fixed P1 frontend AppHeader dropdown** — Account Settings link was navigating to non-existent `/account` route. Added top-level `/account` route, made AccountPage embed AppHeader for non-Client roles, made nav target role-aware (`/portal/account` for Client, `/account` for others).
 - **Test coverage**: pytest 42/43 + 7/7 retest pass = 100% backend green. Frontend Playwright verified all 4 roles can: login → open dropdown → click Account Settings → see Two-factor section + header → click Sign out → land on /login.
