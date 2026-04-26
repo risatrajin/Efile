@@ -1,18 +1,41 @@
 import React from "react";
 import { STATUS_LABELS, TIER_LABELS, OPP_LABELS } from "../../lib/api";
 
+const TIER_STYLES = {
+  WHITE_GLOVE: { bg: "#ede7f6", fg: "#5e35b1" },
+  BOOKS_COMPLETE: { bg: "#e3f2fd", fg: "#1565c0" },
+  STANDARD: { bg: "#eceff1", fg: "#546e7a" },
+};
+
 export function TierBadge({ tier }) {
   if (!tier) return null;
-  const cls = tier === "BOOKS_COMPLETE" ? "badge-active" : tier === "STANDARD" ? "badge-neutral" : "badge-advisory";
-  return <span className={`badge ${cls}`} data-testid={`tier-${tier}`}>{TIER_LABELS[tier]}</span>;
+  const s = TIER_STYLES[tier] || TIER_STYLES.STANDARD;
+  return (
+    <span
+      data-testid={`tier-${tier}`}
+      style={{ background: s.bg, color: s.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 500, display: "inline-block" }}
+    >{TIER_LABELS[tier]}</span>
+  );
 }
+
+const STATUS_STYLES = {
+  REFERRED: { bg: "#e3f2fd", fg: "#1565c0" },
+  INTAKE: { bg: "#e3f2fd", fg: "#1565c0" },
+  IN_PREP: { bg: "#fff3e0", fg: "#ef6c00" },
+  IN_REVIEW: { bg: "#fffde7", fg: "#f57f17" },
+  DELIVERY: { bg: "#fffde7", fg: "#f57f17" },
+  FILED: { bg: "#e8f5e9", fg: "#2e7d32" },
+};
 
 export function StatusBadge({ status }) {
   if (!status) return null;
-  const cls = status === "FILED" ? "badge-complete" :
-              status === "IN_REVIEW" || status === "IN_PREP" || status === "DELIVERY" ? "badge-active" :
-              status === "INTAKE" ? "badge-attention" : "badge-neutral";
-  return <span className={`badge ${cls}`} data-testid={`status-${status}`}>{STATUS_LABELS[status]}</span>;
+  const s = STATUS_STYLES[status] || { bg: "var(--bg-subtle)", fg: "var(--text-secondary)" };
+  return (
+    <span
+      data-testid={`status-${status}`}
+      style={{ background: s.bg, color: s.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 500, display: "inline-block" }}
+    >{STATUS_LABELS[status]}</span>
+  );
 }
 
 export function SeverityDot({ severity }) {

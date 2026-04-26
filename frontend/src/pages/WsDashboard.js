@@ -166,6 +166,11 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
   );
 }
 
+function withDrPrefix(name) {
+  if (!name) return "—";
+  return (/^dr\.?\s/i).test(name) ? name : `Dr. ${name}`;
+}
+
 function OnboardingCard({ eng, progress, onMove, onOpen }) {
   const corp = eng.corporation || {};
   const client = eng.client || {};
@@ -174,7 +179,7 @@ function OnboardingCard({ eng, progress, onMove, onOpen }) {
     <div className="kanban-card" onClick={onOpen} data-testid={`onboarding-card-${eng.id}`} style={{ cursor: "pointer" }}>
       <div className="flex between items-start gap-2">
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{client.name || "—"}</div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{withDrPrefix(client.name)}</div>
           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{corp.name || "Corporation pending"}</div>
         </div>
       </div>
@@ -197,13 +202,25 @@ function OnboardingCard({ eng, progress, onMove, onOpen }) {
       </div>
       <div className="mt-3">
         {ready ? (
-          <button className="btn btn-secondary btn-sm w-full" onClick={(e) => { e.stopPropagation(); onMove(eng); }} data-testid={`move-${eng.id}`}>
-            Move to CloudTax →
-          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onMove(eng); }}
+            data-testid={`move-${eng.id}`}
+            style={{
+              width: "100%", padding: "10px 12px", borderRadius: 8,
+              border: "1px solid var(--border-default)", background: "#fff",
+              fontSize: 13, fontWeight: 500, color: "var(--text-primary)",
+            }}
+          >Move to CloudTax →</button>
         ) : (
-          <button className="btn btn-secondary btn-sm w-full" onClick={onOpen} data-testid={`continue-${eng.id}`} style={{ color: "var(--text-secondary)" }}>
-            Complete checklist to submit
-          </button>
+          <button
+            onClick={onOpen}
+            data-testid={`continue-${eng.id}`}
+            style={{
+              width: "100%", padding: "10px 12px", borderRadius: 8,
+              border: "1px dashed var(--border-default)", background: "transparent",
+              fontSize: 13, color: "var(--text-tertiary)",
+            }}
+          >Complete checklist to submit</button>
         )}
       </div>
     </div>
@@ -216,7 +233,7 @@ function ReadOnlyCard({ eng, onOpen }) {
   return (
     <div className="kanban-card" onClick={onOpen} data-testid={`pipeline-card-${eng.id}`} style={{ position: "relative", cursor: "pointer" }}>
       <Lock size={11} style={{ position: "absolute", top: 12, right: 12, color: "var(--text-tertiary)" }} />
-      <div style={{ fontWeight: 600, fontSize: 13, paddingRight: 16 }}>{client.name}</div>
+      <div style={{ fontWeight: 600, fontSize: 13, paddingRight: 16 }}>{withDrPrefix(client.name)}</div>
       <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{corp.name}</div>
       {eng.tier && <div style={{ marginTop: 8 }}><TierBadge tier={eng.tier} /></div>}
       {eng.status === "REFERRED" && (
@@ -234,14 +251,22 @@ function ReadOnlyCard({ eng, onOpen }) {
       )}
       {eng.status === "FILED" && (
         <>
-          {eng.filing_confirmation && <div style={{ marginTop: 8 }}><span className="badge badge-attention" style={{ fontSize: 10 }}>{eng.filing_confirmation}</span></div>}
+          {eng.filing_confirmation && <div style={{ marginTop: 8 }}><span style={{ background: "#fff3e0", color: "#ef6c00", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 500 }}>{eng.filing_confirmation}</span></div>}
           <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Filed {fmtDate(eng.filing_date)}</div>
         </>
       )}
       <div style={{ marginTop: 10 }}>
-        <span className={`badge ${eng.status === "FILED" ? "badge-complete" : eng.status === "IN_REVIEW" ? "badge-active" : eng.status === "IN_PREP" ? "badge-attention" : "badge-active"}`} style={{ fontSize: 10 }}>
-          {eng.status === "REFERRED" ? "Referred" : eng.status === "INTAKE" ? "Intake" : eng.status === "IN_PREP" ? "In Prep" : eng.status === "IN_REVIEW" ? "Review" : eng.status === "FILED" ? "Filed" : eng.status}
-        </span>
+        {(() => {
+          const map = {
+            REFERRED: { bg: "#e3f2fd", fg: "#1565c0", label: "Referred" },
+            INTAKE: { bg: "#e3f2fd", fg: "#1565c0", label: "Intake" },
+            IN_PREP: { bg: "#fff3e0", fg: "#ef6c00", label: "In Prep" },
+            IN_REVIEW: { bg: "#fffde7", fg: "#f57f17", label: "Review" },
+            FILED: { bg: "#e8f5e9", fg: "#2e7d32", label: "Filed" },
+          };
+          const s = map[eng.status] || { bg: "var(--bg-subtle)", fg: "var(--text-secondary)", label: eng.status };
+          return <span style={{ background: s.bg, color: s.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 500 }}>{s.label}</span>;
+        })()}
       </div>
     </div>
   );
