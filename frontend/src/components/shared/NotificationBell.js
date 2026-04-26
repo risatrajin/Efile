@@ -52,6 +52,15 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
+  const markOne = async (n) => {
+    if (n.is_read) return;
+    try {
+      await api.post(`/notifications/${n.id}/read`);
+      setItems((prev) => prev.map((x) => x.id === n.id ? { ...x, is_read: true } : x));
+      setUnread((u) => Math.max(0, u - 1));
+    } catch { /* ignore */ }
+  };
+
   const markAll = async () => {
     try {
       await api.post("/notifications/read-all");
@@ -117,15 +126,21 @@ export default function NotificationBell() {
             {items.map((n) => {
               const { Icon, color, bg } = iconFor(n.type);
               return (
-                <div
+                <button
                   key={n.id}
+                  onClick={() => markOne(n)}
                   data-testid={`notif-${n.id}`}
                   style={{
+                    width: "100%", textAlign: "left",
                     padding: "14px 18px", display: "flex", gap: 12,
                     borderTop: "1px solid var(--border-subtle, #f0eeea)",
                     background: n.is_read ? "transparent" : "#f9fbff",
                     borderLeft: n.is_read ? "3px solid transparent" : "3px solid #1565c0",
+                    cursor: n.is_read ? "default" : "pointer",
+                    transition: "background-color 120ms ease",
                   }}
+                  onMouseEnter={(e) => { if (!n.is_read) e.currentTarget.style.background = "#eef4fb"; else e.currentTarget.style.background = "var(--bg-subtle)"; }}
+                  onMouseLeave={(e) => e.currentTarget.style.background = n.is_read ? "transparent" : "#f9fbff"}
                 >
                   <div style={{
                     width: 32, height: 32, borderRadius: 8, background: bg,
@@ -138,7 +153,10 @@ export default function NotificationBell() {
                     <div className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>{n.message}</div>
                     <div className="tertiary" style={{ fontSize: 11, marginTop: 6 }}>{timeAgo(n.created_at)}</div>
                   </div>
-                </div>
+                  {!n.is_read && (
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#1565c0", flexShrink: 0, marginTop: 6 }} />
+                  )}
+                </button>
               );
             })}
           </div>
