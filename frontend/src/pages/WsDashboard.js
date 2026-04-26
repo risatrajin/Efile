@@ -184,7 +184,9 @@ function OnboardingCard({ eng, progress, onMove, onOpen }) {
         </div>
       </div>
       {eng.tier && <div style={{ marginTop: 10 }}><TierBadge tier={eng.tier} /></div>}
-      <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{client.email}{corp.province ? ` · ${corp.province}` : ""}</div>
+      <div className="muted" style={{ fontSize: 11, marginTop: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${client.email || ""}${corp.province ? " · " + corp.province : ""}`}>
+        {client.email}{corp.province ? ` · ${corp.province}` : ""}
+      </div>
       <div className="mt-3">
         {ready ? (
           <span className="badge badge-complete">Ready</span>
