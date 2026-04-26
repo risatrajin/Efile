@@ -77,8 +77,7 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
         tier: form.tier,
         notes: form.notes,
       });
-      // Save as draft = stay in ONBOARDING; Save & mark ready = also stay in ONBOARDING but checklist ready=true
-      await onCreated();
+      await onCreated(eid);
       onClose();
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
@@ -167,7 +166,7 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
   );
 }
 
-function OnboardingCard({ eng, progress, onMove, onOpen, onEdit }) {
+function OnboardingCard({ eng, progress, onMove, onOpen }) {
   const corp = eng.corporation || {};
   const client = eng.client || {};
   const ready = progress?.ready;
@@ -199,10 +198,10 @@ function OnboardingCard({ eng, progress, onMove, onOpen, onEdit }) {
       <div className="mt-3">
         {ready ? (
           <button className="btn btn-secondary btn-sm w-full" onClick={(e) => { e.stopPropagation(); onMove(eng); }} data-testid={`move-${eng.id}`}>
-            Move to CloudTax <ArrowRight size={11} />
+            Move to CloudTax →
           </button>
         ) : (
-          <button className="btn btn-secondary btn-sm w-full" onClick={(e) => { e.stopPropagation(); onEdit(eng); }} data-testid={`continue-${eng.id}`} style={{ color: "var(--text-secondary)" }}>
+          <button className="btn btn-secondary btn-sm w-full" onClick={onOpen} data-testid={`continue-${eng.id}`} style={{ color: "var(--text-secondary)" }}>
             Complete checklist to submit
           </button>
         )}
@@ -275,7 +274,8 @@ export default function WsDashboard() {
     catch (x) { setErr(fmtError(x)); }
   };
 
-  const open = (eid) => navigate(`/ws/file/${eid}`);
+  const openOnboarding = (eid) => navigate(`/ws/onboarding/${eid}`);
+  const openFile = (eid) => navigate(`/ws/file/${eid}`);
 
   const tabs = [{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }];
 
@@ -310,8 +310,8 @@ export default function WsDashboard() {
                 </div>
                 <div className="stack-sm">
                   {isOnboarding
-                    ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onMove={moveToCloudtax} onOpen={() => open(e.id)} onEdit={(eng) => { setEditingEng(eng); setShowAdd(true); }} />)
-                    : items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => open(e.id)} />)
+                    ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onMove={moveToCloudtax} onOpen={() => openOnboarding(e.id)} />)
+                    : items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)
                   }
                   {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 12 }}>No clients</div>}
                 </div>
@@ -326,7 +326,7 @@ export default function WsDashboard() {
           })}
         </div>
       </div>
-      {showAdd && <AddClientModal existing={editingEng} onClose={() => { setShowAdd(false); setEditingEng(null); }} onCreated={load} />}
+      {showAdd && <AddClientModal existing={editingEng} onClose={() => { setShowAdd(false); setEditingEng(null); }} onCreated={(newEid) => { load(); if (newEid) navigate(`/ws/onboarding/${newEid}`); }} />}
     </div>
   );
 }

@@ -496,22 +496,30 @@ async def get_engagement(eid: str, user: dict = Depends(get_current_user)):
 
 # ---- WS partner onboarding flow ----
 
+DEFAULT_PRE_FILING_CHECKLIST = [
+    "Corporation info confirmed",
+    "Fiscal year-end verified",
+    "Prior year T2 on file?",
+    "CRA access requested",
+    "Client signed engagement letter",
+    "WS advisor notified",
+]
+
+
+def _new_checklist():
+    return [{"id": str(uuid.uuid4()), "item": label, "is_completed": False, "sort_order": i}
+            for i, label in enumerate(DEFAULT_PRE_FILING_CHECKLIST)]
+
+
 ONBOARDING_FIELDS = ["client_name", "client_email", "phone", "province", "corp_name", "fiscal_year_end", "tier"]
 
 
 def _onboarding_progress(eng: dict, corp: dict, client: dict) -> dict:
-    parts = {
-        "client_name": bool(client.get("name")),
-        "client_email": bool(client.get("email")),
-        "phone": bool(client.get("phone")),
-        "province": bool(corp.get("province")),
-        "corp_name": bool(corp.get("name")),
-        "fiscal_year_end": bool(corp.get("fiscal_year_end")),
-        "tier": bool(eng.get("tier")),
-    }
-    completed = sum(1 for v in parts.values() if v)
-    total = 6  # display total per spec
-    return {"completed": min(completed, total), "total": total, "ready": completed >= total, "fields": parts}
+    """Pre-filing checklist completion (replaces field-completeness check)."""
+    cl = eng.get("pre_filing_checklist") or []
+    completed = sum(1 for c in cl if c.get("is_completed"))
+    total = len(cl) or 6
+    return {"completed": completed, "total": total, "ready": total > 0 and completed >= total, "checklist": cl}
 
 
 @api.post("/engagements/onboarding")
@@ -520,7 +528,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
     db = get_db()
     if not body.client_email or not body.first_name:
         raise HTTPException(400, "first_name and client_email required to start a draft")
-    full_name = f"Dr. {body.first_name.strip()} {body.last_name.strip()}".strip() if body.last_name else f"Dr. {body.first_name.strip()}"
+    full_name = f"{body.first_name.strip()} {body.last_name.strip()}".strip() if body.last_name else body.first_name.strip()
     email = body.client_email.lower()
     client = await db.users.find_one({"email": email})
     if not client:
@@ -541,7 +549,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
     corp_id = str(uuid.uuid4())
     await db.corporations.insert_one({
         "id": corp_id,
-        "name": body.corp_name or f"{full_name.replace('Dr. ', '')} Medicine Professional Corporation",
+        "name": body.corp_name or f"{full_name} Medicine Professional Corporation",
         "business_number": None,
         "fiscal_year_start": None,
         "fiscal_year_end": body.fiscal_year_end,
@@ -567,6 +575,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         "corporation_id": corp_id,
         "assigned_cpa_id": None,
         "ws_advisor_id": user["id"],
+        "pre_filing_checklist": _new_checklist(),
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     })
@@ -588,7 +597,7 @@ async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depe
     if body.first_name or body.last_name:
         first = (body.first_name or "").strip()
         last = (body.last_name or "").strip()
-        full = f"Dr. {first} {last}".strip() if last else (f"Dr. {first}" if first else None)
+        full = f"{first} {last}".strip() if last else (first if first else None)
         if full and client:
             await db.users.update_one({"id": client["id"]}, {"$set": {"name": full}})
     if body.client_email and client:
@@ -662,6 +671,30 @@ async def ws_onboarding_progress(eid: str, user: dict = Depends(get_current_user
     corp = await db.corporations.find_one({"id": eng["corporation_id"]})
     client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
     return _onboarding_progress(eng or {}, corp or {}, client or {})
+
+
+class ChecklistArrayIn(BaseModel):
+    items: list[dict]  # each: {id?, item, is_completed, sort_order?}
+
+
+@api.patch("/engagements/{eid}/pre-filing-checklist")
+async def ws_update_checklist(eid: str, body: ChecklistArrayIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+    db = get_db()
+    eng = await db.engagements.find_one({"id": eid})
+    if not eng:
+        raise HTTPException(404, "Not found")
+    cleaned = []
+    for i, c in enumerate(body.items):
+        if not c.get("item", "").strip():
+            continue
+        cleaned.append({
+            "id": c.get("id") or str(uuid.uuid4()),
+            "item": c["item"].strip(),
+            "is_completed": bool(c.get("is_completed")),
+            "sort_order": i,
+        })
+    await db.engagements.update_one({"id": eid}, {"$set": {"pre_filing_checklist": cleaned, "updated_at": datetime.now(timezone.utc)}})
+    return {"items": cleaned}
 
 
 @api.patch("/engagements/{eid}")

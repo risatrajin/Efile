@@ -8,9 +8,11 @@ import MessagesPage from "./pages/Messages";
 import AccountPage from "./pages/Account";
 import WsDashboard from "./pages/WsDashboard";
 import WsFileDetail from "./pages/WsFileDetail";
+import WsOnboardingDetail from "./pages/WsOnboardingDetail";
 import CpaFiles from "./pages/CpaFiles";
 import CpaEngagement from "./pages/CpaEngagement";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminClientDetail from "./pages/AdminClientDetail";
 import AdminUsers from "./pages/AdminUsers";
 
 function roleHome(role) {
@@ -55,12 +57,14 @@ export default function App() {
           </Route>
 
           <Route path="/ws/dashboard" element={<Protected roles={["WS_PARTNER"]}><WsDashboard /></Protected>} />
+          <Route path="/ws/onboarding/:eid" element={<Protected roles={["WS_PARTNER", "ADMIN"]}><WsOnboardingDetail /></Protected>} />
           <Route path="/ws/file/:eid" element={<Protected roles={["WS_PARTNER", "ADMIN"]}><WsFileDetail /></Protected>} />
 
           <Route path="/cpa/files" element={<Protected roles={["CPA", "ADMIN"]}><CpaFiles /></Protected>} />
           <Route path="/cpa/engagement/:eid" element={<Protected roles={["CPA", "ADMIN"]}><CpaEngagement /></Protected>} />
 
           <Route path="/admin/dashboard" element={<Protected roles={["ADMIN"]}><AdminDashboard /></Protected>} />
+          <Route path="/admin/client/:eid" element={<Protected roles={["ADMIN"]}><AdminClientDetail /></Protected>} />
           <Route path="/admin/users" element={<Protected roles={["ADMIN"]}><AdminUsers /></Protected>} />
 
           <Route path="/" element={<RootRedirect />} />

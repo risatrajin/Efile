@@ -200,11 +200,52 @@ export default function ClientPortal() {
     try { await api.post(`/documents/${doc.id}/defer`); await loadAll(); } catch (x) { setErr(fmtError(x)); }
   };
 
-  if (!eng) return (
-    <div className="page-narrow">
+  if (!eng || eng.status === "ONBOARDING") return (
+    <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="empty-state">
+      <h1 className="page-title">Welcome, {user?.name?.split(" ")[0]}</h1>
+      <p className="muted" style={{ fontSize: 13 }}>Your CloudTax × Wealthsimple corporate tax engagement is being set up.</p>
+
+      <div className="card" style={{ background: "linear-gradient(135deg, #faf9f7 0%, #f0ebe3 100%)" }}>
+        <div className="section-label" style={{ marginBottom: 12 }}>WHAT TO EXPECT</div>
+        <div className="stack-md" style={{ marginTop: 8 }}>
+          {[
+            { n: 1, t: "Your Wealthsimple advisor sets up your file", d: "We collect your basic info and engagement scope.", state: eng?.status === "ONBOARDING" ? "active" : "done" },
+            { n: 2, t: "CloudTax assigns a CPA", d: "A licensed Canadian CPA is matched to your file.", state: "pending" },
+            { n: 3, t: "Your CPA reaches out", d: "They will introduce themselves and request the documents needed for your T2.", state: "pending" },
+            { n: 4, t: "Document collection & filing", d: "Upload documents at your pace. Your CPA prepares, reviews and files your return.", state: "pending" },
+          ].map((s) => (
+            <div key={s.n} className="flex items-start gap-3" data-testid={`onboarding-step-${s.n}`}>
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                background: s.state === "done" ? "#2e7d32" : s.state === "active" ? "#1a1a1a" : "#ebe7e0",
+                color: s.state === "pending" ? "var(--text-secondary)" : "#fff",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                fontSize: 13, fontWeight: 500,
+              }}>
+                {s.state === "done" ? <Check size={14} /> : s.n}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{s.t}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{s.d}</div>
+              </div>
+              {s.state === "active" && <span className="badge badge-active">In progress</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="card">
-        <h2 className="section-title">No active engagement</h2>
-        <p className="muted">We will reach out when your engagement begins.</p>
+        <div className="section-label" style={{ marginBottom: 12 }}>YOUR DETAILS</div>
+        <div className="grid-2" style={{ rowGap: 14 }}>
+          <div className="field"><label className="field-label">Name</label><div style={{ fontSize: 13, fontWeight: 500 }}>{user?.name || "—"}</div></div>
+          <div className="field"><label className="field-label">Email</label><div style={{ fontSize: 13, fontWeight: 500 }}>{user?.email || "—"}</div></div>
+          {eng?.corporation?.name && <div className="field"><label className="field-label">Corporation</label><div style={{ fontSize: 13, fontWeight: 500 }}>{eng.corporation.name}</div></div>}
+          {eng?.ws_advisor?.name && <div className="field"><label className="field-label">Wealthsimple advisor</label><div style={{ fontSize: 13, fontWeight: 500 }}>{eng.ws_advisor.name}</div></div>}
+        </div>
+      </div>
+
+      <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
+        Questions? Email <a className="link-underline" href="mailto:support@cloudtax.ca" style={{ color: "#1565c0" }}>support@cloudtax.ca</a>
       </div>
     </div>
   );
