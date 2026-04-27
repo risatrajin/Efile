@@ -101,6 +101,13 @@
 - **Client Portal Profile dropdowns**: removed the "Start uploading" button so the per-document "Choose option" dropdown is active by default (Iter 14 part 1).
 - **Tests**: pytest 13/13 in `test_draft_review_flow.py` (auto-move, decision clear, DELETE RBAC, regression on `review-decision` + `move-to-review`). Frontend live-verified.
 
+### Iter 15 (Feb 2026 — Bug-fix batch on iter 14 review-cycle)
+- **Cancel-X inline 2-step confirm**: replaced fragile `window.confirm` (suppressed in some embedded/sandbox browsers) with an inline morph — first click shows "Confirm?" with red tint, auto-resets after 4s, second click fires `DELETE /api/engagements/{eid}/draft`. Verified live.
+- **2nd-time draft upload reliability**: after each successful upload, `inputRef.current.value = ""` is reset so re-picking the same file (or any new file) reliably fires `onChange`. Eliminates the "submit button stuck disabled / nothing happens" symptom users hit with same-file re-pick.
+- **Client portal auto-refresh**: added `setInterval(loadAll, 20000)` polling on `/portal`. When CPA uploads a new draft (which clears `review_decision` server-side), the client's stale "Issue submitted" card is auto-replaced by a fresh `ReviewDecisionCard` within 20–25s without the client manually reloading.
+- **Button-size unification**: `.btn { min-height: 36px; justify-content: center; box-sizing: border-box }` and `.btn-sm / .btn-ghost { min-height: 28px }` in `index.css`. All buttons in `UploadDraftCard` (Download, Cancel-X, Send and Move to Review) now render at a uniform 28px height regardless of icon-only vs text-with-icon content.
+- **Tests**: pytest **13/13 PASS** (regression on `test_draft_review_flow.py`). Frontend Playwright **3/3 e2e PASS** (inline cancel-confirm + auto-reset, same-file re-upload, 20s polling auto-refresh).
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
