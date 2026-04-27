@@ -94,6 +94,13 @@
 - **Fixed P1 frontend AppHeader dropdown** — Account Settings link was navigating to non-existent `/account` route. Added top-level `/account` route, made AccountPage embed AppHeader for non-Client roles, made nav target role-aware (`/portal/account` for Client, `/account` for others).
 - **Test coverage**: pytest 42/43 + 7/7 retest pass = 100% backend green. Frontend Playwright verified all 4 roles can: login → open dropdown → click Account Settings → see Two-factor section + header → click Sign out → land on /login.
 
+### Iter 14 (Feb 2026 — CPA draft + Client review polish, 4-pt UX feedback)
+- **CPA UploadDraftCard**: submit button renamed to **"Send and Move to Review"**; removed separate "Save instructions" button (instructions auto-save on upload); added **✕ cancel icon** next to Download on the existing-draft strip → `DELETE /api/engagements/{eid}/draft` endpoint removes the doc, clears `t2_draft_doc_id` + `review_decision`, and reverts `IN_REVIEW` → `IN_PREP`.
+- **Backend `POST /api/engagements/{eid}/upload-draft`** now (a) auto-transitions `IN_PREP` → `IN_REVIEW`, (b) `$unset`s `review_decision` on every upload so the client always sees a fresh review prompt for the new draft, and (c) emits the appropriate `draft_ready` notification.
+- **Client ReviewDecisionCard simplified**: removed 👍 emoji, switched to single-color Lucide line icons (`ThumbsUp`, `Flag`), neutral gray border baseline, green/red accent only on hover; "I found an issue" textarea is now neutral (no red tint); submit uses standard primary blue.
+- **Client Portal Profile dropdowns**: removed the "Start uploading" button so the per-document "Choose option" dropdown is active by default (Iter 14 part 1).
+- **Tests**: pytest 13/13 in `test_draft_review_flow.py` (auto-move, decision clear, DELETE RBAC, regression on `review-decision` + `move-to-review`). Frontend live-verified.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
