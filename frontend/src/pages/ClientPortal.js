@@ -218,6 +218,7 @@ export default function ClientPortal() {
   const [err, setErr] = useState("");
   const [authChecks, setAuthChecks] = useState({});
   const [authBusy, setAuthBusy] = useState(false);
+  const [forceUploadMode, setForceUploadMode] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -335,7 +336,7 @@ export default function ClientPortal() {
       {err && <div className="alert alert-risk">{err}</div>}
 
       {/* PROFILE STAGE */}
-      {phase === 0 && (
+      {phase === 0 && !forceUploadMode && (
         <>
           <div className="card" data-testid="profile-success">
             <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18 }}>
@@ -361,7 +362,7 @@ export default function ClientPortal() {
             <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS WE NEED</div>
             {visibleDocs.map((d) => <DocItem key={d.id} doc={d} mode="summary" />)}
             <button
-              onClick={() => navigate("/portal#documents")}
+              onClick={() => setForceUploadMode(true)}
               style={{ marginTop: 18, width: "100%", padding: "14px", borderRadius: 10, border: "1.5px solid #1e88e5", color: "#1e88e5", background: "#fff", fontSize: 14, fontWeight: 500 }}
               data-testid="start-uploading"
             >Start uploading →</button>
@@ -369,8 +370,8 @@ export default function ClientPortal() {
         </>
       )}
 
-      {/* DOCUMENTS STAGE */}
-      {phase === 1 && (
+      {/* DOCUMENTS STAGE — also shown if client clicked Start uploading early */}
+      {(phase === 1 || (phase === 0 && forceUploadMode)) && (
         <div className="card" data-testid="docs-interactive-card">
           <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS WE NEED</div>
           {visibleDocs.filter((d) => d.status !== "ISSUE").map((d) => <DocItem key={d.id} doc={d} mode="interactive" onUpload={onUpload} onView={onView} onDefer={onDefer} busy={busy} />)}

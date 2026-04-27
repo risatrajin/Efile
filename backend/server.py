@@ -910,6 +910,20 @@ async def list_documents(eid: str, user: dict = Depends(get_current_user)):
     return docs
 
 
+@api.get("/engagements/{eid}/documents/summary")
+async def list_documents_summary(eid: str, user: dict = Depends(get_current_user)):
+    """Lightweight name+status list visible to WS partners (no download URLs, no S3 keys)."""
+    await get_engagement_or_404(eid, user)
+    db = get_db()
+    out = []
+    async for d in db.documents.find(
+        {"engagement_id": eid},
+        {"_id": 0, "id": 1, "name": 1, "description": 1, "status": 1, "is_required": 1, "tag": 1, "sort_order": 1, "deferred_at": 1},
+    ).sort("sort_order", 1):
+        out.append(d)
+    return out
+
+
 @api.post("/documents/{doc_id}/upload-url")
 async def doc_upload_url(doc_id: str, body: dict, user: dict = Depends(get_current_user)):
     db = get_db()

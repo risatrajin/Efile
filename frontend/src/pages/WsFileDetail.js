@@ -79,8 +79,13 @@ export default function WsFileDetail() {
       ]);
       setEng(a.data);
       setHistory(b.data || []);
-      // WS partners are blocked from documents/time-entries; tolerate 403
-      try { const { data: d } = await api.get(`/engagements/${eid}/documents`); setDocs(d); } catch { /* expected for ws */ }
+      // WS partner safe summary (no S3 keys / download URLs); fall back to full /documents for CPA/Admin
+      try {
+        const { data: d } = await api.get(`/engagements/${eid}/documents/summary`);
+        setDocs(d);
+      } catch {
+        try { const { data: d } = await api.get(`/engagements/${eid}/documents`); setDocs(d); } catch { /* ignore */ }
+      }
       try { const { data: t } = await api.get(`/engagements/${eid}/time-entries`); setTime(t); } catch { /* expected for ws */ }
     } catch (x) { setErr(fmtError(x)); }
   };
@@ -94,13 +99,11 @@ export default function WsFileDetail() {
   const client = eng.client || {};
   const isOnboarding = eng.status === "ONBOARDING";
   const totalHours = time.reduce((s, t) => s + (t.hours || 0), 0);
-  const docsTotal = eng.docs_total || docs.length || 6;
-  const docsReceived = eng.docs_uploaded || 0;
+  const docsTotal = docs.length || eng.docs_total || 0;
+  const docsReceived = docs.filter((d) => ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(d.status)).length;
   const tabs = [{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }];
 
-  // Default doc list when WS partner can't see actual docs (403)
-  const fallbackDocs = ["Prior year T2 return", "Bank statements", "Financial statements", "CRA My Business Account", "Shareholder loan schedule", "Signed T183 (e-file auth)"];
-  const docList = docs.length ? docs.map((d) => ({ name: d.name, status: d.status })) : fallbackDocs.map((n) => ({ name: n, status: docsReceived > 0 && eng.status === "FILED" ? "REVIEWED" : "PENDING" }));
+  const docList = docs.map((d) => ({ name: d.name, status: d.status }));
 
   return (
     <div className="app-root">
