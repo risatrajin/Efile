@@ -108,6 +108,15 @@
 - **Button-size unification**: `.btn { min-height: 36px; justify-content: center; box-sizing: border-box }` and `.btn-sm / .btn-ghost { min-height: 28px }` in `index.css`. All buttons in `UploadDraftCard` (Download, Cancel-X, Send and Move to Review) now render at a uniform 28px height regardless of icon-only vs text-with-icon content.
 - **Tests**: pytest **13/13 PASS** (regression on `test_draft_review_flow.py`). Frontend Playwright **3/3 e2e PASS** (inline cancel-confirm + auto-reset, same-file re-upload, 20s polling auto-refresh).
 
+### Iter 16 (Feb 2026 — User feedback batch: history table, button uniformity, scheduled-meeting removal, compact stepper)
+- **Backend `draft_history`** (NEW): both `POST /api/engagements/{eid}/upload-draft` and `POST /api/engagements/{eid}/review-decision` now `$push` an entry into `engagements.draft_history` with `{type, at, actor_id, actor_name, file_name | decision, instructions | note}`. Append-only audit trail; visible to CPA, Client, and Admin (no redaction needed).
+- **`<DraftHistoryTable>` shared component** (`/app/frontend/src/components/shared/DraftHistoryTable.js`): renders a compact table with Event pill (CPA upload / Approved / Issue raised), By, Detail, Note/Instructions, When. Returns `null` when history is empty so the card is fully hidden for engagements with no events.
+- Wired into **CPA Engagement** page (after the Tax Return draft card) and **Client Portal** Review section (under YOUR REVIEW, after the decision card).
+- **Compact modern Stepper**: replaced the 22px blue ringed stepper with 10px black filled dots, 1px connector line, active state has a subtle 4px box-shadow ring, 11px uppercase labels. No legacy blue (#1e88e5/#1565c0) on the Client Portal anymore.
+- **Removed Scheduled meeting card** (and `meetingDate`, `CalendarDays`, `Video` imports) from `AdminClientDetail`. Global grep confirms zero residual references.
+- **Primary CTA uniformity**: all primary action buttons across **Client Portal**, **CPA Engagement**, **Admin Dashboard / Client Detail**, **WS Dashboard / Onboarding Detail** now use `.btn .btn-primary` (= `var(--accent-dark)` = `#1a1a1a` black) with consistent `min-height: 36px` (or `28px` for `.btn-sm`). Inline `background: '#1e88e5'/'#1565c0'` overrides removed everywhere user-facing. Disabled state now uses `var(--accent-dark)` + `opacity: 0.4` for a clean black-family look.
+- **Tests**: pytest **19/19 PASS** (6 new in `test_draft_history.py` + 13 regression in `test_draft_review_flow.py`). Frontend Playwright e2e green on history-render, hide-when-empty, stepper visual, primary-CTA color check, no-meeting-strings.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
