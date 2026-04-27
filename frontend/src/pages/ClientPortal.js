@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
-import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2 } from "lucide-react";
+import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2 } from "lucide-react";
 
 const PHASES = [
   { key: "profile", label: "Profile" },
@@ -108,11 +108,12 @@ function fmtSize(b) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function DocItem({ doc, onUpload, onDefer, busy, onView, mode = "list" }) {
+function DocItem({ doc, onUpload, onDefer, onRemove, busy, onView, mode = "list" }) {
   const isDone = ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(doc.status);
   const isIssue = doc.status === "ISSUE";
   const isReUploaded = doc.status === "UPLOADED" && doc.re_uploaded_at;
   const showUpdated = isReUploaded || (isDone && doc.uploaded_at && (new Date() - new Date(doc.uploaded_at) < 7 * 86400000));
+  const canRemove = isDone && doc.status === "UPLOADED" && mode === "interactive";
   return (
     <div data-testid={`doc-item-${doc.id}`} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "16px 0", borderBottom: "1px solid var(--border-default)", gap: 12 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -125,21 +126,41 @@ function DocItem({ doc, onUpload, onDefer, busy, onView, mode = "list" }) {
         </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{doc.description}</div>
         {isDone && doc.file_name && (
-          <button
-            type="button"
-            onClick={() => onView?.(doc)}
-            data-testid={`uploaded-file-${doc.id}`}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 8, marginTop: 10,
-              padding: "6px 10px", background: "var(--bg-subtle)", borderRadius: 6,
-              fontSize: 12, color: "var(--text-primary)", border: "1px solid var(--border-default)",
-              cursor: onView ? "pointer" : "default", maxWidth: "100%",
-            }}
-          >
-            <FileText size={12} style={{ color: "#1565c0", flexShrink: 0 }} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280 }}>{doc.file_name}</span>
-            {doc.file_size > 0 && <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtSize(doc.file_size)}</span>}
-          </button>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={() => onView?.(doc)}
+              data-testid={`uploaded-file-${doc.id}`}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "6px 10px", background: "var(--bg-subtle)", borderRadius: 6,
+                fontSize: 12, color: "var(--text-primary)", border: "1px solid var(--border-default)",
+                cursor: onView ? "pointer" : "default", maxWidth: "100%",
+              }}
+            >
+              <FileText size={12} style={{ color: "#1565c0", flexShrink: 0 }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280 }}>{doc.file_name}</span>
+              {doc.file_size > 0 && <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtSize(doc.file_size)}</span>}
+            </button>
+            {canRemove && (
+              <button
+                type="button"
+                onClick={() => onRemove?.(doc)}
+                disabled={busy === doc.id}
+                data-testid={`remove-${doc.id}`}
+                title="Remove file"
+                style={{
+                  width: 28, height: 28, borderRadius: 6,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  color: "#c62828", background: "transparent", transition: "background-color 120ms ease",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#fef5f5"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, marginTop: 2 }}>
@@ -296,6 +317,14 @@ export default function ClientPortal() {
     try { await api.post(`/documents/${doc.id}/defer`); await loadAll(); } catch (x) { setErr(fmtError(x)); }
   };
 
+  const onRemove = async (doc) => {
+    if (!window.confirm(`Remove "${doc.file_name || doc.name}"?`)) return;
+    setBusy(doc.id); setErr("");
+    try { await api.delete(`/documents/${doc.id}/upload`); await loadAll(); }
+    catch (x) { setErr(fmtError(x)); }
+    setBusy(null);
+  };
+
   const onAnswer = async (q, answer) => {
     setBusy(q.id);
     try { await api.patch(`/engagements/${eng.id}/cpa-questions/${q.id}`, { answer }); await loadAll(); }
@@ -403,7 +432,7 @@ export default function ClientPortal() {
       {(phase === 1 || (phase === 0 && forceUploadMode)) && (
         <div className="card" data-testid="docs-interactive-card">
           <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS WE NEED</div>
-          {visibleDocs.filter((d) => d.status !== "ISSUE").map((d) => <DocItem key={d.id} doc={d} mode="interactive" onUpload={onUpload} onView={onView} onDefer={onDefer} busy={busy} />)}
+          {visibleDocs.filter((d) => d.status !== "ISSUE").map((d) => <DocItem key={d.id} doc={d} mode="interactive" onUpload={onUpload} onView={onView} onDefer={onDefer} onRemove={onRemove} busy={busy} />)}
           {issueDocs.map((d) => <div key={d.id} style={{ marginTop: 18 }}><IssueCard doc={d} onUpload={onUpload} /></div>)}
         </div>
       )}

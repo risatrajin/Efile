@@ -971,6 +971,44 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
     return {"ok": True}
 
 
+@api.delete("/documents/{doc_id}/upload")
+async def doc_remove_upload(doc_id: str, user: dict = Depends(get_current_user)):
+    """Remove an uploaded file (S3 or local) and reset the doc back to PENDING."""
+    db = get_db()
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    eng = await get_engagement_or_404(doc["engagement_id"], user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "WS partners cannot remove documents")
+    if doc.get("status") not in ("UPLOADED", "REVIEWED", "EXTRACTED"):
+        raise HTTPException(400, "Nothing to remove")
+
+    key = doc.get("object_key") or ""
+    if key.startswith("local://"):
+        path = key[len("local://"):]
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except Exception as e:
+            log.warning("Failed to remove local file %s: %s", path, e)
+    elif key:
+        try:
+            s3_service.get_client().delete_object(Bucket=s3_service.bucket_name(), Key=key)
+        except Exception as e:
+            log.warning("Failed to delete S3 object %s: %s", key, e)
+
+    await db.documents.update_one({"id": doc_id}, {
+        "$set": {"status": "PENDING"},
+        "$unset": {"object_key": "", "storage": "", "file_name": "", "file_size": "", "mime_type": "", "uploaded_at": "", "extracted_data": ""},
+    })
+    # Also remove any extracted rows tied to this doc
+    await db.extracted_data.delete_many({"document_id": doc_id})
+    if eng.get("assigned_cpa_id"):
+        await notify(eng["assigned_cpa_id"], "Document removed", f"{doc['name']} was removed by the client", "document_removed", eng["id"])
+    return {"ok": True}
+
+
 @api.post("/documents/{doc_id}/upload")
 async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     """Server-side proxy upload — tries S3, falls back to local disk if S3 unavailable.
