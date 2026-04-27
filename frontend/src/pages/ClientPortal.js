@@ -501,48 +501,37 @@ export default function ClientPortal() {
 
       {err && <div className="alert alert-risk">{err}</div>}
 
-      {/* PROFILE STAGE */}
-      {phase === 0 && !forceUploadMode && (
+      {/* PROFILE + DOCUMENTS combined — always active, no Start uploading button */}
+      {(phase === 0 || phase === 1) && (
         <>
-          <div className="card" data-testid="profile-success">
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18 }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f5e9", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Check size={18} style={{ color: "#2e7d32" }} />
+          {phase === 0 && (
+            <div className="card" data-testid="profile-success">
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f5e9", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Check size={18} style={{ color: "#2e7d32" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>Your profile has been created</div>
+                  <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>CloudTax has set up your engagement — you can begin uploading documents below</div>
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>Your profile has been created</div>
-                <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>CloudTax has set up your engagement — you&apos;re ready to start</div>
+              <div style={{ borderTop: "1px solid var(--border-default)", paddingTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px 24px" }}>
+                <div><div className="section-label">FULL NAME</div><div style={{ fontSize: 14, marginTop: 4 }}>{user?.name}</div></div>
+                <div><div className="section-label">CORPORATION</div><div style={{ fontSize: 14, marginTop: 4 }}>{corp.name || "—"}</div></div>
+                <div><div className="section-label">BUSINESS NUMBER</div><div style={{ fontSize: 14, marginTop: 4 }}>{corp.business_number || "—"}</div></div>
+                <div><div className="section-label">FISCAL YEAR END</div><div style={{ fontSize: 14, marginTop: 4 }}>{fmtDate(corp.fiscal_year_end)}</div></div>
+                <div><div className="section-label">PROVINCE</div><div style={{ fontSize: 14, marginTop: 4 }}>{corp.province === "ON" ? "Ontario" : corp.province || "—"}</div></div>
+                <div><div className="section-label">ASSIGNED CPA</div><div style={{ fontSize: 14, marginTop: 4 }}>{cpa?.name || "Pending"}</div></div>
               </div>
             </div>
-            <div style={{ borderTop: "1px solid var(--border-default)", paddingTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px 24px" }}>
-              <div><div className="section-label">FULL NAME</div><div style={{ fontSize: 14, marginTop: 4 }}>{user?.name}</div></div>
-              <div><div className="section-label">CORPORATION</div><div style={{ fontSize: 14, marginTop: 4 }}>{corp.name || "—"}</div></div>
-              <div><div className="section-label">BUSINESS NUMBER</div><div style={{ fontSize: 14, marginTop: 4 }}>{corp.business_number || "—"}</div></div>
-              <div><div className="section-label">FISCAL YEAR END</div><div style={{ fontSize: 14, marginTop: 4 }}>{fmtDate(corp.fiscal_year_end)}</div></div>
-              <div><div className="section-label">PROVINCE</div><div style={{ fontSize: 14, marginTop: 4 }}>{corp.province === "ON" ? "Ontario" : corp.province || "—"}</div></div>
-              <div><div className="section-label">ASSIGNED CPA</div><div style={{ fontSize: 14, marginTop: 4 }}>{cpa?.name || "Pending"}</div></div>
-            </div>
-          </div>
+          )}
 
-          <div className="card" data-testid="docs-needed-card">
+          <div className="card" data-testid="docs-interactive-card">
             <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS WE NEED</div>
-            {visibleDocs.map((d) => <DocItem key={d.id} doc={d} mode="summary" />)}
-            <button
-              onClick={() => setForceUploadMode(true)}
-              style={{ marginTop: 18, width: "100%", padding: "14px", borderRadius: 10, border: "1.5px solid #1e88e5", color: "#1e88e5", background: "#fff", fontSize: 14, fontWeight: 500 }}
-              data-testid="start-uploading"
-            >Start uploading →</button>
+            {visibleDocs.filter((d) => d.status !== "ISSUE").map((d) => <DocItem key={d.id} doc={d} mode="interactive" onUpload={onUpload} onView={onView} onDefer={onDefer} onRemove={onRemove} busy={busy} />)}
+            {issueDocs.map((d) => <div key={d.id} style={{ marginTop: 18 }}><IssueCard doc={d} onUpload={onUpload} /></div>)}
           </div>
         </>
-      )}
-
-      {/* DOCUMENTS STAGE — also shown if client clicked Start uploading early */}
-      {(phase === 1 || (phase === 0 && forceUploadMode)) && (
-        <div className="card" data-testid="docs-interactive-card">
-          <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS WE NEED</div>
-          {visibleDocs.filter((d) => d.status !== "ISSUE").map((d) => <DocItem key={d.id} doc={d} mode="interactive" onUpload={onUpload} onView={onView} onDefer={onDefer} onRemove={onRemove} busy={busy} />)}
-          {issueDocs.map((d) => <div key={d.id} style={{ marginTop: 18 }}><IssueCard doc={d} onUpload={onUpload} /></div>)}
-        </div>
       )}
 
       {/* PREPARATION STAGE */}
