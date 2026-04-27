@@ -117,6 +117,16 @@
 - **Primary CTA uniformity**: all primary action buttons across **Client Portal**, **CPA Engagement**, **Admin Dashboard / Client Detail**, **WS Dashboard / Onboarding Detail** now use `.btn .btn-primary` (= `var(--accent-dark)` = `#1a1a1a` black) with consistent `min-height: 36px` (or `28px` for `.btn-sm`). Inline `background: '#1e88e5'/'#1565c0'` overrides removed everywhere user-facing. Disabled state now uses `var(--accent-dark)` + `opacity: 0.4` for a clean black-family look.
 - **Tests**: pytest **19/19 PASS** (6 new in `test_draft_history.py` + 13 regression in `test_draft_review_flow.py`). Frontend Playwright e2e green on history-render, hide-when-empty, stepper visual, primary-CTA color check, no-meeting-strings.
 
+### Iter 17 (Feb 2026 — File-with-CRA, Filed celebration, T183 e-signature)
+- **Backend `POST /api/engagements/{eid}/file-with-cra`** (CPA/Admin only): accepts `cra_confirmation`, `filing_datetime` (ISO), optional `note` as query params + `file` (PDF) multipart. Validates client has approved + status ∈ {IN_REVIEW, DELIVERY}, persists FILED_RETURN document, sets engagement.status=FILED, filing_confirmation, filing_date, filed_return_doc_id, filing_note, filed_by_id/name. Logs status change + notifies client.
+- **Backend `POST /api/engagements/{eid}/t183/sign`** (Client only): accepts JSON `{signature: data:image/png;base64,…, signer_name}`. Persists `t183_signature`, `t183_signed_at`, `t183_signed_name`. Notifies CPA. CPA/ADMIN/WS_PARTNER → 403.
+- **Backend `GET /api/engagements/{eid}/t183`** returns sign metadata; **`GET /api/engagements/{eid}/t183/file`** returns the bundled CRA T183CORP PDF (`/app/backend/templates/t183-25e.pdf`).
+- **Frontend `<FileWithCRACard>`** (CPA Engagement page, `CpaEngagement.js`): black "File Now" CTA appears once `review_decision.decision='approved'` and status≠FILED; reveals form with CRA confirmation, datetime-local input, PDF dropzone, optional note.
+- **Frontend `<SignaturePadModal>`** (`/app/frontend/src/components/shared/SignaturePadModal.js`): HTML5 canvas signature pad with high-DPR scaling, mouse + touch support, Clear button, name input, validation.
+- **Frontend `<T183Card>`** (Client Portal): standalone card showing T183 row + Preview + Sign T183 button → opens modal; once signed shows green "Signed" badge + signed-by line + signature image preview. Renders in BOTH Review (phase 3) and Filed (phase 4) so the signature stays visible after filing.
+- **Frontend Filed celebration**: 🎉 Congratulations card now powered by real engagement data (`filed_by_name`, `filing_date`, `filing_confirmation`) + black "Download filed return" wired to `filed_return_doc_id` (not the draft).
+- **Tests**: 14 NEW tests in `test_file_and_t183.py` — ALL 14/14 PASS (RBAC for both endpoints, validation: empty signature/empty name/invalid data URL, status preconditions, success path, metadata GET reflects sign). Frontend e2e verified on Thompson (FILED): T183 card + signed badge + signature image all render in both Review and Filed phases.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
