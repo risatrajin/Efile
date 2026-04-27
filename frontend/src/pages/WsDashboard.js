@@ -44,7 +44,7 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
       corp_name: corp.name || "",
       fiscal_year_end: corp.fiscal_year_end ? new Date(corp.fiscal_year_end).toISOString().slice(0, 10) : "2025-12-31",
       tier: existing?.tier || "STANDARD",
-      notes: existing?.notes || "",
+      notes: existing?.partner_notes || existing?.notes || "",
     };
   });
 

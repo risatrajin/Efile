@@ -67,7 +67,7 @@ export default function WsOnboardingDetail() {
         corp_name: corp.name || "",
         fiscal_year_end: corp.fiscal_year_end ? new Date(corp.fiscal_year_end).toISOString().slice(0, 10) : "",
         tier: data.tier || "STANDARD",
-        notes: data.notes || "",
+        notes: data.partner_notes || data.notes || "",
       });
       setChecklist(data.pre_filing_checklist || []);
     } catch (x) { setErr(fmtError(x)); }

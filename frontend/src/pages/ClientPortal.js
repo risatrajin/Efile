@@ -253,6 +253,107 @@ function fmtCurrency(n) {
   return n < 0 ? `($${Math.abs(n).toLocaleString()})` : `$${n.toLocaleString()}`;
 }
 
+function ReviewDecisionCard({ onSubmit }) {
+  const [mode, setMode] = useState(null); // 'good' | 'issue' | null
+  const [issue, setIssue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submitGood = async () => {
+    setBusy(true);
+    await onSubmit("approved");
+    setBusy(false);
+  };
+  const submitIssue = async () => {
+    if (!issue.trim()) return;
+    setBusy(true);
+    await onSubmit("issue", issue.trim());
+    setBusy(false);
+  };
+
+  if (!mode) {
+    return (
+      <div className="card" data-testid="review-decision-card">
+        <div className="section-label" style={{ marginBottom: 8 }}>YOUR REVIEW</div>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 16 }}>After previewing the draft, let us know your decision.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <button
+            onClick={() => setMode("good")}
+            data-testid="review-good"
+            style={{
+              padding: "16px 18px", borderRadius: 12, background: "#fff",
+              border: "2px solid #2e7d32", color: "#2e7d32",
+              fontSize: 14, fontWeight: 600,
+              display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4,
+              transition: "background-color 120ms ease",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "#e8f5e9"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>👍 Everything looks good</span>
+            <span className="muted" style={{ fontSize: 11, fontWeight: 400, color: "#2e7d32" }}>Authorize CPA to file with CRA</span>
+          </button>
+          <button
+            onClick={() => setMode("issue")}
+            data-testid="review-issue"
+            style={{
+              padding: "16px 18px", borderRadius: 12, background: "#fff",
+              border: "2px solid #c62828", color: "#c62828",
+              fontSize: 14, fontWeight: 600,
+              display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4,
+              transition: "background-color 120ms ease",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "#fef5f5"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><AlertCircle size={16} /> I found an issue</span>
+            <span className="muted" style={{ fontSize: 11, fontWeight: 400, color: "#c62828" }}>Send a correction request to your CPA</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "good") {
+    return (
+      <div className="card" data-testid="review-good-confirm" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: "#2e7d32", marginBottom: 8 }}>Approve this return?</h3>
+        <p style={{ fontSize: 13, color: "#2e7d32", marginBottom: 16 }}>
+          Your CPA will file the return with CRA on your behalf. You will not be able to make further changes after this point.
+        </p>
+        <div className="flex gap-2" style={{ justifyContent: "flex-end" }}>
+          <button onClick={() => setMode(null)} className="btn btn-secondary btn-sm">Back</button>
+          <button onClick={submitGood} disabled={busy} data-testid="review-good-confirm-btn"
+            style={{ padding: "10px 22px", borderRadius: 8, background: "#2e7d32", color: "#fff", fontSize: 13, fontWeight: 500 }}
+          >{busy ? "Submitting…" : "Yes, approve and file"}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" data-testid="review-issue-form" style={{ background: "#fef5f5", border: "1px solid #f3c0c0" }}>
+      <h3 style={{ fontSize: 16, fontWeight: 600, color: "#c62828", marginBottom: 8 }}>Describe the issue</h3>
+      <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Be as specific as possible — page numbers, line items, expected vs reported figures.</p>
+      <textarea
+        value={issue} onChange={(e) => setIssue(e.target.value)}
+        placeholder="e.g. 'Net income on page 2 doesn't match my Q4 statement — should be $284,500 not $284,000.'"
+        data-testid="issue-textarea"
+        style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid var(--border-default)", fontSize: 13, minHeight: 110, fontFamily: "inherit", outline: "none" }}
+      />
+      <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+        <button onClick={() => setMode(null)} className="btn btn-secondary btn-sm">Back</button>
+        <button
+          onClick={submitIssue}
+          disabled={!issue.trim() || busy}
+          data-testid="issue-submit-btn"
+          style={{ padding: "10px 22px", borderRadius: 8, background: issue.trim() ? "#c62828" : "#f3c0c0", color: "#fff", fontSize: 13, fontWeight: 500 }}
+        >{busy ? "Submitting…" : "Submit issue"}</button>
+      </div>
+    </div>
+  );
+}
+
+
 export default function ClientPortal() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -348,6 +449,13 @@ export default function ClientPortal() {
       await loadAll();
     } catch (x) { setErr(fmtError(x)); }
     setAuthBusy(false);
+  };
+
+  const submitReviewDecision = async (decision, issueNote) => {
+    try {
+      await api.post(`/engagements/${eng.id}/review-decision`, { decision, issue_note: issueNote || null });
+      await loadAll();
+    } catch (x) { setErr(fmtError(x)); }
   };
 
   // Empty state
@@ -470,62 +578,64 @@ export default function ClientPortal() {
             <div className="avatar" style={{ width: 36, height: 36, fontSize: 12, flexShrink: 0 }}>{initials(cpa?.name || "CPA")}</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{cpa?.name || "Your CPA"}</div>
-              <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
-                Your draft T2 return is ready for your review. Please check the figures below, confirm the checklist, and authorize us to file with CRA.
+              <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                {eng.review_instructions || "Your draft T2 return is ready for your review. Please open the preview, then let us know if everything looks good or if you spot an issue."}
               </div>
             </div>
           </div>
 
           <div className="card" data-testid="tax-summary-card">
             <div className="section-label" style={{ marginBottom: 16 }}>TAX SUMMARY</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: "var(--bg-subtle)", borderRadius: 10 }}>
-              <div style={{ width: 36, height: 44, borderRadius: 6, background: "#c62828", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>PDF</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{t2DraftDoc?.file_name || `T2_Draft_Return_${user?.name?.split(" ").slice(-1)[0] || "Client"}_${new Date().getFullYear()}.pdf`}</div>
-                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                  Uploaded by {cpa?.name || "your CPA"} · {fmtDate(eng.updated_at || eng.created_at)} · 284 KB
+            {t2DraftDoc ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: "var(--bg-subtle)", borderRadius: 10 }}>
+                <div style={{ width: 36, height: 44, borderRadius: 6, background: "#c62828", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>PDF</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t2DraftDoc.file_name}</div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                    Uploaded by {cpa?.name || "your CPA"} · {fmtDate(t2DraftDoc.uploaded_at)} · {t2DraftDoc.file_size ? `${Math.round(t2DraftDoc.file_size / 1024)} KB` : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onView(t2DraftDoc)}
+                  style={{ background: "#1e88e5", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6 }}
+                  data-testid="preview-t2"
+                ><Eye size={14} /> Preview</button>
+              </div>
+            ) : (
+              <div className="muted" style={{ fontSize: 13, padding: 14, background: "var(--bg-subtle)", borderRadius: 10 }}>Your CPA will share the draft return shortly.</div>
+            )}
+          </div>
+
+          {eng.review_decision?.decision === "approved" ? (
+            <div className="card" data-testid="approved-card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#2e7d32", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Check size={18} style={{ color: "#fff" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "#2e7d32" }}>You approved the return</div>
+                  <div style={{ fontSize: 13, color: "#2e7d32", marginTop: 4 }}>Your CPA has been notified and will file with CRA shortly.</div>
                 </div>
               </div>
-              <button
-                onClick={() => t2DraftDoc && onView(t2DraftDoc)}
-                style={{ background: "#1e88e5", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6 }}
-                data-testid="preview-t2"
-              ><Eye size={14} /> Preview</button>
             </div>
-          </div>
+          ) : eng.review_decision?.decision === "issue" ? (
+            <div className="card" data-testid="issue-submitted-card" style={{ background: "#fef5f5", border: "1px solid #f3c0c0" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                <AlertCircle size={20} style={{ color: "#c62828", marginTop: 2, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#c62828" }}>Issue submitted to your CPA</div>
+                  <div style={{ fontSize: 13, color: "var(--text-primary)", marginTop: 8, lineHeight: 1.6, whiteSpace: "pre-wrap", padding: "10px 12px", background: "#fff", borderRadius: 8 }}>{eng.review_decision.issue_note}</div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Your CPA will fix this and re-share the draft.</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <ReviewDecisionCard onSubmit={submitReviewDecision} />
+          )}
 
           <div className="card" data-testid="docs-submitted-card">
             <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS SUBMITTED</div>
             {visibleDocs.map((d) => <DocItem key={d.id} doc={d} mode="summary" />)}
-          </div>
-
-          <div className="card" data-testid="authorize-card">
-            <div className="section-label" style={{ marginBottom: 8 }}>AUTHORIZE FILING</div>
-            <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Confirm each item, then authorize your CPA to submit to CRA.</p>
-            <div className="stack-sm">
-              {AUTH_ITEMS.map((it) => (
-                <label key={it.k} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 4px", cursor: "pointer", fontSize: 13 }} data-testid={`auth-item-${it.k}`}>
-                  <input
-                    type="checkbox" checked={!!authChecks[it.k]}
-                    onChange={(e) => setAuthChecks({ ...authChecks, [it.k]: e.target.checked })}
-                    style={{ width: 18, height: 18, accentColor: "#1e88e5" }}
-                    data-testid={`auth-checkbox-${it.k}`}
-                  />
-                  <span>{it.label}</span>
-                </label>
-              ))}
-            </div>
-            <button
-              onClick={onAuthorize}
-              disabled={!allAuthed || authBusy}
-              data-testid="authorize-btn"
-              style={{
-                marginTop: 18, width: "100%", padding: "14px", borderRadius: 10,
-                background: allAuthed ? "#1e88e5" : "#bbdefb", color: "#fff",
-                fontSize: 14, fontWeight: 500, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-                cursor: allAuthed ? "pointer" : "not-allowed",
-              }}
-            >👍 Authorize filing with CRA</button>
           </div>
         </>
       )}

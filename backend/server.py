@@ -110,6 +110,8 @@ class UpdateEngagementIn(BaseModel):
     cra_access_method: Optional[str] = None
     cra_programs: Optional[dict] = None
     filing_confirmation: Optional[str] = None
+    filing_date: Optional[datetime] = None
+    review_instructions: Optional[str] = None
 
 
 class OpportunityIn(BaseModel):
@@ -233,7 +235,8 @@ async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
 
 
 def redact_for_ws(eng: dict) -> dict:
-    # WS partners never see notes or extracted financial data (handled server-side in queries)
+    # WS partners never see CPA's internal notes or extracted financial data.
+    # They CAN see their own onboarding notes (partner_notes).
     eng = dict(eng)
     eng.pop("notes", None)
     return eng
@@ -241,10 +244,12 @@ def redact_for_ws(eng: dict) -> dict:
 
 def redact_for_client(eng: dict) -> dict:
     eng = dict(eng)
-    # Clients never see pricing / tier labels / notes
+    # Clients never see pricing / tier labels / internal notes
     eng["tier"] = None
     eng["original_tier"] = None
     eng.pop("notes", None)
+    eng.pop("partner_notes", None)
+    return eng
     return eng
 
 
@@ -776,7 +781,7 @@ async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depe
         eng_updates["tier"] = body.tier
         eng_updates["original_tier"] = body.tier
     if body.notes is not None:
-        eng_updates["notes"] = body.notes
+        eng_updates["partner_notes"] = body.notes
     if eng_updates:
         eng_updates["updated_at"] = datetime.now(timezone.utc)
         await db.engagements.update_one({"id": eid}, {"$set": eng_updates})
@@ -1691,6 +1696,136 @@ async def authorize_filing(eid: str, body: AuthorizeFilingIn, user: dict = Depen
     }})
     if eng.get("assigned_cpa_id"):
         await notify(eng["assigned_cpa_id"], "Client authorized filing", "Ready to submit to CRA", "authorized", eid)
+    return {"ok": True}
+
+
+# ==================== Client review decision (Tax Summary) ====================
+
+class ReviewDecisionIn(BaseModel):
+    decision: str  # 'approved' | 'issue'
+    issue_note: Optional[str] = None
+
+
+@api.post("/engagements/{eid}/review-decision")
+async def submit_review_decision(eid: str, body: ReviewDecisionIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] != "CLIENT":
+        raise HTTPException(403, "Only the client can submit a review decision")
+    if body.decision not in ("approved", "issue"):
+        raise HTTPException(400, "decision must be 'approved' or 'issue'")
+    if body.decision == "issue" and not (body.issue_note or "").strip():
+        raise HTTPException(400, "issue_note required when decision is 'issue'")
+    decision_doc = {
+        "decision": body.decision,
+        "issue_note": (body.issue_note or "").strip() if body.decision == "issue" else None,
+        "submitted_at": datetime.now(timezone.utc),
+    }
+    await db.engagements.update_one({"id": eid}, {"$set": {
+        "review_decision": decision_doc,
+        "updated_at": datetime.now(timezone.utc),
+    }})
+    if eng.get("assigned_cpa_id"):
+        if body.decision == "approved":
+            await notify(eng["assigned_cpa_id"], "Client approved the return", "Filing can begin.", "client_approved", eid)
+        else:
+            await notify(eng["assigned_cpa_id"], "Client flagged an issue", body.issue_note[:120], "client_issue", eid)
+    return {"ok": True, "review_decision": decision_doc}
+
+
+# ==================== CPA: Upload draft + Move to Review ====================
+
+class MoveToReviewIn(BaseModel):
+    instructions: Optional[str] = None
+
+
+@api.post("/engagements/{eid}/upload-draft")
+async def upload_draft_pdf(eid: str, file: UploadFile = File(...), instructions: Optional[str] = None, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    """CPA uploads the T2 draft PDF. Stored as a normal document with category=T2_DRAFT.
+    Stays in IN_PREP — moving to IN_REVIEW is a separate explicit action."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if eng["status"] not in ("IN_PREP", "IN_REVIEW"):
+        raise HTTPException(400, "Draft can only be uploaded during IN_PREP or IN_REVIEW")
+
+    body = await file.read()
+    if not body:
+        raise HTTPException(400, "Empty file")
+    if len(body) > 50 * 1024 * 1024:
+        raise HTTPException(413, "File exceeds 50 MB limit")
+
+    safe_name = "".join(c for c in (file.filename or "draft.pdf") if c.isalnum() or c in "._-")[:80] or "draft.pdf"
+    object_key = f"engagements/{eid}/draft/{uuid.uuid4().hex}_{safe_name}"
+    content_type = file.content_type or "application/pdf"
+
+    storage = "s3"
+    if not s3_service.put_object_bytes(object_key, body, content_type):
+        storage = "local"
+        local_dir = os.path.join(os.path.dirname(__file__), "uploads", eid, "draft")
+        os.makedirs(local_dir, exist_ok=True)
+        local_path = os.path.join(local_dir, f"{uuid.uuid4().hex}_{safe_name}")
+        with open(local_path, "wb") as f:
+            f.write(body)
+        object_key = f"local://{local_path}"
+
+    # Find or create the T2_DRAFT document for this engagement
+    now = datetime.now(timezone.utc)
+    draft_doc = await db.documents.find_one({"engagement_id": eid, "category": "T2_DRAFT"})
+    if draft_doc:
+        # Replace prior draft (delete previous bytes if local)
+        prev = draft_doc.get("object_key") or ""
+        if prev.startswith("local://"):
+            try:
+                p = prev[len("local://"):]
+                if os.path.isfile(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        await db.documents.update_one({"id": draft_doc["id"]}, {"$set": {
+            "status": "UPLOADED",
+            "object_key": object_key, "storage": storage,
+            "file_name": file.filename, "file_size": len(body), "mime_type": content_type,
+            "uploaded_at": now,
+        }})
+        draft_id = draft_doc["id"]
+    else:
+        draft_id = str(uuid.uuid4())
+        await db.documents.insert_one({
+            "id": draft_id, "engagement_id": eid,
+            "category": "T2_DRAFT", "name": "T2 Draft Return",
+            "description": "CPA-prepared draft return for client review",
+            "is_required": False, "sort_order": 9999,
+            "status": "UPLOADED", "object_key": object_key, "storage": storage,
+            "file_name": file.filename, "file_size": len(body), "mime_type": content_type,
+            "uploaded_at": now, "created_at": now,
+        })
+
+    eng_set = {"t2_draft_doc_id": draft_id, "updated_at": now}
+    if instructions is not None:
+        eng_set["review_instructions"] = instructions.strip()
+    await db.engagements.update_one({"id": eid}, {"$set": eng_set})
+    return {"ok": True, "doc_id": draft_id, "file_name": file.filename, "storage": storage}
+
+
+@api.post("/engagements/{eid}/move-to-review")
+async def move_to_review(eid: str, body: MoveToReviewIn, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    """Advance IN_PREP -> IN_REVIEW. Requires a T2 draft to be uploaded first."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if eng["status"] != "IN_PREP":
+        raise HTTPException(400, f"Cannot move to Review from {eng['status']}")
+    if not eng.get("t2_draft_doc_id"):
+        raise HTTPException(400, "Upload a T2 draft PDF before moving to Review")
+    now = datetime.now(timezone.utc)
+    eng_set = {"status": "IN_REVIEW", "updated_at": now}
+    if body.instructions is not None:
+        eng_set["review_instructions"] = body.instructions.strip()
+    await db.engagements.update_one({"id": eid}, {"$set": eng_set})
+    await log_status_change(eid, user["id"], "IN_PREP", "IN_REVIEW", "Draft uploaded; ready for client review")
+    # Notify client
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if corp:
+        await notify(corp["client_id"], "Your draft return is ready for review", "Please review and confirm in your portal.", "draft_ready", eid)
     return {"ok": True}
 
 

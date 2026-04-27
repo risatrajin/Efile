@@ -4,6 +4,7 @@ import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
 import { ArrowLeft, ArrowRight, MessageSquare, CalendarDays, Video } from "lucide-react";
+import MoveToDropdown from "../components/shared/MoveToDropdown";
 
 export default function AdminClientDetail() {
   const navigate = useNavigate();
@@ -94,17 +95,37 @@ export default function AdminClientDetail() {
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <button className="btn btn-secondary"><MessageSquare size={12} /> Message client</button>
-            <button
-              className="btn btn-primary"
-              style={{ background: ready ? "#1565c0" : "#9bc4ea", cursor: ready ? "pointer" : "not-allowed" }}
-              disabled={!ready || busy}
-              onClick={assignAndMove}
-              data-testid="move-to-intake"
-            >
-              {eng.status === "REFERRED" ? "Move to Intake" : "Update assignment"} <ArrowRight size={12} />
-            </button>
+            <MoveToDropdown
+              current={eng.status}
+              onChange={async (next) => {
+                setBusy(true); setErr("");
+                try {
+                  if (next === "IN_REVIEW" && !eng.t2_draft_doc_id) {
+                    await api.post(`/engagements/${eid}/move-to-review`, {});
+                  } else {
+                    await api.patch(`/engagements/${eid}`, { status: next });
+                  }
+                  await load();
+                } catch (x) { setErr(fmtError(x)); }
+                setBusy(false);
+              }}
+              disabledKeys={
+                eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
+              }
+              note={eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? "CPA must upload the T2 draft PDF before moving to Review." : null}
+              testid="admin-move-to"
+            />
+            {ready && eng.status === "REFERRED" && (
+              <button
+                className="btn btn-primary"
+                style={{ background: "#1565c0" }}
+                disabled={busy}
+                onClick={assignAndMove}
+                data-testid="move-to-intake"
+              >Assign &amp; Move to Intake <ArrowRight size={12} /></button>
+            )}
           </div>
         </div>
 
