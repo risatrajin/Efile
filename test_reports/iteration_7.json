@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 7 — Verified all 5 fixes from main agent: (1) UploadDraftCard cancel-X inline 2-step confirm UX (Confirm? morph + 4s auto-reset + 2nd-click DELETE), (2) UploadDraftCard 2nd-time upload after input.value reset, (3) ClientPortal /api/engagements polling at 20s interval (auto re-renders fresh ReviewDecisionCard after CPA re-uploads a new draft, replacing 'Issue submitted' card without manual refresh), (4) Button-size consistency (.btn-sm = 28px) in UploadDraftCard, (5) Backend regression (13/13 tests in test_draft_review_flow.py PASS). All UI tests executed live against https://health-wealth-tax.preview.emergentagent.com using terryann@cloudtax.ca (CPA) and thompson@example.com (Client) in two browser contexts. The polling test waited 22 seconds and confirmed the client tab's ReviewDecisionCard re-rendered automatically after a CPA-side draft upload mutated the engagement (review_decision cleared server-side).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_draft_review_flow.py",
+    "/app/test_reports/pytest/pytest_draft_review.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ClientPortal polling useEffect (lines 393-396) correctly registers a 20-second setInterval on mount and clears it on unmount. Works as designed but note that polling fires regardless of tab visibility — for production, consider using document.visibilityState or 'visibilitychange' listener to pause polling on hidden tabs to save resources.",
+    "UploadDraftCard.handleCancelClick uses confirmTimerRef + 4s setTimeout for auto-reset; this is solid. Consider clearing the timer on component unmount to avoid setState-after-unmount warnings (low priority — only triggers if user navigates away within the 4s window).",
+    "Inline 'Confirm?' button uses inline style override (background #fef5f5, color #c62828) — works but could be moved to a CSS class .btn-danger-confirm for consistency. Cosmetic only.",
+    "submit() resets inputRef.current.value = '' after upload (line 45) — exactly the right fix for re-picking same file. Verified live: submit button re-enabled after 2nd file pick.",
+    "Button height unification confirmed at 28px for all 3 btn-sm in UploadDraftCard (download/cancel/submit). index.css min-height rules are working.",
+    "server.py is now 2310 lines — split into routers strongly recommended (carry-over from iter 4/5/6)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (13/13 passed in 4.79s)",
+    "frontend": "100% on all 3 live e2e tests: cancel-X inline 2-step + auto-reset, 2nd-time upload after input reset, ClientPortal 20s polling auto-refresh"
+  },
+  "test_credentials": "ADMIN admin@cloudtax.ca | CPA terryann@cloudtax.ca (Thompson's assigned CPA — NOT pallavi) | CLIENT thompson@example.com. All passwords CloudTax2026!.",
+  "seed_data_creation": "No new seed data. Test cleanup ran DELETE /api/engagements/cc22901b-b6a2-4997-b84a-a7bfc2b307f0/draft so Thompson is left at IN_PREP without a draft (matching post-iter-6 baseline).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 3 user-reported bugs from post-iter-6 are FIXED and verified end-to-end: (a) cancel-X works via inline 2-step confirm with 4s auto-reset, (b) 2nd-time upload works because inputRef.current.value is reset after upload, (c) ClientPortal polls /api/engagements every 20s so a fresh ReviewDecisionCard auto-replaces the 'Issue submitted' card after the CPA uploads a new draft. Button heights unified at 28px for btn-sm. Backend test_draft_review_flow.py remains 13/13 PASS — keep as regression suite.",
+  "rca_of_issue": "N/A — all fixes validated against live preview. The polling fix is the most user-visible improvement (closed an integration loop where stale UI state was the only blocker). The inline 2-step confirm is a robust replacement for window.confirm (which is suppressed in many embedded/sandbox environments). The input.value reset is the canonical fix for the 'cannot re-pick same file' DOM quirk.",
+  "mocked_apis": {"aws_s3": "S3 PutObject still falls back to local storage at /app/backend/uploads/{eid}/draft/ — documented expected behavior; no impact on tested flows."}
+}

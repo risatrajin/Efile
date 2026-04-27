@@ -388,6 +388,12 @@ export default function ClientPortal() {
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { loadAll(); }, []);
+  // Poll engagement every 20s so the client sees a fresh ReviewDecisionCard
+  // when the CPA uploads a new draft (review_decision is cleared server-side).
+  useEffect(() => {
+    const id = setInterval(() => { loadAll(); }, 20000);
+    return () => clearInterval(id);
+  }, []);
 
   const onUpload = async (doc, file) => {
     if (!file) return;

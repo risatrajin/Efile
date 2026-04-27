@@ -23,8 +23,13 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
   const [pickedFile, setPickedFile] = useState(null);
   const [instructions, setInstructions] = useState(eng.review_instructions || "");
   const [savedAt, setSavedAt] = useState(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const inputRef = React.useRef();
+  const confirmTimerRef = React.useRef(null);
   const draftDoc = eng.t2_draft_doc_id ? docs.find((d) => d.id === eng.t2_draft_doc_id) : null;
+
+  // Sync instructions when engagement reloads after upload
+  React.useEffect(() => { setInstructions(eng.review_instructions || ""); }, [eng.review_instructions]);
 
   const onDrop = (e) => {
     e.preventDefault(); setDragOver(false);
@@ -36,12 +41,22 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
     if (!pickedFile) return;
     await onUpload(pickedFile, instructions);
     setPickedFile(null);
+    // Reset the file input so re-picking the same file (or any file) reliably fires onChange next time
+    if (inputRef.current) inputRef.current.value = "";
     setSavedAt(new Date());
   };
 
-  const cancelExistingDraft = async () => {
+  // Inline 2-step confirm — avoids window.confirm (blocked by some browsers)
+  const handleCancelClick = async () => {
     if (!draftDoc) return;
-    if (!window.confirm("Remove the current draft? The engagement will move back to In Prep.")) return;
+    if (!confirmCancel) {
+      setConfirmCancel(true);
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = setTimeout(() => setConfirmCancel(false), 4000);
+      return;
+    }
+    if (confirmTimerRef.current) { clearTimeout(confirmTimerRef.current); confirmTimerRef.current = null; }
+    setConfirmCancel(false);
     await onCancelDraft();
   };
 
@@ -57,7 +72,7 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
 
       {/* Existing draft */}
       {draftDoc && (
-        <div data-testid="existing-draft" style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--bg-subtle)", borderRadius: 10, marginBottom: 14 }}>
+        <div data-testid="existing-draft" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", background: "var(--bg-subtle)", borderRadius: 10, marginBottom: 14 }}>
           <div style={{ width: 32, height: 40, borderRadius: 4, background: "#c62828", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>PDF</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{draftDoc.file_name}</div>
@@ -66,19 +81,14 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
           <button className="btn btn-secondary btn-sm" onClick={() => onDownload(draftDoc)} data-testid="download-draft"><Download size={12} /> Download</button>
           <button
             type="button"
-            onClick={cancelExistingDraft}
+            onClick={handleCancelClick}
+            disabled={busy}
             data-testid="cancel-draft"
-            title="Remove this draft"
-            aria-label="Remove this draft"
-            style={{
-              width: 28, height: 28, borderRadius: 6, border: "1px solid var(--border-default)",
-              background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center",
-              color: "var(--text-tertiary)", cursor: "pointer", transition: "all 120ms ease",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#fef5f5"; e.currentTarget.style.color = "#c62828"; e.currentTarget.style.borderColor = "#f3c0c0"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.borderColor = "var(--border-default)"; }}
+            className="btn btn-secondary btn-sm"
+            title={confirmCancel ? "Click again to confirm removal" : "Remove this draft"}
+            style={confirmCancel ? { background: "#fef5f5", color: "#c62828", borderColor: "#f3c0c0" } : undefined}
           >
-            <X size={14} />
+            {confirmCancel ? <><X size={12} /> Confirm?</> : <X size={12} />}
           </button>
         </div>
       )}
@@ -116,7 +126,7 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
       </div>
 
       <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 12 }}>
-        {pickedFile && <button onClick={() => setPickedFile(null)} className="btn btn-secondary btn-sm" data-testid="draft-clear"><X size={12} /> Clear</button>}
+        {pickedFile && <button onClick={() => { setPickedFile(null); if (inputRef.current) inputRef.current.value = ""; }} className="btn btn-secondary btn-sm" data-testid="draft-clear"><X size={12} /> Clear</button>}
         <button onClick={submit} disabled={!pickedFile || busy} className="btn btn-primary btn-sm" data-testid="upload-draft-submit">
           {busy ? "Uploading…" : "Send and Move to Review"}
         </button>
