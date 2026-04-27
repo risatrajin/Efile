@@ -82,7 +82,7 @@ function AddCpaModal({ onClose, onDone }) {
           <div className="stack-md">
             <div className="muted" style={{ fontSize: 13 }}>Invitation created. Share this link if SES is in sandbox:</div>
             <code style={{ display: "block", padding: 12, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all" }} data-testid="cpa-invite-link">{link}</code>
-            <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500 }} data-testid="add-cpa-done">Done</button>
+            <button onClick={onClose} className="btn btn-primary w-full" data-testid="add-cpa-done">Done</button>
           </div>
         ) : (
           <>
@@ -103,10 +103,11 @@ function AddCpaModal({ onClose, onDone }) {
             </div>
             {err && <div className="alert alert-risk" style={{ marginTop: 12 }}>{err}</div>}
             <button onClick={submit} disabled={busy || !form.email || !form.first_name}
-              style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500, fontSize: 14, marginTop: 20 }}
+              className="btn btn-primary w-full"
+              style={{ marginTop: 20 }}
               data-testid="add-cpa-submit"
             >{busy ? "Adding…" : "Add CPA"}</button>
-            <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, marginTop: 8 }}>Cancel</button>
+            <button onClick={onClose} className="btn btn-secondary w-full" style={{ marginTop: 8 }}>Cancel</button>
           </>
         )}
       </div>
@@ -211,7 +212,7 @@ function CpasTab({ engs }) {
         <h2 style={{ fontSize: 22, fontWeight: 700 }}>Experts</h2>
         <button
           onClick={() => setShowAdd(true)}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }}
+          className="btn btn-primary"
           data-testid="add-cpa-open"
         ><Plus size={14} /> Add CPA</button>
       </div>

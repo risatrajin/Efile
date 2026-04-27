@@ -7,6 +7,7 @@ import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared
 import { ChatThread } from "./Messages";
 import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
+import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
 
@@ -439,6 +440,9 @@ export default function CpaEngagement() {
                 busy={busy}
               />
             )}
+
+            {/* Draft + review cycle history (only renders if events exist) */}
+            <DraftHistoryTable eng={eng} />
 
             {/* Document checklist */}
             <div className="card" data-testid="doc-checklist">

@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
-import { ArrowLeft, ArrowRight, MessageSquare, CalendarDays, Video } from "lucide-react";
+import { ArrowLeft, ArrowRight, MessageSquare } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 
 export default function AdminClientDetail() {
@@ -74,7 +74,6 @@ export default function AdminClientDetail() {
   const client = eng.client || {};
   const noteLines = eng.notes ? eng.notes.split(/\n\n+/) : [];
   const ready = !!selectedCpa;
-  const meetingDate = new Date(Date.now() + 2 * 86400000);
 
   return (
     <div className="app-root">
@@ -120,7 +119,6 @@ export default function AdminClientDetail() {
             {ready && eng.status === "REFERRED" && (
               <button
                 className="btn btn-primary"
-                style={{ background: "#1565c0" }}
                 disabled={busy}
                 onClick={assignAndMove}
                 data-testid="move-to-intake"
@@ -159,15 +157,6 @@ export default function AdminClientDetail() {
           </div>
 
           <div className="stack-lg">
-            <div className="card" data-testid="meeting-card" style={{ background: "#e3f2fd", borderColor: "#bbdefb" }}>
-              <div className="flex items-center gap-2"><CalendarDays size={14} style={{ color: "#1565c0" }} /><h2 className="card-title" style={{ margin: 0 }}>Scheduled meeting</h2></div>
-              <div style={{ fontSize: 13, marginTop: 10, fontWeight: 500 }}>Initial Tax Consultation</div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Google Meet</div>
-              <div style={{ fontSize: 13, marginTop: 10 }}>{meetingDate.toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" })}</div>
-              <div className="muted" style={{ fontSize: 12 }}>2:00 PM EST</div>
-              <button className="btn btn-primary btn-sm mt-4" style={{ background: "#1565c0", width: "100%", justifyContent: "center" }}><Video size={12} /> Join meeting</button>
-            </div>
-
             <div className="card" data-testid="assign-cpa-card">
               <h2 className="card-title">Assign CPA</h2>
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Select a CPA to take over from intake.</div>
@@ -180,7 +169,7 @@ export default function AdminClientDetail() {
               </div>
               <div className="flex gap-2 mt-3">
                 {eng.status === "REFERRED" ? (
-                  <button className="btn btn-primary btn-sm w-full" style={{ background: ready ? "#1565c0" : "#9bc4ea", justifyContent: "center" }} disabled={!ready || busy} onClick={assignAndMove} data-testid="assign-and-move">
+                  <button className="btn btn-primary btn-sm w-full" disabled={!ready || busy} onClick={assignAndMove} data-testid="assign-and-move">
                     Assign & Move to Intake
                   </button>
                 ) : (

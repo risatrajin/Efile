@@ -3,6 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
 import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag } from "lucide-react";
+import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 
 const PHASES = [
   { key: "profile", label: "Profile" },
@@ -22,30 +23,39 @@ function statusToPhase(status) {
 }
 
 function Stepper({ current }) {
+  // Minimal, compact, modern progress indicator.
+  // - 8px filled dots for done/active stages, 8px hollow ring for upcoming.
+  // - 1px connecting line, only visible between dots, color shifts at the boundary.
+  // - Small uppercase labels below; active stage label uses primary color + medium weight.
   return (
-    <div style={{ display: "flex", alignItems: "center", padding: "20px 8px" }} data-testid="stepper">
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 0, padding: "10px 4px" }} data-testid="stepper">
       {PHASES.map((p, i) => {
         const done = i < current;
         const active = i === current;
         const reached = done || active;
         return (
           <React.Fragment key={p.key}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "0 0 auto", minWidth: 64 }}>
               <div style={{
-                width: 22, height: 22, borderRadius: "50%",
-                border: `2px solid ${reached ? "#1e88e5" : "#d9d5cf"}`,
-                background: reached ? "#1e88e5" : "#fff",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-              }}>
-                {reached && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff" }} />}
-              </div>
+                width: 10, height: 10, borderRadius: "50%",
+                background: reached ? "var(--accent-dark)" : "transparent",
+                border: `1.5px solid ${reached ? "var(--accent-dark)" : "var(--border-strong)"}`,
+                boxShadow: active ? "0 0 0 4px rgba(26,26,26,0.06)" : "none",
+                transition: "all 160ms ease",
+              }} />
               <div style={{
-                fontSize: 12, marginTop: 8, fontWeight: active ? 600 : 500,
-                color: reached ? "#1e88e5" : "var(--text-tertiary)",
+                fontSize: 11, marginTop: 8,
+                fontWeight: active ? 600 : 400,
+                color: active ? "var(--text-primary)" : reached ? "var(--text-secondary)" : "var(--text-tertiary)",
+                letterSpacing: "0.02em", whiteSpace: "nowrap",
               }}>{p.label}</div>
             </div>
             {i < PHASES.length - 1 && (
-              <div style={{ flex: 1, height: 2, background: i < current ? "#1e88e5" : "#d9d5cf", margin: "-22px 6px 0", alignSelf: "center" }} />
+              <div style={{
+                flex: 1, height: 1, marginTop: 5,
+                background: i < current ? "var(--accent-dark)" : "var(--border-default)",
+                transition: "background-color 160ms ease",
+              }} />
             )}
           </React.Fragment>
         );
@@ -240,7 +250,8 @@ function CpaQuestionItem({ q, onAnswer, busy }) {
             onClick={() => draft.trim() && onAnswer(q, draft.trim())}
             disabled={!draft.trim() || busy}
             data-testid={`q-submit-${q.id}`}
-            style={{ marginTop: 10, padding: "8px 18px", borderRadius: 8, background: draft.trim() ? "#1e88e5" : "#bbdefb", color: "#fff", fontSize: 13, fontWeight: 500 }}
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: 10 }}
           >Submit</button>
         </div>
       </div>
@@ -598,7 +609,7 @@ export default function ClientPortal() {
                 </div>
                 <button
                   onClick={() => onView(t2DraftDoc)}
-                  style={{ background: "#1e88e5", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6 }}
+                  className="btn btn-primary btn-sm"
                   data-testid="preview-t2"
                 ><Eye size={14} /> Preview</button>
               </div>
@@ -633,6 +644,9 @@ export default function ClientPortal() {
           ) : (
             <ReviewDecisionCard onSubmit={submitReviewDecision} />
           )}
+
+          {/* Draft + review cycle history (client-visible — only renders if events exist) */}
+          <DraftHistoryTable eng={eng} title="Your review history" />
 
           <div className="card" data-testid="docs-submitted-card">
             <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS SUBMITTED</div>
@@ -678,12 +692,12 @@ export default function ClientPortal() {
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
               <button
                 onClick={() => t2DraftDoc && onView(t2DraftDoc)}
-                style={{ background: "#1e88e5", color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6 }}
+                className="btn btn-primary btn-sm"
                 data-testid="download-filed"
               ><Download size={14} /> Download filed return</button>
               <button
                 onClick={() => window.open("https://www.canada.ca/en/revenue-agency/services/e-services/digital-services-businesses/business-account.html", "_blank")}
-                style={{ background: "#fff", border: "1px solid var(--border-default)", padding: "10px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6 }}
+                className="btn btn-secondary btn-sm"
                 data-testid="view-cra"
               ><Eye size={14} /> View in CRA My Account</button>
             </div>

@@ -117,7 +117,7 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
               {err && <div className="alert alert-risk">{err}</div>}
               <div className="flex gap-2 mt-2" style={{ justifyContent: "space-between" }}>
                 <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-                <button className="btn btn-primary" disabled={!step1Valid || busy} onClick={goNext} data-testid="ac-next" style={{ background: step1Valid ? "#1565c0" : "#90caf9" }}>
+                <button className="btn btn-primary" disabled={!step1Valid || busy} onClick={goNext} data-testid="ac-next">
                   {busy ? <span className="spinner" /> : <>Next →</>}
                 </button>
               </div>
@@ -175,7 +175,7 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
                 <button className="btn btn-secondary" onClick={() => setStep(1)} data-testid="ac-back">← Back</button>
                 <div className="flex gap-2">
                   <button className="btn btn-secondary" disabled={busy} onClick={() => save(false)} data-testid="ac-draft">Save as draft</button>
-                  <button className="btn btn-primary" disabled={busy} style={{ background: "#1565c0" }} onClick={() => save(true)} data-testid="ac-save-ready">Save & mark ready</button>
+                  <button className="btn btn-primary" disabled={busy} onClick={() => save(true)} data-testid="ac-save-ready">Save & mark ready</button>
                 </div>
               </div>
             </>
@@ -363,7 +363,7 @@ export default function WsDashboard() {
                   {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 12 }}>No clients</div>}
                 </div>
                 {isOnboarding && (
-                  <button className="btn btn-primary w-full mt-3" style={{ background: "#1565c0", justifyContent: "center" }}
+                  <button className="btn btn-primary w-full mt-3"
                           onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-bottom">
                     <Plus size={12} /> Add client
                   </button>

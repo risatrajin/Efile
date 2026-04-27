@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 8 — Validated 4 user-feedback items: (1) Draft & review history wiring (backend $push + UI card) on both CPA engagement and Client Portal, (2) primary-CTA color standardization to .btn-primary = rgb(26,26,26) (NOT blue #1e88e5/#1565c0), (3) Scheduled meeting card removal, (4) compact/modern Client Portal stepper with 10px black dots. All 6 new backend tests (test_draft_history.py) PASS and all 13 regression tests (test_draft_review_flow.py) STILL PASS. Live UI e2e against https://health-wealth-tax.preview.emergentagent.com using terryann (CPA) and thompson (client) — confirmed Thompson's engagement shows 23 history events with proper Event pills (Approved/CPA upload/Issue raised), By column (actor_name), Detail (file_name or 'Authorized to file'/'Correction requested'), Note/Instructions column, and When timestamp. Liu's engagement (INTAKE, no history) correctly hides the card. No forbidden meeting strings ('Scheduled meeting'/'Initial Tax Consultation'/'Join meeting'/'Google Meet') found on any tested page. Stepper dots confirmed as 10×10px border-radius 50% with rgb(26,26,26); zero elements using blue #1e88e5 or #1565c0 anywhere on Client Portal. preview-t2 btn-primary computed background = rgb(26,26,26), min-height=28px.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "CPA Engagement — Tax Return draft card", "issues": ["'Send and Move to Review' btn-primary in disabled state renders with background rgb(68,68,68) instead of rgb(26,26,26). Not blue, so within acceptable range, but .btn-primary:disabled could be explicitly set to use a rgba lightening of var(--accent-dark) for exact consistency."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_draft_history.py",
+    "/app/backend/tests/test_draft_review_flow.py",
+    "/app/test_reports/pytest/pytest_draft_history.xml",
+    "/app/test_reports/pytest/pytest_draft_review.xml"
+  ],
+  "action_items": [
+    "(Optional polish) Make .btn-primary:disabled background explicitly color-mix(in srgb, var(--accent-dark) 80%, white) or similar so disabled state still visually reads as 'black family' not grey. Current rgb(68,68,68) is functional and non-blue so this is cosmetic.",
+    "(Carry-over from iter 4/5/6/7) server.py is 2332 lines — recommend splitting into routers (engagements, documents, auth, admin) for maintainability."
+  ],
+  "critical_code_review_comments": [
+    "Backend server.py lines 1726-1733 (review-decision) and 1823-1834 (upload-draft): history_entry correctly includes type/at/actor_id/actor_name + discriminated fields (decision/note for review; file_name/instructions for upload). $push is atomic with $set/$unset — good.",
+    "No redaction of actor_name for CLIENT role — matches spec ('both should see actor names'). Verified live: client GET /api/engagements/{eid} returns full actor_name.",
+    "DraftHistoryTable component (shared) correctly hides card when draft_history is missing/empty — verified on Liu (INTAKE) engagement. Good defensive check.",
+    "Stepper refactor in ClientPortal.js (~lines 24-58): 10px dots + 1px connector + 4px active ring-shadow + 11px uppercase labels — visually consistent and accessible. Zero legacy blue colors remain on the page.",
+    "Primary-CTA consolidation is effective: sampled buttons (preview-t2, send-and-move) all use .btn-primary class with background var(--accent-dark). Legacy inline `background: '#1e88e5'` has been removed from tested pages.",
+    "Thompson's engagement accumulated 23 draft_history events during testing (up from seeded 4). This is correct behavior — history is append-only. Consider adding a pagination or 'Show last 10' UI affordance once history grows large in production."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_draft_history.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 new tests + 13/13 regression = 19/19 passed)",
+    "frontend": "100% on all verifiable flows: Draft & review history card render (CPA, with 23 events), hide-when-empty (Liu), no forbidden meeting strings, stepper compact black-dot style, primary-CTA color = rgb(26,26,26)"
+  },
+  "test_credentials": "CPA terryann@cloudtax.ca | Client thompson@example.com | Admin admin@cloudtax.ca — all CloudTax2026!",
+  "seed_data_creation": "Thompson's engagement draft_history now has 23 events (seeded 4 + test appends). State currently: IN_REVIEW, review_decision=approved. Safe for further UI testing as the 'Client approved the return' green card + 'Your review history' table continue to render correctly. If main agent wants fewer events displayed, can rerun seed script.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 4 iteration-8 feedback items are verified working end-to-end on preview. Thompson (cc22901b-b6a2-4997-b84a-a7bfc2b307f0) is the canonical IN_REVIEW+approved test engagement with rich draft_history. Liu (INTAKE) is the canonical no-history engagement to validate the hide rule. Both test_draft_history.py and test_draft_review_flow.py are stable regression suites — keep running both together. The AdminClientDetail /admin/client/{id} route was not directly navigated in this run (cookie state caused redirect) but the global grep for 'Scheduled meeting'/'Initial Tax Consultation'/'Join meeting'/'Google Meet' returned empty on every page actually rendered; main agent can self-verify with a single visit to an admin-side client detail URL.",
+  "rca_of_issue": "N/A — features implemented correctly by main agent. Only cosmetic note: .btn-primary:disabled shows as rgb(68,68,68) rather than full rgb(26,26,26) — this is a CSS :disabled variant defined in index.css and does NOT violate the no-blue requirement."
+}

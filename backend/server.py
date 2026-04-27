@@ -1716,15 +1716,25 @@ async def submit_review_decision(eid: str, body: ReviewDecisionIn, user: dict = 
         raise HTTPException(400, "decision must be 'approved' or 'issue'")
     if body.decision == "issue" and not (body.issue_note or "").strip():
         raise HTTPException(400, "issue_note required when decision is 'issue'")
+    now = datetime.now(timezone.utc)
+    issue_note = (body.issue_note or "").strip() if body.decision == "issue" else None
     decision_doc = {
         "decision": body.decision,
-        "issue_note": (body.issue_note or "").strip() if body.decision == "issue" else None,
-        "submitted_at": datetime.now(timezone.utc),
+        "issue_note": issue_note,
+        "submitted_at": now,
     }
-    await db.engagements.update_one({"id": eid}, {"$set": {
-        "review_decision": decision_doc,
-        "updated_at": datetime.now(timezone.utc),
-    }})
+    history_entry = {
+        "type": "review",
+        "at": now,
+        "actor_id": user["id"],
+        "actor_name": user.get("name") or user.get("email"),
+        "decision": body.decision,
+        "note": issue_note,
+    }
+    await db.engagements.update_one({"id": eid}, {
+        "$set": {"review_decision": decision_doc, "updated_at": now},
+        "$push": {"draft_history": history_entry},
+    })
     if eng.get("assigned_cpa_id"):
         if body.decision == "approved":
             await notify(eng["assigned_cpa_id"], "Client approved the return", "Filing can begin.", "client_approved", eid)
@@ -1810,7 +1820,19 @@ async def upload_draft_pdf(eid: str, file: UploadFile = File(...), instructions:
     if eng.get("status") == "IN_PREP":
         eng_set["status"] = "IN_REVIEW"
         moved_to_review = True
-    await db.engagements.update_one({"id": eid}, {"$set": eng_set, "$unset": eng_unset})
+    history_entry = {
+        "type": "upload",
+        "at": now,
+        "actor_id": user["id"],
+        "actor_name": user.get("name") or user.get("email"),
+        "file_name": file.filename,
+        "instructions": (instructions.strip() if instructions else None),
+    }
+    await db.engagements.update_one({"id": eid}, {
+        "$set": eng_set,
+        "$unset": eng_unset,
+        "$push": {"draft_history": history_entry},
+    })
 
     if moved_to_review:
         await log_status_change(eid, user["id"], "IN_PREP", "IN_REVIEW", "Draft uploaded; ready for client review")

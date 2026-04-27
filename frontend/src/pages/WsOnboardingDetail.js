@@ -248,13 +248,8 @@ export default function WsOnboardingDetail() {
                 onClick={submit}
                 disabled={!ready || busy}
                 data-testid="submit-to-cloudtax"
-                style={{
-                  marginTop: 16, width: "100%", padding: "12px 16px", borderRadius: 10,
-                  background: ready ? "#1e88e5" : "#bbdefb",
-                  color: "#fff", fontWeight: 500, fontSize: 14,
-                  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-                  cursor: ready ? "pointer" : "not-allowed",
-                }}
+                className="btn btn-primary w-full"
+                style={{ marginTop: 16 }}
               >Move to CloudTax <ArrowRight size={14} /></button>
               <p className="muted" style={{ fontSize: 12, textAlign: "center", marginTop: 10 }}>CPA assigned within 1–2 business days</p>
             </div>
@@ -272,7 +267,7 @@ export default function WsOnboardingDetail() {
                   onClick={resendInvite}
                   disabled={resending}
                   data-testid="resend-invite"
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                  className="btn btn-secondary w-full"
                 >
                   <Mail size={14} /> {resending ? "Sending…" : "Resend client invite"}
                 </button>
@@ -300,7 +295,7 @@ export default function WsOnboardingDetail() {
               onClick={saveAll}
               disabled={busy}
               data-testid="save-notes"
-              style={{ padding: "10px 22px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }}
+              className="btn btn-primary"
             >{busy ? "Saving…" : "Save notes"}</button>
           </div>
         </div>
