@@ -654,7 +654,10 @@ export default function ClientPortal() {
           </div>
 
           <div className="card" data-testid="tax-summary-card">
-            <div className="section-label" style={{ marginBottom: 16 }}>TAX SUMMARY</div>
+            <div className="section-label" style={{ marginBottom: 16 }}>ACTION REQUIRED</div>
+
+            {/* Item 1 — Preview */}
+            <div className="muted" style={{ fontSize: 11, fontWeight: 500, marginBottom: 6, letterSpacing: "0.01em" }}>Preview your tax summary.</div>
             {t2DraftDoc ? (
               <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: "var(--bg-subtle)", borderRadius: 10 }}>
                 <div style={{ width: 36, height: 44, borderRadius: 6, background: "#c62828", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>PDF</div>
@@ -673,14 +676,37 @@ export default function ClientPortal() {
             ) : (
               <div className="muted" style={{ fontSize: 13, padding: 14, background: "var(--bg-subtle)", borderRadius: 10 }}>Your CPA will share the draft return shortly.</div>
             )}
-          </div>
 
-          {/* T183 — CRA Authorization to E-File (standalone card so it stays visible after FILED) */}
-          <T183Card
-            eng={eng}
-            onPreview={previewT183}
-            onSign={() => setT183Open(true)}
-          />
+            {/* Item 2 — T183 signature */}
+            <div className="muted" style={{ fontSize: 11, fontWeight: 500, margin: "18px 0 6px", letterSpacing: "0.01em" }}>Need a signature.</div>
+            <div data-testid="t183-row" style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: "var(--bg-subtle)", borderRadius: 10 }}>
+              <div style={{ width: 36, height: 44, borderRadius: 6, background: "#1a1a1a", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>T183</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>CRA T183 — Authorization to E-File</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                  {eng.t183_signed_at
+                    ? <>Signed by {eng.t183_signed_name} · {fmtDate(eng.t183_signed_at)}</>
+                    : "Required: sign to authorize CPA to file electronically with CRA."}
+                </div>
+              </div>
+              <button onClick={previewT183} className="btn btn-secondary btn-sm" data-testid="t183-preview">
+                <Eye size={14} /> Preview
+              </button>
+              {eng.t183_signed_at ? (
+                <span className="badge badge-complete" data-testid="t183-signed-badge" style={{ fontSize: 11 }}>Signed</span>
+              ) : (
+                <button onClick={() => setT183Open(true)} className="btn btn-primary btn-sm" data-testid="t183-sign-btn">
+                  <PenLine size={14} /> Sign T183
+                </button>
+              )}
+            </div>
+            {eng.t183_signature && (
+              <div style={{ marginTop: 12, padding: 12, background: "var(--bg-subtle)", border: "1px solid var(--border-default)", borderRadius: 10 }}>
+                <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Your signature</div>
+                <img src={eng.t183_signature} alt="Client signature" data-testid="t183-signature-image" style={{ maxHeight: 80, display: "block" }} />
+              </div>
+            )}
+          </div>
 
           {eng.review_decision?.decision === "approved" ? (
             <div className="card" data-testid="approved-card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
