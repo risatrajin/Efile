@@ -18,7 +18,7 @@ function DocIcon({ status }) {
   return <CircleDashed size={14} style={{ color: "#b5b0ab" }} />;
 }
 
-function UploadDraftCard({ eng, docs, onUpload, onSaveInstructions, onDownload, busy }) {
+function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy }) {
   const [dragOver, setDragOver] = useState(false);
   const [pickedFile, setPickedFile] = useState(null);
   const [instructions, setInstructions] = useState(eng.review_instructions || "");
@@ -39,9 +39,10 @@ function UploadDraftCard({ eng, docs, onUpload, onSaveInstructions, onDownload, 
     setSavedAt(new Date());
   };
 
-  const saveInstr = async () => {
-    await onSaveInstructions(instructions);
-    setSavedAt(new Date());
+  const cancelExistingDraft = async () => {
+    if (!draftDoc) return;
+    if (!window.confirm("Remove the current draft? The engagement will move back to In Prep.")) return;
+    await onCancelDraft();
   };
 
   return (
@@ -63,6 +64,22 @@ function UploadDraftCard({ eng, docs, onUpload, onSaveInstructions, onDownload, 
             <div className="muted" style={{ fontSize: 11 }}>Uploaded {fmtDate(draftDoc.uploaded_at)} · {draftDoc.file_size ? `${Math.round(draftDoc.file_size / 1024)} KB` : ""}</div>
           </div>
           <button className="btn btn-secondary btn-sm" onClick={() => onDownload(draftDoc)} data-testid="download-draft"><Download size={12} /> Download</button>
+          <button
+            type="button"
+            onClick={cancelExistingDraft}
+            data-testid="cancel-draft"
+            title="Remove this draft"
+            aria-label="Remove this draft"
+            style={{
+              width: 28, height: 28, borderRadius: 6, border: "1px solid var(--border-default)",
+              background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              color: "var(--text-tertiary)", cursor: "pointer", transition: "all 120ms ease",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#fef5f5"; e.currentTarget.style.color = "#c62828"; e.currentTarget.style.borderColor = "#f3c0c0"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.borderColor = "var(--border-default)"; }}
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 
@@ -95,16 +112,13 @@ function UploadDraftCard({ eng, docs, onUpload, onSaveInstructions, onDownload, 
           placeholder="e.g. 'Please review pages 2-3 carefully — note the new RRSP deduction.'"
           data-testid="draft-instructions"
         />
-        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>This message will appear in the client&apos;s Tax Summary section.</div>
+        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Saved automatically when you upload the draft. Appears in the client&apos;s Tax Summary section.</div>
       </div>
 
       <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 12 }}>
         {pickedFile && <button onClick={() => setPickedFile(null)} className="btn btn-secondary btn-sm" data-testid="draft-clear"><X size={12} /> Clear</button>}
-        {!pickedFile && eng.review_instructions !== instructions && (
-          <button onClick={saveInstr} className="btn btn-secondary btn-sm" data-testid="save-instructions">Save instructions</button>
-        )}
         <button onClick={submit} disabled={!pickedFile || busy} className="btn btn-primary btn-sm" data-testid="upload-draft-submit">
-          {busy ? "Uploading…" : draftDoc ? "Replace draft" : "Upload draft"}
+          {busy ? "Uploading…" : "Send and Move to Review"}
         </button>
       </div>
       {savedAt && <span className="tertiary" style={{ fontSize: 11, display: "block", textAlign: "right", marginTop: 6 }}>Saved {savedAt.toLocaleTimeString()}</span>}
@@ -271,9 +285,11 @@ export default function CpaEngagement() {
     setBusy(false);
   };
 
-  const saveInstructions = async (instructions) => {
-    try { await api.patch(`/engagements/${eid}`, { review_instructions: instructions }); await load(); }
+  const cancelDraft = async () => {
+    setBusy(true); setErr("");
+    try { await api.delete(`/engagements/${eid}/draft`); await load(); }
     catch (x) { setErr(fmtError(x)); }
+    setBusy(false);
   };
 
   const toggleCheck = async (item) => {
@@ -408,7 +424,7 @@ export default function CpaEngagement() {
                 eng={eng}
                 docs={docs}
                 onUpload={uploadDraft}
-                onSaveInstructions={saveInstructions}
+                onCancelDraft={cancelDraft}
                 onDownload={downloadDoc}
                 busy={busy}
               />

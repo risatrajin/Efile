@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
-import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2 } from "lucide-react";
+import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag } from "lucide-react";
 
 const PHASES = [
   { key: "profile", label: "Profile" },
@@ -270,6 +270,23 @@ function ReviewDecisionCard({ onSubmit }) {
     setBusy(false);
   };
 
+  // Neutral baseline; hover reveals a subtle accent. No emojis, single-color line icons.
+  const optionBase = {
+    padding: "16px 18px",
+    borderRadius: 12,
+    background: "#fff",
+    border: "1px solid var(--border-default)",
+    color: "var(--text-primary)",
+    fontSize: 14,
+    fontWeight: 500,
+    display: "inline-flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 4,
+    cursor: "pointer",
+    transition: "border-color 120ms ease, background-color 120ms ease, color 120ms ease",
+  };
+
   if (!mode) {
     return (
       <div className="card" data-testid="review-decision-card">
@@ -279,34 +296,22 @@ function ReviewDecisionCard({ onSubmit }) {
           <button
             onClick={() => setMode("good")}
             data-testid="review-good"
-            style={{
-              padding: "16px 18px", borderRadius: 12, background: "#fff",
-              border: "2px solid #2e7d32", color: "#2e7d32",
-              fontSize: 14, fontWeight: 600,
-              display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4,
-              transition: "background-color 120ms ease",
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "#e8f5e9"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}
+            style={optionBase}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#2e7d32"; e.currentTarget.style.background = "#f4faf5"; e.currentTarget.style.color = "#2e7d32"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-default)"; e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--text-primary)"; }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>👍 Everything looks good</span>
-            <span className="muted" style={{ fontSize: 11, fontWeight: 400, color: "#2e7d32" }}>Authorize CPA to file with CRA</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}><ThumbsUp size={16} strokeWidth={1.75} /> Everything looks good</span>
+            <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>Authorize CPA to file with CRA</span>
           </button>
           <button
             onClick={() => setMode("issue")}
             data-testid="review-issue"
-            style={{
-              padding: "16px 18px", borderRadius: 12, background: "#fff",
-              border: "2px solid #c62828", color: "#c62828",
-              fontSize: 14, fontWeight: 600,
-              display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4,
-              transition: "background-color 120ms ease",
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "#fef5f5"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}
+            style={optionBase}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#c62828"; e.currentTarget.style.background = "#fdf6f6"; e.currentTarget.style.color = "#c62828"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-default)"; e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--text-primary)"; }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><AlertCircle size={16} /> I found an issue</span>
-            <span className="muted" style={{ fontSize: 11, fontWeight: 400, color: "#c62828" }}>Send a correction request to your CPA</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}><Flag size={16} strokeWidth={1.75} /> I found an issue</span>
+            <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>Send a correction request to your CPA</span>
           </button>
         </div>
       </div>
@@ -315,38 +320,39 @@ function ReviewDecisionCard({ onSubmit }) {
 
   if (mode === "good") {
     return (
-      <div className="card" data-testid="review-good-confirm" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, color: "#2e7d32", marginBottom: 8 }}>Approve this return?</h3>
-        <p style={{ fontSize: 13, color: "#2e7d32", marginBottom: 16 }}>
+      <div className="card" data-testid="review-good-confirm">
+        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Approve this return?</h3>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
           Your CPA will file the return with CRA on your behalf. You will not be able to make further changes after this point.
         </p>
         <div className="flex gap-2" style={{ justifyContent: "flex-end" }}>
           <button onClick={() => setMode(null)} className="btn btn-secondary btn-sm">Back</button>
-          <button onClick={submitGood} disabled={busy} data-testid="review-good-confirm-btn"
-            style={{ padding: "10px 22px", borderRadius: 8, background: "#2e7d32", color: "#fff", fontSize: 13, fontWeight: 500 }}
-          >{busy ? "Submitting…" : "Yes, approve and file"}</button>
+          <button onClick={submitGood} disabled={busy} className="btn btn-primary btn-sm" data-testid="review-good-confirm-btn">
+            {busy ? "Submitting…" : "Yes, approve and file"}
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="card" data-testid="review-issue-form" style={{ background: "#fef5f5", border: "1px solid #f3c0c0" }}>
-      <h3 style={{ fontSize: 16, fontWeight: 600, color: "#c62828", marginBottom: 8 }}>Describe the issue</h3>
+    <div className="card" data-testid="review-issue-form">
+      <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Describe the issue</h3>
       <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Be as specific as possible — page numbers, line items, expected vs reported figures.</p>
       <textarea
         value={issue} onChange={(e) => setIssue(e.target.value)}
         placeholder="e.g. 'Net income on page 2 doesn't match my Q4 statement — should be $284,500 not $284,000.'"
         data-testid="issue-textarea"
-        style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid var(--border-default)", fontSize: 13, minHeight: 110, fontFamily: "inherit", outline: "none" }}
+        className="textarea"
+        style={{ width: "100%", minHeight: 110 }}
       />
       <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 12 }}>
         <button onClick={() => setMode(null)} className="btn btn-secondary btn-sm">Back</button>
         <button
           onClick={submitIssue}
           disabled={!issue.trim() || busy}
+          className="btn btn-primary btn-sm"
           data-testid="issue-submit-btn"
-          style={{ padding: "10px 22px", borderRadius: 8, background: issue.trim() ? "#c62828" : "#f3c0c0", color: "#fff", fontSize: 13, fontWeight: 500 }}
         >{busy ? "Submitting…" : "Submit issue"}</button>
       </div>
     </div>

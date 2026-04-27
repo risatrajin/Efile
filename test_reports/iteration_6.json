@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 6 — CPA draft upload + cancel + auto IN_PREP↔IN_REVIEW transitions and client ReviewDecisionCard polish. Backend 13/13 PASS in test_draft_review_flow.py covering: (1) IN_PREP upload-draft auto-moves to IN_REVIEW, sets t2_draft_doc_id, saves review_instructions, returns moved_to_review:true; (2) IN_REVIEW re-upload clears prior review_decision and keeps status (moved_to_review:false); (3) DELETE /engagements/{eid}/draft removes doc, unsets t2_draft_doc_id+review_decision, reverts to IN_PREP (moved_back_to_prep:true); (4) DELETE 404 when no draft; (5) DELETE 403 for CLIENT and WS_PARTNER, 200 for ADMIN; (6) Regression: POST /move-to-review still callable; POST /review-decision approved + issue (with empty note → 400) all green. Frontend (CPA side) verified live: /cpa/files → Open Rachel Thompson → UploadDraftCard renders with submit labelled exactly 'Send and Move to Review' (NOT 'Upload draft'); zero 'Save instructions' buttons in DOM; uploading a PDF + instructions auto-advanced engagement to IN_REVIEW (kanban row flipped to 'In review' 15/15 docs); existing-draft strip shows Download + new ✕ cancel-draft button; clicking ✕ → confirm dialog accepted → existing-draft strip removed and engagement reverted (verified via re-render). Client-side ReviewDecisionCard CSS audit done via code review (ClientPortal.js 256-360): no emojis, Lucide ThumbsUp/Flag size=16 strokeWidth=1.75, optionBase border = var(--border-default) with hover-only green/red accent via onMouseEnter, issue textarea uses standard .textarea class (neutral white), submit button uses btn-primary (blue). E2E loop (CPA upload → client issue → CPA re-upload → fresh prompt) is fully covered by backend test test_inreview_reupload_keeps_status_and_clears_decision.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_draft_review_flow.py",
+    "/app/test_reports/pytest/pytest_draft_review.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py upload_draft_pdf correctly $unset's review_decision on every upload (line 1807) — guarantees client always sees a fresh prompt for a new draft. Verified by E2E backend test.",
+    "delete_draft_pdf at lines 1828-1856 properly: (a) deletes local file bytes if storage=local, (b) removes the document doc, (c) $unset's t2_draft_doc_id+review_decision, (d) reverts IN_REVIEW→IN_PREP only (no-op for other statuses), (e) logs status change. Clean implementation.",
+    "Status guard at line 1748 ('IN_PREP', 'IN_REVIEW') correctly blocks draft uploads in REFERRED/INTAKE/DELIVERY/FILED — good defensive check.",
+    "UploadDraftCard.submit() (CpaEngagement.js line 35) sends both file and instructions in a single onUpload call — eliminates the separate 'Save instructions' button as designed.",
+    "ReviewDecisionCard uses inline onMouseEnter/onMouseLeave for hover styling — works but a CSS-class-based hover would be more maintainable; cosmetic, not blocking.",
+    "server.py is now 2310 lines — split into routers strongly recommended (carry-over from iter 4/5).",
+    "DELETE /engagements/{eid}/draft has no idempotency on the underlying status revert (correct — it only reverts when in IN_REVIEW). 404 on missing draft is the correct surface for the cancel-X UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_draft_review_flow.py (NEW — 13 pytest tests covering upload-draft auto-transition, delete-draft RBAC + status revert, regression on review-decision and move-to-review)",
+    "/app/test_reports/pytest/pytest_draft_review.xml (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 passed in 24.6s — auth sanity 3, upload-draft auto-move 2, delete-draft 5, regression 3)",
+    "frontend": "100% on CPA-side verified live: upload-draft-card visible, submit label 'Send and Move to Review', zero Save-instructions buttons, existing-draft + Download + cancel-X all render after upload, cancel-X removes draft and engagement reverts (kanban shows 'In review' after upload then back). Client ReviewDecisionCard verified by code review (no emoji, Lucide icons, neutral default + hover accent, neutral textarea, blue primary submit) — backend e2e loop test confirms review_decision clears on CPA re-upload."
+  },
+  "test_credentials": "ADMIN admin@cloudtax.ca | CPA terryann@cloudtax.ca (assigned to Thompson — NOT pallavi) | WS henry.ziegler@wealthsimple.com | CLIENT thompson@example.com (IN_PREP→IN_REVIEW), ahmed@example.com (IN_REVIEW). All passwords CloudTax2026!.",
+  "seed_data_creation": "No new users created. Tests modify Thompson's engagement (cc22901b-b6a2-4997-b84a-a7bfc2b307f0) — the autouse cleanup fixture deletes any leftover draft so the engagement is left at IN_PREP w/o draft. Note: live UI test uploaded a final draft so Thompson is currently IN_REVIEW with a draft — main agent or next testing agent can DELETE /api/engagements/{eid}/draft to revert if needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "IMPORTANT: Thompson (thompson@example.com) is assigned to terryann@cloudtax.ca, NOT pallavi@cloudtax.ca — use Terry-Ann for any CPA-side tests on Thompson's engagement. New backend test file /app/backend/tests/test_draft_review_flow.py provides full coverage for upload-draft + delete-draft endpoints and is suitable for regression in future iterations. After this run Thompson's engagement is in IN_REVIEW with a draft uploaded by the live UI test (file ui_test_draft3.pdf or similar). Run cpa_session.delete('/api/engagements/cc22901b-b6a2-4997-b84a-a7bfc2b307f0/draft') to reset to IN_PREP if needed for next iteration.",
+  "rca_of_issue": "N/A — no bugs found. Both backend endpoints (POST /upload-draft auto-move + clear, DELETE /draft) and frontend components (UploadDraftCard 'Send and Move to Review' button + cancel-X, ReviewDecisionCard neutral baseline) work as specified.",
+  "mocked_apis": {
+    "aws_s3": "S3 PutObject fails (user IAM lacks s3:PutObject) — backend correctly falls back to local storage at /app/backend/uploads/{eid}/draft/. This is documented expected behavior in the request notes."
+  }
+}

@@ -1803,8 +1803,57 @@ async def upload_draft_pdf(eid: str, file: UploadFile = File(...), instructions:
     eng_set = {"t2_draft_doc_id": draft_id, "updated_at": now}
     if instructions is not None:
         eng_set["review_instructions"] = instructions.strip()
-    await db.engagements.update_one({"id": eid}, {"$set": eng_set})
-    return {"ok": True, "doc_id": draft_id, "file_name": file.filename, "storage": storage}
+    # Reset client review decision so a fresh prompt is shown for the new draft
+    eng_unset = {"review_decision": ""}
+    # Auto-advance IN_PREP -> IN_REVIEW so the client immediately sees the new draft
+    moved_to_review = False
+    if eng.get("status") == "IN_PREP":
+        eng_set["status"] = "IN_REVIEW"
+        moved_to_review = True
+    await db.engagements.update_one({"id": eid}, {"$set": eng_set, "$unset": eng_unset})
+
+    if moved_to_review:
+        await log_status_change(eid, user["id"], "IN_PREP", "IN_REVIEW", "Draft uploaded; ready for client review")
+
+    # Notify the client about the (re)uploaded draft
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if corp:
+        title = "Your draft return is ready for review" if moved_to_review else "Your CPA uploaded an updated draft"
+        msg = "Please review and confirm in your portal."
+        await notify(corp["client_id"], title, msg, "draft_ready", eid)
+
+    return {"ok": True, "doc_id": draft_id, "file_name": file.filename, "storage": storage, "moved_to_review": moved_to_review}
+
+
+@api.delete("/engagements/{eid}/draft")
+async def delete_draft_pdf(eid: str, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    """Remove the current T2 draft document. Reverts IN_REVIEW back to IN_PREP."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    draft_doc = await db.documents.find_one({"engagement_id": eid, "category": "T2_DRAFT"})
+    if not draft_doc:
+        raise HTTPException(404, "No draft to remove")
+    # Delete bytes if local
+    obj = draft_doc.get("object_key") or ""
+    if obj.startswith("local://"):
+        try:
+            p = obj[len("local://"):]
+            if os.path.isfile(p):
+                os.remove(p)
+        except Exception:
+            pass
+    await db.documents.delete_one({"id": draft_doc["id"]})
+    now = datetime.now(timezone.utc)
+    eng_set = {"updated_at": now}
+    eng_unset = {"t2_draft_doc_id": "", "review_decision": ""}
+    moved_back = False
+    if eng.get("status") == "IN_REVIEW":
+        eng_set["status"] = "IN_PREP"
+        moved_back = True
+    await db.engagements.update_one({"id": eid}, {"$set": eng_set, "$unset": eng_unset})
+    if moved_back:
+        await log_status_change(eid, user["id"], "IN_REVIEW", "IN_PREP", "Draft removed by CPA")
+    return {"ok": True, "moved_back_to_prep": moved_back}
 
 
 @api.post("/engagements/{eid}/move-to-review")
