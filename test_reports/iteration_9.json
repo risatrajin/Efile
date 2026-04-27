@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 9 — Tested 3 new features (CPA File-with-CRA, Client T183 Signature Pad, Client FILED celebration). Created /app/backend/tests/test_file_and_t183.py with 14 new tests — ALL 14 PASS against live preview: T183 metadata/file endpoints, T183 sign RBAC (CPA/ADMIN/WS all correctly 403), T183 sign validation (invalid data URL / empty name → 400), valid client sign persists + GET verifies, file-with-cra RBAC (CLIENT 403, WS 403/404), already-FILED returns 400, not-approved returns 400. Frontend e2e confirmed on Thompson (FILED) and Ahmed (IN_REVIEW+approved+signed): congratulations card renders with filed_by_name=Terry-Ann Mitchell, filing_date=Apr 27 2026, CRA-2026-A12345, black 'Download filed return' button (data-testid='download-filed-pdf'), What's Next section (Pay balance / Notice of Assessment / Plan instalments), T183 row on Ahmed shows 'Signed' badge + signature image preview + 'Signed by Dr Youssef Ahmed · Apr 27, 2026'. Found ONE frontend bug: the T183 row is gated inside phase===3 (REVIEW stage) in ClientPortal.js — so when engagement.status=FILED (phase=4), the T183 row/Signed badge/signature image preview all disappear. This contradicts the review spec which explicitly calls out Thompson (currently FILED) should still display the signed T183 row + signature image preview on the portal.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ClientPortal — Tax Summary / T183 row",
+        "issue": "T183 row (data-testid='t183-row'), Signed badge (data-testid='t183-signed-badge'), and signature image preview (data-testid='t183-signature-image') are rendered ONLY when phase===3 (REVIEW stage). When engagement.status='FILED' (phase=4 Filed stage), these all disappear. Spec explicitly calls for Thompson (FILED) portal to display the 'Signed' badge + signature image preview. Fix: lift the T183 card out of the phase===3 block, or additionally render it inside the FILED block. Location: /app/frontend/src/pages/ClientPortal.js lines 607–671.",
+        "selector": "[data-testid='t183-row']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_file_and_t183.py",
+    "/app/test_reports/pytest/pytest_file_t183.xml",
+    "/app/test_reports/pytest/pytest_regression_iter9.xml"
+  ],
+  "action_items": [
+    "HIGH: Move the T183 row block out of the phase===3 branch in /app/frontend/src/pages/ClientPortal.js so the 'Signed' badge + signature image preview remain visible after status=FILED. Currently Thompson (FILED) has no T183 row rendered, violating the e2e spec.",
+    "INFO: Regression suite (/app/backend/tests/test_draft_review_flow.py + test_draft_history.py) now has 6 failing tests because they hard-code preconditions that Thompson is IN_PREP — however Thompson is intentionally seeded as FILED for iteration 9. These are DATA fixture conflicts, NOT code regressions. Recommend either (a) switching those tests to use a different client (kaur/okafor — REFERRED), or (b) adding a pytest fixture that resets Thompson to IN_PREP at the start of each test class. No code change to product needed.",
+    "(Carry-over) server.py is now ~2466 lines — still recommend splitting into routers."
+  ],
+  "critical_code_review_comments": [
+    "file-with-cra correctly validates: status in (IN_REVIEW, DELIVERY), review_decision.decision=='approved', cra_confirmation non-empty, ISO datetime parse, file non-empty, 50 MB cap. Good.",
+    "file-with-cra persists FILED_RETURN as a new document row with category='FILED_RETURN' + storage='s3'/'local' fallback — same pattern as other uploads. Correct.",
+    "T183 sign endpoint: data-URL check uses 'data:image/' substring which is permissive but acceptable. signer_name strip + empty-check good. Role check 'CLIENT' only — verified CPA/ADMIN/WS all get 403.",
+    "get_t183_file uses FileResponse with the on-disk template — caches well. Template size 35,906 bytes and starts with %PDF. OK.",
+    "Frontend ClientPortal.js L643–670: T183 row markup + signature preview is correct BUT is inside the phase===3 conditional block. Needs to be lifted to also render in the FILED state (phase 4) — this is the only product bug found.",
+    "Frontend CpaEngagement.js FileWithCRACard reference is well-scoped to appear only when review_decision.decision=='approved' AND status != 'FILED'. Correct behavior verified: Thompson (FILED) has no file-now-open; Thompson FILED preserves the approved-callout.",
+    "Filed celebration card shows the filed_return_doc_id link (not t2_draft_doc_id) — verified Thompson has t2_draft_doc_id=None and filed_return_doc_id=110ab2b4-… used by the download-filed-pdf button."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_file_and_t183.py (new)",
+    "/app/test_reports/iteration_9.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 new tests PASS). Pre-existing regression tests have 6 data-dependency failures that require Thompson to be in IN_PREP — not applicable now that Thompson is seeded as FILED per this iteration's spec.",
+    "frontend": "~85% — FILED celebration, T183 row in REVIEW stage, Signed badge, signature image preview, Preview T183, approved-callout, What's Next, Filed-download button ALL verified working. File Now CPA card positive-path not interactively clicked due to playwright session persistence issue, but the backend endpoint is fully verified and component is reachable. One HIGH bug: T183 row disappears in FILED state."
+  },
+  "test_credentials": "Admin admin@cloudtax.ca / CloudTax2026! · CPA terryann@cloudtax.ca · Clients thompson@example.com (FILED), ahmed@example.com (IN_REVIEW+approved+t183 signed), singh@example.com (IN_REVIEW).",
+  "seed_data_creation": "During testing: (a) ahmed@example.com t183 signature was created via POST /t183/sign (signer_name='Dr Youssef Ahmed'), (b) ahmed's review_decision was set to 'approved' to verify File Now CTA would appear. Ahmed is now IN_REVIEW + approved + t183 signed. Thompson remains FILED unchanged.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Thompson (cc22901b-b6a2-4997-b84a-a7bfc2b307f0) is FILED with CRA-2026-A12345 + t183 signed by Rachel Thompson — use for FILED-state UI verification. Ahmed (d81902dc-5262-4435-8af1-19065ad1a3cc) is IN_REVIEW + approved + t183 signed — use for CPA File Now positive flow. If you re-run /app/backend/tests/test_draft_review_flow.py expect 6 fixture-dependency failures — these are NOT product regressions. Primary e2e bug to retest after main agent fix: visit Thompson /portal and confirm data-testid='t183-row' and data-testid='t183-signature-image' are present (they are currently absent because the T183 block is inside the phase===3 conditional).",
+  "rca_of_issue": "T183 row disappearing in FILED state — ROOT CAUSE: in /app/frontend/src/pages/ClientPortal.js, the T183 row markup (lines 643–670) is nested inside the {phase === 3 && (...)} JSX branch (REVIEW stage). When eng.status transitions to 'FILED', the derived phase becomes 4 (Filed stage) and the entire REVIEW block is skipped — so the T183 card is not rendered even though eng.t183_signed_at and eng.t183_signature are persisted server-side. Mitigation: render the T183 card section in both phase===3 AND phase===4 branches (or move it outside the phase conditional entirely so it's always visible once signed). Reproduction: login thompson@example.com → /portal → inspect DOM — no [data-testid='t183-row']. Compare against Ahmed (IN_REVIEW) where the row is present."
+}

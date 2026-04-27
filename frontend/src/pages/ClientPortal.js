@@ -2,8 +2,9 @@ import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
-import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag } from "lucide-react";
+import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag, PenLine } from "lucide-react";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
+import SignaturePadModal from "../components/shared/SignaturePadModal";
 
 const PHASES = [
   { key: "profile", label: "Profile" },
@@ -481,6 +482,27 @@ export default function ClientPortal() {
     } catch (x) { setErr(fmtError(x)); }
   };
 
+  const [t183Open, setT183Open] = useState(false);
+  const [t183Busy, setT183Busy] = useState(false);
+  const submitT183Signature = async ({ signature, name }) => {
+    setT183Busy(true);
+    try {
+      await api.post(`/engagements/${eng.id}/t183/sign`, { signature, signer_name: name });
+      setT183Open(false);
+      await loadAll();
+    } catch (x) { setErr(fmtError(x)); }
+    setT183Busy(false);
+  };
+  const previewT183 = async () => {
+    try {
+      const url = `/engagements/${eng.id}/t183/file`;
+      const resp = await api.get(url, { responseType: "blob" });
+      const blobUrl = URL.createObjectURL(resp.data);
+      window.open(blobUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (x) { setErr(fmtError(x)); }
+  };
+
   // Empty state
   if (!eng || eng.status === "ONBOARDING") return (
     <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="empty-state">
@@ -504,6 +526,7 @@ export default function ClientPortal() {
   const t2DraftDoc = eng.t2_draft_doc_id ? docs.find((d) => d.id === eng.t2_draft_doc_id) : null;
   const isFiled = eng.status === "FILED";
   const craConfNum = eng.filing_confirmation || `CRA-FILE-${(eng.id || "").slice(0, 6).toUpperCase()}`;
+  const filedReturnDoc = eng.filed_return_doc_id ? docs.find((d) => d.id === eng.filed_return_doc_id) : null;
 
   return (
     <div className="page-narrow stack-lg" style={{ paddingTop: 24, maxWidth: 760 }} data-testid="client-portal">
@@ -616,6 +639,35 @@ export default function ClientPortal() {
             ) : (
               <div className="muted" style={{ fontSize: 13, padding: 14, background: "var(--bg-subtle)", borderRadius: 10 }}>Your CPA will share the draft return shortly.</div>
             )}
+
+            {/* T183 — CRA Authorization to E-File */}
+            <div data-testid="t183-row" style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: "var(--bg-subtle)", borderRadius: 10, marginTop: 12 }}>
+              <div style={{ width: 36, height: 44, borderRadius: 6, background: "#1a1a1a", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>T183</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>CRA T183 — Authorization to E-File</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                  {eng.t183_signed_at
+                    ? <>Signed by {eng.t183_signed_name} · {fmtDate(eng.t183_signed_at)}</>
+                    : "Required: sign to authorize CPA to file electronically with CRA."}
+                </div>
+              </div>
+              <button onClick={previewT183} className="btn btn-secondary btn-sm" data-testid="t183-preview">
+                <Eye size={14} /> Preview
+              </button>
+              {eng.t183_signed_at ? (
+                <span className="badge badge-complete" data-testid="t183-signed-badge" style={{ fontSize: 11 }}>Signed</span>
+              ) : (
+                <button onClick={() => setT183Open(true)} className="btn btn-primary btn-sm" data-testid="t183-sign-btn">
+                  <PenLine size={14} /> Sign T183
+                </button>
+              )}
+            </div>
+            {eng.t183_signature && (
+              <div style={{ marginTop: 12, padding: 12, background: "#fff", border: "1px solid var(--border-default)", borderRadius: 10 }}>
+                <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Your signature</div>
+                <img src={eng.t183_signature} alt="Client signature" data-testid="t183-signature-image" style={{ maxHeight: 80, display: "block" }} />
+              </div>
+            )}
           </div>
 
           {eng.review_decision?.decision === "approved" ? (
@@ -665,13 +717,23 @@ export default function ClientPortal() {
             <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#2e7d32", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <Check size={20} style={{ color: "#fff" }} />
             </div>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#2e7d32" }}>T2 return filed with CRA</div>
-              <div style={{ fontSize: 13, color: "#2e7d32", marginTop: 4 }}>Filed by {cpa?.name || "your CPA"} · {fmtDate(eng.filing_date)}</div>
-              <div style={{ marginTop: 12 }}>
-                <span style={{ background: "#fff", padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500, marginRight: 8 }}>CRA confirmation #</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#2e7d32" }}>🎉 Congratulations — your T2 has been filed!</div>
+              <div style={{ fontSize: 13, color: "#2e7d32", marginTop: 6, lineHeight: 1.6 }}>
+                Filed by {eng.filed_by_name || cpa?.name || "your CPA"} · {fmtDate(eng.filing_date)}. CRA has acknowledged the submission. You can download a PDF copy of the filed return below.
+              </div>
+              <div style={{ marginTop: 12, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <span style={{ background: "#fff", padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500 }}>CRA confirmation #</span>
                 <code style={{ fontSize: 12, fontWeight: 600 }} data-testid="cra-conf-num">{craConfNum}</code>
               </div>
+              {filedReturnDoc && (
+                <button
+                  onClick={() => onView(filedReturnDoc)}
+                  className="btn btn-primary btn-sm"
+                  style={{ marginTop: 14 }}
+                  data-testid="download-filed-pdf"
+                ><Download size={14} /> Download filed return</button>
+              )}
             </div>
           </div>
 
@@ -691,7 +753,8 @@ export default function ClientPortal() {
             ))}
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
               <button
-                onClick={() => t2DraftDoc && onView(t2DraftDoc)}
+                onClick={() => filedReturnDoc && onView(filedReturnDoc)}
+                disabled={!filedReturnDoc}
                 className="btn btn-primary btn-sm"
                 data-testid="download-filed"
               ><Download size={14} /> Download filed return</button>
@@ -758,6 +821,7 @@ export default function ClientPortal() {
       </div>
 
       <div style={{ height: 40 }} />
+      {t183Open && <SignaturePadModal defaultName={user?.name || ""} onClose={() => setT183Open(false)} onSubmit={submitT183Signature} busy={t183Busy} />}
     </div>
   );
 }

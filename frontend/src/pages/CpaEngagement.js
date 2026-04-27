@@ -5,7 +5,7 @@ import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import { ChatThread } from "./Messages";
-import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X } from "lucide-react";
+import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 
@@ -133,6 +133,99 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
         </button>
       </div>
       {savedAt && <span className="tertiary" style={{ fontSize: 11, display: "block", textAlign: "right", marginTop: 6 }}>Saved {savedAt.toLocaleTimeString()}</span>}
+    </div>
+  );
+}
+
+
+function FileWithCRACard({ eng, onSubmit, busy }) {
+  const [open, setOpen] = useState(false);
+  const [pickedFile, setPickedFile] = useState(null);
+  const [conf, setConf] = useState("");
+  const [filingAt, setFilingAt] = useState(() => {
+    const d = new Date(); d.setSeconds(0, 0);
+    // ISO local for input[type=datetime-local]
+    const tz = d.getTimezoneOffset();
+    return new Date(d.getTime() - tz * 60000).toISOString().slice(0, 16);
+  });
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const inputRef = React.useRef();
+
+  const submit = async () => {
+    setError("");
+    if (!conf.trim()) { setError("CRA confirmation number is required."); return; }
+    if (!filingAt) { setError("Filing date and time are required."); return; }
+    if (!pickedFile) { setError("Please upload a PDF copy of the filed return."); return; }
+    try {
+      const isoFiling = new Date(filingAt).toISOString();
+      await onSubmit({ cra_confirmation: conf.trim(), filing_datetime: isoFiling, note: note.trim() || null, file: pickedFile });
+    } catch (x) {
+      setError(x?.response?.data?.detail || x?.message || "Failed to file");
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="card" data-testid="file-with-cra-card" style={{ borderLeft: "3px solid var(--accent-dark)" }}>
+        <div className="flex items-center between" style={{ gap: 16 }}>
+          <div>
+            <h2 className="card-title" style={{ margin: 0 }}>Ready to file with CRA</h2>
+            <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>The client approved the return. Submit your CRA confirmation and filed PDF to mark this engagement as filed.</p>
+          </div>
+          <button className="btn btn-primary" onClick={() => setOpen(true)} data-testid="file-now-open"><Send size={14} /> File Now</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" data-testid="file-with-cra-form" style={{ borderLeft: "3px solid var(--accent-dark)" }}>
+      <div className="flex items-center between" style={{ marginBottom: 4 }}>
+        <h2 className="card-title" style={{ margin: 0 }}>File with CRA</h2>
+        <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)} data-testid="file-now-close"><X size={14} /></button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Enter the CRA acknowledgement details and upload the final filed PDF.</p>
+
+      <div className="stack-md">
+        <div className="field">
+          <label className="field-label">CRA confirmation number *</label>
+          <input className="input" value={conf} onChange={(e) => setConf(e.target.value)} placeholder="e.g. 1234-AB-56789" data-testid="cra-conf-input" />
+        </div>
+        <div className="field">
+          <label className="field-label">Filing date &amp; time *</label>
+          <input className="input" type="datetime-local" value={filingAt} onChange={(e) => setFilingAt(e.target.value)} data-testid="filing-datetime-input" />
+        </div>
+        <div className="field">
+          <label className="field-label">Filed return PDF *</label>
+          <div
+            onClick={() => inputRef.current?.click()}
+            data-testid="filed-pdf-dropzone"
+            style={{
+              border: "2px dashed var(--border-default)", background: "#fafafa",
+              borderRadius: 12, padding: "20px 18px", textAlign: "center", cursor: "pointer",
+            }}
+          >
+            <Upload size={18} style={{ color: "var(--text-tertiary)", marginBottom: 6 }} />
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{pickedFile ? pickedFile.name : "Drop PDF here or click to browse"}</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>PDF up to 50 MB</div>
+            <input ref={inputRef} type="file" accept="application/pdf,.pdf" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && setPickedFile(e.target.files[0])} data-testid="filed-pdf-input" />
+          </div>
+        </div>
+        <div className="field">
+          <label className="field-label">Note (optional)</label>
+          <textarea className="textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Any internal note about this filing..." data-testid="filing-note" />
+        </div>
+      </div>
+
+      {error && <div className="alert alert-risk" style={{ marginTop: 10, fontSize: 12 }}>{error}</div>}
+
+      <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 16 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => setOpen(false)}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy} data-testid="file-now-submit">
+          <Send size={12} /> {busy ? "Filing…" : "Submit filing"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -303,6 +396,19 @@ export default function CpaEngagement() {
     setBusy(false);
   };
 
+  const fileWithCRA = async ({ cra_confirmation, filing_datetime, note, file }) => {
+    setBusy(true); setErr("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const params = new URLSearchParams({ cra_confirmation, filing_datetime });
+      if (note) params.set("note", note);
+      await api.post(`/engagements/${eid}/file-with-cra?${params.toString()}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      await load();
+    } catch (x) { setErr(fmtError(x)); throw x; }
+    finally { setBusy(false); }
+  };
+
   const toggleCheck = async (item) => {
     try { await api.patch(`/checklist/${item.id}`, { is_completed: !item.is_completed }); await load(); } catch (x) { setErr(fmtError(x)); }
   };
@@ -415,15 +521,21 @@ export default function CpaEngagement() {
               </div>
             </div>
           ) : eng.review_decision.decision === "approved" ? (
-            <div data-testid="client-approved-callout" className="card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                <Check size={20} style={{ color: "#2e7d32", marginTop: 2, flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#2e7d32" }}>Client approved the return</div>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Approved {fmtDate(eng.review_decision.submitted_at)} — ready to file with CRA.</div>
+            <>
+              {/* File-with-CRA workflow appears BEFORE the approved confirmation, per UX spec */}
+              {eng.status !== "FILED" && (
+                <FileWithCRACard eng={eng} onSubmit={fileWithCRA} busy={busy} />
+              )}
+              <div data-testid="client-approved-callout" className="card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                  <Check size={20} style={{ color: "#2e7d32", marginTop: 2, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#2e7d32" }}>Client approved the return</div>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Approved {fmtDate(eng.review_decision.submitted_at)} — ready to file with CRA.</div>
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
           ) : null
         )}
 

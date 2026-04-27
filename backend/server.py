@@ -1878,6 +1878,140 @@ async def delete_draft_pdf(eid: str, user: dict = Depends(require_role("CPA", "A
     return {"ok": True, "moved_back_to_prep": moved_back}
 
 
+# ==================== File with CRA + T183 Signature ====================
+
+T183_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "t183-25e.pdf")
+
+
+@api.post("/engagements/{eid}/file-with-cra")
+async def file_with_cra(
+    eid: str,
+    cra_confirmation: str,
+    filing_datetime: str,
+    note: Optional[str] = None,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_role("CPA", "ADMIN")),
+):
+    """CPA submits the filed return to CRA: PDF copy + CRA confirmation # + filing datetime + optional note.
+    Sets engagement status = FILED."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if eng["status"] not in ("IN_REVIEW", "DELIVERY"):
+        raise HTTPException(400, f"Cannot file from status {eng['status']}")
+    if not (eng.get("review_decision") or {}).get("decision") == "approved":
+        raise HTTPException(400, "Client has not approved the return yet")
+    if not cra_confirmation.strip():
+        raise HTTPException(400, "CRA confirmation number is required")
+
+    try:
+        filing_dt = datetime.fromisoformat(filing_datetime.replace("Z", "+00:00"))
+        if filing_dt.tzinfo is None:
+            filing_dt = filing_dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        raise HTTPException(400, "filing_datetime must be a valid ISO datetime")
+
+    body = await file.read()
+    if not body:
+        raise HTTPException(400, "Empty file")
+    if len(body) > 50 * 1024 * 1024:
+        raise HTTPException(413, "File exceeds 50 MB limit")
+
+    safe_name = "".join(c for c in (file.filename or "filed.pdf") if c.isalnum() or c in "._-")[:80] or "filed.pdf"
+    object_key = f"engagements/{eid}/filed/{uuid.uuid4().hex}_{safe_name}"
+    content_type = file.content_type or "application/pdf"
+    storage = "s3"
+    if not s3_service.put_object_bytes(object_key, body, content_type):
+        storage = "local"
+        local_dir = os.path.join(os.path.dirname(__file__), "uploads", eid, "filed")
+        os.makedirs(local_dir, exist_ok=True)
+        local_path = os.path.join(local_dir, f"{uuid.uuid4().hex}_{safe_name}")
+        with open(local_path, "wb") as f:
+            f.write(body)
+        object_key = f"local://{local_path}"
+
+    now = datetime.now(timezone.utc)
+    filed_doc_id = str(uuid.uuid4())
+    await db.documents.insert_one({
+        "id": filed_doc_id, "engagement_id": eid,
+        "category": "FILED_RETURN", "name": "Filed T2 Return",
+        "description": "Final T2 return submitted to CRA",
+        "is_required": False, "sort_order": 9998,
+        "status": "UPLOADED", "object_key": object_key, "storage": storage,
+        "file_name": file.filename, "file_size": len(body), "mime_type": content_type,
+        "uploaded_at": now, "created_at": now,
+    })
+
+    eng_set = {
+        "status": "FILED",
+        "filing_date": filing_dt,
+        "filing_confirmation": cra_confirmation.strip(),
+        "filed_return_doc_id": filed_doc_id,
+        "filing_note": (note or "").strip() or None,
+        "filed_by_id": user["id"],
+        "filed_by_name": user.get("name") or user.get("email"),
+        "updated_at": now,
+    }
+    await db.engagements.update_one({"id": eid}, {"$set": eng_set})
+    await log_status_change(eid, user["id"], eng["status"], "FILED", f"Filed with CRA — confirmation {cra_confirmation.strip()}")
+
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if corp:
+        await notify(corp["client_id"], "Your T2 return has been filed", f"CRA confirmation {cra_confirmation.strip()}", "filed", eid)
+    return {"ok": True, "filed_return_doc_id": filed_doc_id, "filing_confirmation": cra_confirmation.strip(), "storage": storage}
+
+
+@api.get("/engagements/{eid}/t183")
+async def get_t183(eid: str, user: dict = Depends(get_current_user)):
+    """Returns T183 signature metadata (whether signed, by whom, when)."""
+    from fastapi.responses import JSONResponse
+    eng = await get_engagement_or_404(eid, user)
+    meta = {
+        "signed": bool(eng.get("t183_signed_at")),
+        "signed_at": eng.get("t183_signed_at").isoformat() if eng.get("t183_signed_at") else None,
+        "signed_name": eng.get("t183_signed_name"),
+    }
+    return JSONResponse(meta)
+
+
+@api.get("/engagements/{eid}/t183/file")
+async def get_t183_file(eid: str, user: dict = Depends(get_current_user)):
+    """Returns the T183 PDF template bytes for inline preview / download."""
+    from fastapi.responses import FileResponse
+    eng = await get_engagement_or_404(eid, user)  # auth check
+    _ = eng
+    if not os.path.isfile(T183_TEMPLATE_PATH):
+        raise HTTPException(404, "T183 template missing")
+    return FileResponse(T183_TEMPLATE_PATH, media_type="application/pdf", filename="T183CORP.pdf")
+
+
+class T183SignIn(BaseModel):
+    signature: str  # data URL (image/png base64) of the canvas drawing
+    signer_name: str
+
+
+@api.post("/engagements/{eid}/t183/sign")
+async def sign_t183(eid: str, body: T183SignIn, user: dict = Depends(get_current_user)):
+    """Client signs the T183 — stores signature image + signed name + timestamp."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] != "CLIENT":
+        raise HTTPException(403, "Only the client can sign the T183")
+    if not body.signature or "data:image/" not in body.signature:
+        raise HTTPException(400, "signature must be a base64 image data URL")
+    if not body.signer_name.strip():
+        raise HTTPException(400, "signer_name is required")
+    now = datetime.now(timezone.utc)
+    await db.engagements.update_one({"id": eid}, {"$set": {
+        "t183_signature": body.signature,
+        "t183_signed_name": body.signer_name.strip(),
+        "t183_signed_at": now,
+        "updated_at": now,
+    }})
+    if eng.get("assigned_cpa_id"):
+        await notify(eng["assigned_cpa_id"], "Client signed T183", f"{body.signer_name.strip()} signed the T183 form.", "t183_signed", eid)
+    return {"ok": True, "signed_at": now.isoformat(), "signed_name": body.signer_name.strip()}
+
+
 @api.post("/engagements/{eid}/move-to-review")
 async def move_to_review(eid: str, body: MoveToReviewIn, user: dict = Depends(require_role("CPA", "ADMIN"))):
     """Advance IN_PREP -> IN_REVIEW. Requires a T2 draft to be uploaded first."""
