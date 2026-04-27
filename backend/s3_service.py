@@ -84,3 +84,20 @@ def get_object_bytes(object_key: str) -> bytes | None:
     except (ClientError, EndpointConnectionError) as e:
         log.error("S3 get_object failed: %s", e)
         return None
+
+
+
+def put_object_bytes(object_key: str, body: bytes, content_type: str = "application/octet-stream") -> bool:
+    """Server-side direct upload (used as proxy when browser-direct PUT is blocked by CORS)."""
+    try:
+        get_client().put_object(
+            Bucket=bucket_name(),
+            Key=object_key,
+            Body=body,
+            ContentType=content_type,
+            ServerSideEncryption="AES256",
+        )
+        return True
+    except (ClientError, EndpointConnectionError) as e:
+        log.error("S3 put_object failed: %s", e)
+        return False

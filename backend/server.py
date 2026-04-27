@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Any
 
-from fastapi import FastAPI, HTTPException, Depends, Request, Response, APIRouter
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, APIRouter, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 
@@ -971,6 +971,60 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
     return {"ok": True}
 
 
+@api.post("/documents/{doc_id}/upload")
+async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Server-side proxy upload — tries S3, falls back to local disk if S3 unavailable.
+    Used because direct browser PUT to S3 requires CORS + IAM s3:PutObject which may not be configured yet."""
+    db = get_db()
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    eng = await get_engagement_or_404(doc["engagement_id"], user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "WS partners cannot upload documents")
+
+    body = await file.read()
+    if not body:
+        raise HTTPException(400, "Empty file")
+    if len(body) > 50 * 1024 * 1024:
+        raise HTTPException(413, "File exceeds 50 MB limit")
+
+    safe_name = "".join(c for c in (file.filename or "upload.bin") if c.isalnum() or c in "._-")[:80] or "file"
+    object_key = f"engagements/{doc['engagement_id']}/{doc_id}/{uuid.uuid4().hex}_{safe_name}"
+    content_type = file.content_type or "application/octet-stream"
+
+    # Try S3 first; fall back to local disk if it fails (e.g. CORS, IAM perms not set up yet)
+    storage = "s3"
+    if not s3_service.put_object_bytes(object_key, body, content_type):
+        storage = "local"
+        local_dir = os.path.join(os.path.dirname(__file__), "uploads", doc["engagement_id"], doc_id)
+        os.makedirs(local_dir, exist_ok=True)
+        local_path = os.path.join(local_dir, f"{uuid.uuid4().hex}_{safe_name}")
+        with open(local_path, "wb") as f:
+            f.write(body)
+        object_key = f"local://{local_path}"
+        log.warning("S3 upload failed for %s — stored locally at %s", doc_id, local_path)
+
+    now = datetime.now(timezone.utc)
+    await db.documents.update_one({"id": doc_id}, {"$set": {
+        "status": "UPLOADED",
+        "object_key": object_key,
+        "storage": storage,
+        "file_name": file.filename,
+        "file_size": len(body),
+        "mime_type": content_type,
+        "uploaded_at": now,
+        "issue_note": None,
+        "deferred_at": None,
+    }})
+    if eng.get("assigned_cpa_id"):
+        await notify(eng["assigned_cpa_id"], "Document uploaded", f"{doc['name']} uploaded", "document_uploaded", eng["id"])
+    if eng["status"] == "REFERRED":
+        await db.engagements.update_one({"id": eng["id"]}, {"$set": {"status": "INTAKE", "updated_at": now}})
+        await log_status_change(eng["id"], user["id"], "REFERRED", "INTAKE", "First document uploaded")
+    return {"ok": True, "file_name": file.filename, "file_size": len(body), "storage": storage}
+
+
 @api.get("/documents/{doc_id}/download-url")
 async def doc_download_url(doc_id: str, user: dict = Depends(get_current_user)):
     db = get_db()
@@ -982,10 +1036,33 @@ async def doc_download_url(doc_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(403, "WS partners cannot download documents")
     if not doc.get("object_key"):
         raise HTTPException(404, "No file uploaded for this document")
+    # Local-fallback storage: hand back our own download endpoint
+    if doc.get("storage") == "local" or str(doc.get("object_key", "")).startswith("local://"):
+        return {"download_url": f"/api/documents/{doc_id}/download"}
     url = s3_service.generate_download_url(doc["object_key"], doc.get("file_name"))
     if not url:
         raise HTTPException(500, "Could not generate download URL")
     return {"download_url": url}
+
+
+@api.get("/documents/{doc_id}/download")
+async def doc_download_local(doc_id: str, token: Optional[str] = None, user: dict = Depends(get_current_user)):
+    """Serve a locally-stored file (used when S3 upload fell back to local disk)."""
+    db = get_db()
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    await get_engagement_or_404(doc["engagement_id"], user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "WS partners cannot download documents")
+    key = doc.get("object_key") or ""
+    if not key.startswith("local://"):
+        raise HTTPException(404, "Not a local file")
+    path = key[len("local://"):]
+    if not os.path.isfile(path):
+        raise HTTPException(404, "File missing on disk")
+    from fastapi.responses import FileResponse
+    return FileResponse(path, media_type=doc.get("mime_type") or "application/octet-stream", filename=doc.get("file_name") or "download")
 
 
 @api.patch("/documents/{doc_id}")

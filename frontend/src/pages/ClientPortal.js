@@ -101,33 +101,57 @@ function ChooseDropdown({ doc, onUpload, onDefer, busy }) {
   );
 }
 
+function fmtSize(b) {
+  if (!b && b !== 0) return "";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function DocItem({ doc, onUpload, onDefer, busy, onView, mode = "list" }) {
   const isDone = ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(doc.status);
   const isIssue = doc.status === "ISSUE";
   const isReUploaded = doc.status === "UPLOADED" && doc.re_uploaded_at;
   const showUpdated = isReUploaded || (isDone && doc.uploaded_at && (new Date() - new Date(doc.uploaded_at) < 7 * 86400000));
   return (
-    <div data-testid={`doc-item-${doc.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderBottom: "1px solid var(--border-default)" }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div data-testid={`doc-item-${doc.id}`} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "16px 0", borderBottom: "1px solid var(--border-default)", gap: 12 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 14, fontWeight: 500 }}>{doc.name}</span>
           {doc.is_new_request && <span style={{ background: "#e3f2fd", color: "#1565c0", fontSize: 11, fontWeight: 500, padding: "2px 10px", borderRadius: 999 }}>New request</span>}
+          {doc.is_required && !isDone && !isIssue && (
+            <span style={{ background: "#fff3e0", color: "#ef6c00", fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, letterSpacing: 0.3 }}>REQUIRED</span>
+          )}
         </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{doc.description}</div>
+        {isDone && doc.file_name && (
+          <button
+            type="button"
+            onClick={() => onView?.(doc)}
+            data-testid={`uploaded-file-${doc.id}`}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8, marginTop: 10,
+              padding: "6px 10px", background: "var(--bg-subtle)", borderRadius: 6,
+              fontSize: 12, color: "var(--text-primary)", border: "1px solid var(--border-default)",
+              cursor: onView ? "pointer" : "default", maxWidth: "100%",
+            }}
+          >
+            <FileText size={12} style={{ color: "#1565c0", flexShrink: 0 }} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280 }}>{doc.file_name}</span>
+            {doc.file_size > 0 && <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtSize(doc.file_size)}</span>}
+          </button>
+        )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {isDone && mode === "list" && (
-          <>
-            <button onClick={() => onView(doc)} style={{ color: "#1e88e5", fontSize: 13, fontWeight: 500 }} data-testid={`view-${doc.id}`}>View</button>
-            <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>
-              ✓ {showUpdated ? "Updated" : "Uploaded"}
-            </span>
-          </>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, marginTop: 2 }}>
+        {isDone && mode !== "summary" && (
+          <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>
+            ✓ {showUpdated ? "Updated" : "Uploaded"}
+          </span>
         )}
         {isDone && mode === "summary" && (
           <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>✓ Uploaded</span>
         )}
-        {!isDone && !isIssue && doc.status === "PENDING" && !doc.is_new_request && (
+        {!isDone && !isIssue && doc.status === "PENDING" && !doc.is_new_request && mode === "summary" && (
           <span style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>Not uploaded</span>
         )}
         {!isDone && !isIssue && (doc.is_new_request || (doc.status === "PENDING" && mode === "interactive")) && (
@@ -241,17 +265,11 @@ export default function ClientPortal() {
     if (!file) return;
     setBusy(doc.id); setErr("");
     try {
-      const { data } = await api.post(`/documents/${doc.id}/upload-url`, {
-        content_type: file.type || "application/octet-stream", file_name: file.name,
-      });
-      const putResp = await fetch(data.upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream", "x-amz-server-side-encryption": "AES256" },
-        body: file,
-      });
-      if (!putResp.ok) throw new Error(`Upload failed (${putResp.status})`);
-      await api.post(`/documents/${doc.id}/complete-upload`, {
-        object_key: data.object_key, file_name: file.name, file_size: file.size, mime_type: file.type || "application/octet-stream",
+      // Server-side proxy upload — works regardless of S3 CORS configuration.
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post(`/documents/${doc.id}/upload`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
       await loadAll();
     } catch (x) { setErr(fmtError(x)); }
@@ -259,8 +277,19 @@ export default function ClientPortal() {
   };
 
   const onView = async (doc) => {
-    try { const { data } = await api.get(`/documents/${doc.id}/download-url`); window.open(data.download_url, "_blank"); }
-    catch (x) { setErr(fmtError(x)); }
+    try {
+      const { data } = await api.get(`/documents/${doc.id}/download-url`);
+      const url = data.download_url;
+      if (url.startsWith("/api/")) {
+        // Local-fallback storage — fetch via our API (auth header) then open as object URL
+        const resp = await api.get(url.replace("/api", ""), { responseType: "blob" });
+        const blobUrl = URL.createObjectURL(resp.data);
+        window.open(blobUrl, "_blank");
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      } else {
+        window.open(url, "_blank");
+      }
+    } catch (x) { setErr(fmtError(x)); }
   };
 
   const onDefer = async (doc) => {
