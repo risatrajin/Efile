@@ -271,6 +271,113 @@ class TestFileWithCRANotApproved:
         assert "approve" in r.text.lower()
 
 
+# ==================== file-with-cra: T183 precondition (iter 10) ====================
+
+class TestFileWithCRAT183Required:
+    """When engagement is approved but t183_signed_at is null/absent, file-with-cra must return 400."""
+
+    def _mongo(self):
+        from pymongo import MongoClient
+        return MongoClient("mongodb://localhost:27017")["cloudtax_pilot"]
+
+    def test_t183_unsigned_blocks_filing(self, terry_s, ahmed_s):
+        eng = _my_eng(ahmed_s)
+        eid = eng["id"]
+        db = self._mongo()
+        # Snapshot existing t183 signature so we can restore
+        current = db.engagements.find_one({"id": eid}, {"t183_signed_at": 1, "t183_signed_name": 1, "t183_signature": 1})
+        saved_at = current.get("t183_signed_at")
+        saved_name = current.get("t183_signed_name")
+        saved_sig = current.get("t183_signature")
+        # Ensure approved
+        rd = (db.engagements.find_one({"id": eid}, {"review_decision": 1}) or {}).get("review_decision") or {}
+        if rd.get("decision") != "approved":
+            pytest.skip("Ahmed not approved; cannot isolate T183-required precondition")
+        try:
+            # Unset T183 signature
+            db.engagements.update_one({"id": eid}, {"$unset": {"t183_signed_at": "", "t183_signed_name": "", "t183_signature": ""}})
+            files = {"file": ("filed.pdf", io.BytesIO(PDF), "application/pdf")}
+            params = {
+                "cra_confirmation": "CRA-T183-TEST",
+                "filing_datetime": datetime.now(timezone.utc).isoformat(),
+            }
+            r = terry_s.post(
+                f"{BASE}/api/engagements/{eid}/file-with-cra",
+                params=params, files=files, timeout=30,
+            )
+            assert r.status_code == 400, f"expected 400 got {r.status_code}: {r.text[:300]}"
+            body = r.text.lower()
+            assert ("t183" in body) or ("authoriz" in body), f"error should mention T183/authorization: {body[:200]}"
+            # GET engagement — still IN_REVIEW (no filing side-effects)
+            g = _get_eng(terry_s, eid)
+            assert g["status"] == "IN_REVIEW"
+            assert not g.get("filing_confirmation")
+            assert not g.get("filed_return_doc_id")
+        finally:
+            # Restore T183 signature fields
+            restore = {}
+            if saved_at is not None:
+                restore["t183_signed_at"] = saved_at
+            if saved_name is not None:
+                restore["t183_signed_name"] = saved_name
+            if saved_sig is not None:
+                restore["t183_signature"] = saved_sig
+            if restore:
+                db.engagements.update_one({"id": eid}, {"$set": restore})
+
+    def test_t183_signed_then_file_succeeds(self, terry_s, ahmed_s):
+        """Happy path: after T183 signed + approved, CPA can file with CRA."""
+        eng = _my_eng(ahmed_s)
+        eid = eng["id"]
+        db = self._mongo()
+        cur = db.engagements.find_one({"id": eid}, {"t183_signed_at": 1, "review_decision": 1, "status": 1})
+        rd = (cur or {}).get("review_decision") or {}
+        if rd.get("decision") != "approved":
+            pytest.skip("Ahmed not approved")
+        if not cur.get("t183_signed_at"):
+            pytest.skip("Ahmed T183 not signed (run TestT183SignValidation first)")
+        if cur.get("status") == "FILED":
+            pytest.skip("Ahmed already FILED")
+
+        # Snapshot post-filing fields so we can roll back
+        before = db.engagements.find_one({"id": eid})
+        files = {"file": ("filed.pdf", io.BytesIO(PDF), "application/pdf")}
+        params = {
+            "cra_confirmation": "CRA-T183-PASS",
+            "filing_datetime": datetime.now(timezone.utc).isoformat(),
+            "note": "iter10 happy path",
+        }
+        r = terry_s.post(
+            f"{BASE}/api/engagements/{eid}/file-with-cra",
+            params=params, files=files, timeout=30,
+        )
+        try:
+            assert r.status_code == 200, f"expected 200 got {r.status_code}: {r.text[:300]}"
+            data = r.json()
+            assert data["ok"] is True
+            assert data["filing_confirmation"] == "CRA-T183-PASS"
+            assert data["filed_return_doc_id"]
+            # Verify persistence
+            g = _get_eng(terry_s, eid)
+            assert g["status"] == "FILED"
+            assert g["filing_confirmation"] == "CRA-T183-PASS"
+            assert g.get("filed_return_doc_id") == data["filed_return_doc_id"]
+        finally:
+            # Roll back to IN_REVIEW so regression tests can re-run the gate
+            db.engagements.update_one(
+                {"id": eid},
+                {"$set": {
+                    "status": before.get("status", "IN_REVIEW"),
+                    "filing_date": before.get("filing_date"),
+                    "filing_confirmation": before.get("filing_confirmation"),
+                    "filed_return_doc_id": before.get("filed_return_doc_id"),
+                    "filing_note": before.get("filing_note"),
+                    "filed_by_id": before.get("filed_by_id"),
+                    "filed_by_name": before.get("filed_by_name"),
+                }}
+            )
+
+
 # ==================== Regression check ====================
 
 def test_endpoints_reachable(admin_s):

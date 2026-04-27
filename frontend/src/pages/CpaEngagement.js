@@ -139,12 +139,12 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
 
 
 function FileWithCRACard({ eng, onSubmit, busy }) {
+  const t183Signed = !!eng.t183_signed_at;
   const [open, setOpen] = useState(false);
   const [pickedFile, setPickedFile] = useState(null);
   const [conf, setConf] = useState("");
   const [filingAt, setFilingAt] = useState(() => {
     const d = new Date(); d.setSeconds(0, 0);
-    // ISO local for input[type=datetime-local]
     const tz = d.getTimezoneOffset();
     return new Date(d.getTime() - tz * 60000).toISOString().slice(0, 16);
   });
@@ -154,6 +154,7 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
 
   const submit = async () => {
     setError("");
+    if (!t183Signed) { setError("Client must sign the T183 before filing."); return; }
     if (!conf.trim()) { setError("CRA confirmation number is required."); return; }
     if (!filingAt) { setError("Filing date and time are required."); return; }
     if (!pickedFile) { setError("Please upload a PDF copy of the filed return."); return; }
@@ -171,9 +172,19 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
         <div className="flex items-center between" style={{ gap: 16 }}>
           <div>
             <h2 className="card-title" style={{ margin: 0 }}>Ready to file with CRA</h2>
-            <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>The client approved the return. Submit your CRA confirmation and filed PDF to mark this engagement as filed.</p>
+            <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              {t183Signed
+                ? "The client approved the return and signed T183. Submit your CRA confirmation and filed PDF to mark this engagement as filed."
+                : "Waiting on the client to sign T183. Filing is unlocked once the signature is on file."}
+            </p>
           </div>
-          <button className="btn btn-primary" onClick={() => setOpen(true)} data-testid="file-now-open"><Send size={14} /> File Now</button>
+          <button
+            className="btn btn-primary"
+            onClick={() => t183Signed && setOpen(true)}
+            disabled={!t183Signed}
+            title={t183Signed ? "" : "Client must sign T183 first"}
+            data-testid="file-now-open"
+          ><Send size={14} /> File Now</button>
         </div>
       </div>
     );
@@ -490,18 +501,22 @@ export default function CpaEngagement() {
             </div>
           </div>
           <div className="flex gap-2">
-            {eng.status !== "FILED" && (
-              <MoveToDropdown
-                current={eng.status}
-                onChange={(next) => advanceStatus(next)}
-                disabledKeys={
-                  // Block IN_REVIEW until a draft is uploaded
-                  eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
-                }
-                note={eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? "Upload the T2 draft PDF below before moving to Review." : null}
-                testid="cpa-move-to"
-              />
-            )}
+            <MoveToDropdown
+              current={eng.status}
+              onChange={(next) => advanceStatus(next)}
+              disabledKeys={
+                // Block IN_REVIEW until a draft is uploaded
+                eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
+              }
+              note={
+                eng.status === "FILED"
+                  ? "Already filed with CRA. Move back only to apply corrections — filing data is preserved."
+                  : eng.status === "IN_PREP" && !eng.t2_draft_doc_id
+                    ? "Upload the T2 draft PDF below before moving to Review."
+                    : null
+              }
+              testid="cpa-move-to"
+            />
           </div>
         </div>
 

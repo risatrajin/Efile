@@ -1900,6 +1900,8 @@ async def file_with_cra(
         raise HTTPException(400, f"Cannot file from status {eng['status']}")
     if not (eng.get("review_decision") or {}).get("decision") == "approved":
         raise HTTPException(400, "Client has not approved the return yet")
+    if not eng.get("t183_signed_at"):
+        raise HTTPException(400, "Client must sign the T183 authorization before the return can be filed")
     if not cra_confirmation.strip():
         raise HTTPException(400, "CRA confirmation number is required")
 

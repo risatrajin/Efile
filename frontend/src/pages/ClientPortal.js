@@ -748,27 +748,32 @@ export default function ClientPortal() {
       {/* FILED STAGE */}
       {isFiled && (
         <>
-          <div data-testid="filed-success" style={{
-            background: "#e8f5e9", border: "1px solid #bbe1bd", borderRadius: 12, padding: "20px 24px",
-            display: "flex", alignItems: "flex-start", gap: 14,
-          }}>
-            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#2e7d32", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Check size={20} style={{ color: "#fff" }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#2e7d32" }}>🎉 Congratulations — your T2 has been filed!</div>
-              <div style={{ fontSize: 13, color: "#2e7d32", marginTop: 6, lineHeight: 1.6 }}>
-                Filed by {eng.filed_by_name || cpa?.name || "your CPA"} · {fmtDate(eng.filing_date)}. CRA has acknowledged the submission. You can download a PDF copy of the filed return below.
+          <div data-testid="filed-success" className="card" style={{ background: "#fff", border: "1px solid var(--border-default)", borderRadius: 16, padding: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#2e7d32", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Check size={16} style={{ color: "#fff" }} strokeWidth={2.5} />
               </div>
-              <div style={{ marginTop: 12, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <span style={{ background: "#fff", padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500 }}>CRA confirmation #</span>
-                <code style={{ fontSize: 12, fontWeight: 600 }} data-testid="cra-conf-num">{craConfNum}</code>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "#2e7d32" }}>Filed with CRA</div>
+            </div>
+
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, lineHeight: 1.2 }}>
+              Congratulations — your T2 has been filed.
+            </h2>
+
+            <p className="muted" style={{ fontSize: 13, marginTop: 10, lineHeight: 1.6, maxWidth: 560 }}>
+              Filed by <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{eng.filed_by_name || cpa?.name || "your CPA"}</span> on <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{fmtDate(eng.filing_date)}</span>. CRA has acknowledged the submission. A PDF copy is below for your records.
+            </p>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 24, marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border-default)", flexWrap: "wrap" }}>
+              <div>
+                <div className="muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>CRA confirmation</div>
+                <code data-testid="cra-conf-num" style={{ fontSize: 14, fontWeight: 600, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", color: "var(--text-primary)" }}>{craConfNum}</code>
               </div>
               {filedReturnDoc && (
                 <button
                   onClick={() => onView(filedReturnDoc)}
                   className="btn btn-primary btn-sm"
-                  style={{ marginTop: 14 }}
+                  style={{ marginLeft: "auto" }}
                   data-testid="download-filed-pdf"
                 ><Download size={14} /> Download filed return</button>
               )}

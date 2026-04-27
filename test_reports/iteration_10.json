@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 10 — Tested 3 follow-up changes: (1) Backend T183 precondition on /api/engagements/{eid}/file-with-cra, (2) CPA MoveToDropdown visible at FILED status with helper note + File Now button disabled when T183 unsigned, (3) Client Portal Filed celebration redesign (modern white card). Extended /app/backend/tests/test_file_and_t183.py with 2 new tests (TestFileWithCRAT183Required.test_t183_unsigned_blocks_filing and test_t183_signed_then_file_succeeds). Full suite now 15 PASS + 1 SKIP (intentional — Ahmed is pre-approved, so the 'not approved' path is skipped). Frontend e2e on Thompson (FILED) and Ahmed (IN_REVIEW + approved + t183 signed) — ALL 6 UI assertions PASS: filed-success bg=rgb(255,255,255), 'FILED WITH CRA' eyebrow, 'Congratulations — your T2 has been filed.' headline with period, 'CRA CONFIRMATION' label, cra-conf-num=CRA-2026-A12345, Download button bg=rgb(26,26,26) (black), MoveToDropdown visible on Thompson (FILED), helper footer exact-string match 'Already filed with CRA. Move back only to apply corrections — filing data is preserved.', Ahmed file-now-open ENABLED (not disabled) because t183 signed, Ahmed MoveToDropdown visible on IN_REVIEW. T183 row + Signed badge also now renders on FILED state (iter9 bug fixed).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_file_and_t183.py",
+    "/app/test_reports/pytest/pytest_file_t183_iter10.xml"
+  ],
+  "action_items": [
+    "(Carry-over) server.py is now ~2468 lines — still recommend splitting into routers.",
+    "(Carry-over) test_draft_review_flow.py / test_draft_history.py have fixture-dependency failures because they assume Thompson is IN_PREP, but Thompson is seeded as FILED. These are DATA fixture conflicts, NOT code regressions. Consider adding a pytest fixture that resets a dedicated client (e.g., kaur/okafor) at the start of those test classes, OR switch those tests to a different client.",
+    "INFO: Download-filed-pdf button uses bg=rgb(26,26,26) (#1a1a1a) rather than pure black #000 and does NOT set marginLeft:auto as the review request notes — instead right-alignment is achieved via a flex layout with the CRA CONFIRMATION block pushing it to the right. Visually it is correctly right-aligned and black enough. No action required."
+  ],
+  "critical_code_review_comments": [
+    "Backend (server.py:1903): `if not eng.get('t183_signed_at'): raise HTTPException(400, 'Client must sign the T183 authorization before the return can be filed')` — correctly placed AFTER the 'client approved' check and BEFORE cra_confirmation/filing_datetime validation. Error message includes 'T183' and 'authorization' keywords. Verified via negative test.",
+    "Frontend CpaEngagement.js:142 — `const t183Signed = !!eng.t183_signed_at` flag drives both the sub-text branch and the disabled attribute. Clean single-source-of-truth. L157 also short-circuits the button onClick.",
+    "Frontend CpaEngagement.js:504 — MoveToDropdown is no longer gated by status != 'FILED'. The helper footer note is conditional on eng.status==='FILED' and contains the exact spec string.",
+    "Frontend ClientPortal.js:751 — filed-success card uses background='#fff' + border='1px solid var(--border-default)' + borderRadius=16 + padding=28 for a neutral modern card. No more green flood-fill.",
+    "The roll-back-and-refile cycle (verified via Ahmed backend happy-path test: IN_REVIEW+approved+t183 signed → FILED via file-with-cra, mongo snapshot of pre-filing fields, then restore) confirms no side-effect constraint — the endpoint is idempotent-safe: a subsequent successful file-with-cra just OVERWRITES filing_date/filing_confirmation/filed_return_doc_id/filed_by_name + inserts a new FILED_RETURN doc. t183_signed_at is untouched by filing, so re-filing works without re-signing.",
+    "Iter9 T183-row-in-FILED bug from /app/test_reports/iteration_9.json is also fixed: Thompson portal now shows the T183 card (data-testid='t183-row', Signed badge) even though eng.status='FILED'. Screenshot confirms the T183 row renders with 'Signed by Rachel Thompson · Apr 27, 2026' + Signed pill."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_file_and_t183.py (added TestFileWithCRAT183Required class with 2 new tests)",
+    "/app/test_reports/iteration_10.json (new)",
+    "/app/test_reports/pytest/pytest_file_t183_iter10.xml (new)"
+  ],
+  "success_rate": {
+    "backend": "100% — 15 PASS + 1 intentional SKIP (15/15 applicable tests PASS). New T183 precondition verified both negative (400 with 'T183' in error) and positive (200 happy path) using mongo fixture to toggle t183_signed_at.",
+    "frontend": "100% — All 6 UI assertions PASS (Thompson portal filed celebration redesign + Thompson CPA engagement MoveToDropdown on FILED + Ahmed CPA engagement file-now-open enabled)."
+  },
+  "test_credentials": "CPA terryann@cloudtax.ca · Client Thompson (FILED) · Client Ahmed (IN_REVIEW + approved + t183 signed) · Admin admin@cloudtax.ca. All password CloudTax2026!.",
+  "seed_data_creation": "During the T183Required test, Ahmed's t183_signed_at was temporarily unset via mongo to isolate the T183 precondition, then restored. During the happy-path test, Ahmed was transitioned FILED then rolled back to IN_REVIEW via mongo $set (preserving the review_decision and t183_signature fields). Thompson state unchanged.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 10 is fully green. Thompson (cc22901b-b6a2-4997-b84a-a7bfc2b307f0) remains FILED with CRA-2026-A12345. Ahmed (d81902dc-5262-4435-8af1-19065ad1a3cc) is restored to IN_REVIEW + approved + t183 signed. The new backend gate is: POST /api/engagements/{eid}/file-with-cra returns 400 if eng.t183_signed_at is missing (validation order: status check → approved check → T183 check → cra_confirmation → filing_datetime → file). Frontend: MoveToDropdown is ungated (always visible), but File Now button is gated on t183Signed (disabled + 'Waiting on the client to sign T183. Filing is unlocked once the signature is on file.' sub-text when not signed). Filed celebration redesigned to neutral white card. All data-testids unchanged: filed-success, cra-conf-num, download-filed-pdf, cpa-move-to, file-now-open, t183-row, t183-signature-image.",
+  "rca_of_issue": "N/A — no open issues this iteration."
+}
