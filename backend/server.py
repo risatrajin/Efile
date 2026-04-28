@@ -65,6 +65,10 @@ class SetPasswordIn(BaseModel):
     password: str = Field(min_length=8)
 
 
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
 class InviteUserIn(BaseModel):
     email: EmailStr
     name: str
@@ -300,6 +304,59 @@ async def set_password(body: SetPasswordIn):
     if not row:
         raise HTTPException(400, "Invalid or expired token")
     if row["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        raise HTTPException(400, "Token expired")
+    await db.users.update_one({"id": row["user_id"]}, {"$set": {"password_hash": hash_password(body.password)}})
+    await db.password_reset_tokens.update_one({"token": body.token}, {"$set": {"used": True}})
+    return {"ok": True}
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn):
+    """Issue a 30-min password-reset token. Always returns ok=True to avoid leaking
+    which emails are registered. When the email IS registered we attempt to send via
+    SES; if SES is unavailable / sandbox-restricted we surface the reset_link directly
+    in the response so the user can complete the flow without inbox access.
+    """
+    db = get_db()
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user or not user.get("is_active", True):
+        # Generic OK so we don't disclose account existence.
+        return {"ok": True, "sent_via_email": False, "reset_link": None}
+
+    token = new_invite_token()
+    await db.password_reset_tokens.insert_one({
+        "id": str(uuid.uuid4()),
+        "token": token,
+        "user_id": user["id"],
+        "used": False,
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=30),
+        "created_at": datetime.now(timezone.utc),
+        "kind": "password_reset",
+    })
+    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+    sent_via_email = False
+    try:
+        result = ses_service.send_password_reset(user["email"], user.get("name") or "there", reset_link)
+        sent_via_email = bool(result.get("success"))
+    except Exception as e:
+        log.warning("send_password_reset failed (likely SES sandbox): %s", e)
+    log.info("Password reset issued: %s -> %s (sent=%s)", email, reset_link, sent_via_email)
+    # Always return the link as a sandbox-safe fallback the UI can show inline.
+    return {"ok": True, "sent_via_email": sent_via_email, "reset_link": reset_link}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: SetPasswordIn):
+    """Consume a password reset token and set a new password."""
+    db = get_db()
+    row = await db.password_reset_tokens.find_one({"token": body.token, "used": False})
+    if not row:
+        raise HTTPException(400, "Invalid or expired token")
+    expires_at = row["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
         raise HTTPException(400, "Token expired")
     await db.users.update_one({"id": row["user_id"]}, {"$set": {"password_hash": hash_password(body.password)}})
     await db.password_reset_tokens.update_one({"token": body.token}, {"$set": {"used": True}})

@@ -3,8 +3,263 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
-import { ArrowLeft, ArrowRight, MessageSquare } from "lucide-react";
+import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileText } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
+import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
+import { ChatThread } from "./Messages";
+
+// ----- Tax Situation: parse the legacy "[time] note\n\nnote" string back into rows -----
+function parseNotes(notes) {
+  if (!notes) return [];
+  return notes
+    .split(/\n\n+/)
+    .map((block, idx) => {
+      const m = block.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
+      return m
+        ? { id: idx, ts: m[1], text: m[2] }
+        : { id: idx, ts: null, text: block };
+    })
+    .filter((r) => (r.text || "").trim().length > 0);
+}
+
+function serializeNotes(rows) {
+  return rows
+    .map((r) => (r.ts ? `[${r.ts}] ${r.text.trim()}` : r.text.trim()))
+    .filter((s) => s.length > 0)
+    .join("\n\n");
+}
+
+function MessageClientModal({ eid, client, corp, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      data-testid="admin-message-modal"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 16, width: "min(720px, 100%)", maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
+      >
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid var(--border-default)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Message {client?.name || "client"}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{corp?.name}</div>
+          </div>
+          <button onClick={onClose} className="btn btn-ghost btn-sm" data-testid="admin-message-close" aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+        <div style={{ padding: 20, flex: 1, minHeight: 480, display: "flex" }}>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ChatThread
+              engagementId={eid}
+              headerUser={{ name: client?.name || "Client", subtitle: corp?.name || "" }}
+              mineRightAlign={true}
+              mineColor="dark"
+              height={520}
+              hideHeader={true}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TaxSituationCard({ rows, onSave, busy }) {
+  const [adding, setAdding] = useState("");
+  const [editingIdx, setEditingIdx] = useState(-1);
+  const [editText, setEditText] = useState("");
+
+  const addNote = async () => {
+    if (!adding.trim()) return;
+    const next = [...rows, { id: Date.now(), ts: new Date().toLocaleString("en-CA"), text: adding.trim() }];
+    await onSave(next);
+    setAdding("");
+  };
+
+  const startEdit = (i) => { setEditingIdx(i); setEditText(rows[i].text); };
+  const cancelEdit = () => { setEditingIdx(-1); setEditText(""); };
+  const saveEdit = async () => {
+    const next = rows.map((r, i) => (i === editingIdx ? { ...r, text: editText.trim() } : r)).filter((r) => r.text);
+    await onSave(next);
+    cancelEdit();
+  };
+  const removeNote = async (i) => {
+    const next = rows.filter((_, idx) => idx !== i);
+    await onSave(next);
+  };
+
+  return (
+    <div className="card" data-testid="tax-situation-card">
+      <h2 className="card-title">Tax situation</h2>
+      <div className="mt-3">
+        {rows.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No notes yet. Add background or context for the assigned CPA below.</div>}
+        <div className="stack-sm">
+          {rows.map((r, i) => (
+            <div
+              key={r.id}
+              data-testid={`tax-note-${i}`}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                padding: "10px 12px",
+                background: "var(--bg-subtle)",
+                border: "1px solid var(--border-default)",
+                borderRadius: 10,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {editingIdx === i ? (
+                  <textarea
+                    className="textarea"
+                    rows={2}
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    data-testid={`tax-note-edit-${i}`}
+                    autoFocus
+                  />
+                ) : (
+                  <>
+                    {r.ts && (
+                      <div className="tertiary" style={{ fontSize: 10, fontWeight: 500, letterSpacing: 0.4, textTransform: "uppercase", marginBottom: 4 }}>
+                        {r.ts}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                      {r.text}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {editingIdx === i ? (
+                  <>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={saveEdit}
+                      disabled={busy || !editText.trim()}
+                      data-testid={`tax-note-save-${i}`}
+                      title="Save"
+                    >
+                      <Check size={12} />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={cancelEdit}
+                      disabled={busy}
+                      title="Cancel"
+                      data-testid={`tax-note-cancel-${i}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => startEdit(i)}
+                      disabled={busy}
+                      title="Edit"
+                      data-testid={`tax-note-edit-btn-${i}`}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => removeNote(i)}
+                      disabled={busy}
+                      title="Remove"
+                      data-testid={`tax-note-remove-${i}`}
+                      style={{ color: "#c62828" }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4">
+        <textarea
+          className="textarea"
+          rows={3}
+          value={adding}
+          onChange={(e) => setAdding(e.target.value)}
+          placeholder="Add a note for the CPA..."
+          data-testid="add-note-text"
+        />
+        <button
+          className="btn btn-secondary btn-sm mt-2"
+          onClick={addNote}
+          disabled={busy || !adding.trim()}
+          data-testid="add-note-save"
+        >
+          Add note
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DocumentsCard({ documents }) {
+  if (!documents || documents.length === 0) return null;
+  const docByCategory = (d) => {
+    if (d.files && d.files.length) return d.files.length;
+    return d.s3_object_key || d.object_key ? 1 : 0;
+  };
+  return (
+    <div className="card" data-testid="admin-documents-card">
+      <h2 className="card-title">Documents</h2>
+      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+        Across all stages — same view the CPA has access to.
+      </div>
+      <div className="mt-3 stack-sm">
+        {documents.map((d) => {
+          const count = docByCategory(d);
+          const uploaded = count > 0;
+          return (
+            <div
+              key={d.id}
+              data-testid={`admin-doc-${d.id}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 12px",
+                background: "var(--bg-subtle)",
+                border: "1px solid var(--border-default)",
+                borderRadius: 10,
+              }}
+            >
+              <FileText size={14} style={{ color: "var(--text-secondary)" }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{d.name || d.label}</div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                  {uploaded ? `${count} file${count > 1 ? "s" : ""} uploaded` : "Not uploaded"}
+                </div>
+              </div>
+              <span
+                className="badge"
+                style={{
+                  background: uploaded ? "#e8f5e9" : "#fff3e0",
+                  color: uploaded ? "#1b5e20" : "#ef6c00",
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
+              >
+                {uploaded ? "Uploaded" : "Pending"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function AdminClientDetail() {
   const navigate = useNavigate();
@@ -12,19 +267,26 @@ export default function AdminClientDetail() {
   const [eng, setEng] = useState(null);
   const [cpas, setCpas] = useState([]);
   const [selectedCpa, setSelectedCpa] = useState("");
-  const [note, setNote] = useState("");
+  const [history, setHistory] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [documents, setDocuments] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [showMessageModal, setShowMessageModal] = useState(false);
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([
+      const [a, b, h, d] = await Promise.all([
         api.get(`/engagements/${eid}`),
         api.get("/users"),
+        api.get(`/engagements/${eid}/history`).catch(() => ({ data: [] })),
+        api.get(`/engagements/${eid}/documents`).catch(() => ({ data: [] })),
       ]);
       setEng(a.data);
       setCpas(b.data.filter((u) => u.role === "CPA" && u.is_active));
       setSelectedCpa(a.data.assigned_cpa_id || "");
+      setHistory(h.data || []);
+      setDocuments(d.data || []);
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
@@ -52,13 +314,10 @@ export default function AdminClientDetail() {
     setBusy(false);
   };
 
-  const saveNote = async () => {
-    if (!note.trim()) return;
+  const saveNotesFromRows = async (rows) => {
     setBusy(true); setErr("");
     try {
-      const next = (eng.notes ? eng.notes + "\n\n" : "") + `[${new Date().toLocaleString("en-CA")}] ${note.trim()}`;
-      await api.patch(`/engagements/${eid}`, { notes: next });
-      setNote("");
+      await api.patch(`/engagements/${eid}`, { notes: serializeNotes(rows) });
       await load();
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
@@ -72,7 +331,7 @@ export default function AdminClientDetail() {
   if (!eng) return <div className="app-root"><AppHeader tabs={tabs} /><div className="page-wide">Loading…</div></div>;
   const corp = eng.corporation || {};
   const client = eng.client || {};
-  const noteLines = eng.notes ? eng.notes.split(/\n\n+/) : [];
+  const noteRows = parseNotes(eng.notes);
   const ready = !!selectedCpa;
 
   return (
@@ -95,7 +354,13 @@ export default function AdminClientDetail() {
             </div>
           </div>
           <div className="flex gap-2 items-center">
-            <button className="btn btn-secondary"><MessageSquare size={12} /> Message client</button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowMessageModal(true)}
+              data-testid="admin-message-client-btn"
+            >
+              <MessageSquare size={12} /> Message client
+            </button>
             <MoveToDropdown
               current={eng.status}
               onChange={async (next) => {
@@ -141,19 +406,9 @@ export default function AdminClientDetail() {
               </div>
             </div>
 
-            <div className="card" data-testid="tax-situation-card">
-              <h2 className="card-title">Tax situation</h2>
-              <div className="mt-3">
-                {noteLines.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No notes yet. Add background or context for the assigned CPA below.</div>}
-                <ul style={{ paddingLeft: 18, margin: 0 }}>
-                  {noteLines.map((l, i) => <li key={i} style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>{l}</li>)}
-                </ul>
-              </div>
-              <div className="mt-4">
-                <textarea className="textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note for the CPA..." data-testid="add-note-text" />
-                <button className="btn btn-secondary btn-sm mt-2" onClick={saveNote} disabled={busy || !note.trim()} data-testid="add-note-save">Add note</button>
-              </div>
-            </div>
+            <TaxSituationCard rows={noteRows} onSave={saveNotesFromRows} busy={busy} />
+
+            <DocumentsCard documents={documents} />
           </div>
 
           <div className="stack-lg">
@@ -179,9 +434,27 @@ export default function AdminClientDetail() {
                 )}
               </div>
             </div>
+
+            <div className="card" data-testid="status-history-card">
+              <StatusHistoryHeader count={history.length} open={historyOpen} onToggle={() => setHistoryOpen(!historyOpen)} />
+              {historyOpen && (
+                <div className="mt-4">
+                  <StatusHistoryTimeline rows={history} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {showMessageModal && (
+        <MessageClientModal
+          eid={eid}
+          client={client}
+          corp={corp}
+          onClose={() => setShowMessageModal(false)}
+        />
+      )}
     </div>
   );
 }

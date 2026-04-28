@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AccessibilityProvider } from "./contexts/AccessibilityContext";
 import Login, { SetPassword } from "./pages/Login";
+import ForgotPassword, { ResetPassword } from "./pages/ForgotPassword";
 import ClientLayout from "./pages/ClientLayout";
 import ClientPortal from "./pages/ClientPortal";
 import MessagesPage from "./pages/Messages";
@@ -52,6 +53,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/set-password" element={<SetPassword />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           <Route element={<Protected roles={["CLIENT"]}><ClientLayout /></Protected>}>
             <Route path="/portal" element={<ClientPortal />} />

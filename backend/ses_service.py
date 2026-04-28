@@ -72,6 +72,22 @@ def send_invite(to_email: str, name: str, invite_link: str, role: str) -> dict:
     return send(to_email, "Your CloudTax invitation", _wrap(inner), f"Welcome to CloudTax. Set your password: {invite_link}")
 
 
+def send_password_reset(to_email: str, name: str, reset_link: str) -> dict:
+    inner = f"""<h1>Reset your CloudTax password</h1>
+    <p>Hi {name},</p>
+    <p>We received a request to reset the password for your CloudTax account. Use the button below to set a new one.</p>
+    <p><a class="btn" href="{reset_link}">Reset password</a></p>
+    <p class="muted">This link expires in 30 minutes. If you didn't request this, you can ignore this email.</p>"""
+    return send(
+        to_email,
+        "Reset your CloudTax password",
+        _wrap(inner),
+        f"Hi {name}, reset your CloudTax password here (expires in 30 min): {reset_link}",
+    )
+
+
+
+
 def send_filing_complete(to_email: str, name: str, corp_name: str, portal_link: str) -> dict:
     inner = f"""<h1>Your return is filed</h1>
     <p>Hi {name},</p>

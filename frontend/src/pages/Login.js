@@ -51,7 +51,10 @@ export default function Login() {
             {busy ? <span className="spinner" /> : "Sign in"}
           </button>
         </form>
-        <div className="tertiary" style={{ fontSize: 11, marginTop: 20, textAlign: "center" }}>
+        <div className="tertiary" style={{ fontSize: 12, marginTop: 16, textAlign: "center" }}>
+          <Link to="/forgot-password" className="link-underline" data-testid="forgot-password-link">Forgot your password?</Link>
+        </div>
+        <div className="tertiary" style={{ fontSize: 11, marginTop: 12, textAlign: "center" }}>
           Have an invitation? <Link to="/set-password" className="link-underline">Set your password</Link>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, fmtError, fmtDate } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
+import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
 import { Plus, Lock, ArrowRight, X } from "lucide-react";
 
 const COLUMNS = [
@@ -301,6 +302,7 @@ export default function WsDashboard() {
   const [showAdd, setShowAdd] = useState(false);
   const [editingEng, setEditingEng] = useState(null);
   const [err, setErr] = useState("");
+  const [view, setView] = useState(() => localStorage.getItem("ct_ws_dash_view") || "kanban");
 
   const load = async () => {
     try {
@@ -316,6 +318,11 @@ export default function WsDashboard() {
   };
   useEffect(() => { load(); }, []);
 
+  const setViewPersist = (v) => {
+    setView(v);
+    try { localStorage.setItem("ct_ws_dash_view", v); } catch { /* ignore */ }
+  };
+
   const moveToCloudtax = async (eng) => {
     try { await api.post(`/engagements/${eng.id}/submit`); await load(); }
     catch (x) { setErr(fmtError(x)); }
@@ -330,48 +337,71 @@ export default function WsDashboard() {
     <div className="app-root">
       <AppHeader tabs={tabs} />
       <div className="page-wide stack-lg">
-        <div>
-          <h1 className="page-title">Client pipeline</h1>
-          <p className="muted" style={{ fontSize: 13 }}>Onboard clients and track their progress through the filing process</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+          <div>
+            <h1 className="page-title">Client pipeline</h1>
+            <p className="muted" style={{ fontSize: 13 }}>Onboard clients and track their progress through the filing process</p>
+          </div>
+          <ViewToggle value={view} onChange={setViewPersist} testid="ws-view-toggle" />
         </div>
         {err && <div className="alert alert-risk">{err}</div>}
-        <div className="kanban" style={{ gridTemplateColumns: "repeat(6, minmax(220px, 1fr))" }} data-testid="ws-kanban">
-          {COLUMNS.map((col) => {
-            const items = engs.filter((e) => e.status === col.key);
-            const isOnboarding = col.key === "ONBOARDING";
-            return (
-              <div className="kanban-col" key={col.key} data-testid={`kanban-col-${col.key}`}>
-                <div className="kanban-col-header">
-                  <div>
-                    <div className="kanban-col-title">{col.label}</div>
-                    <div className="kanban-col-count">{items.length}</div>
+        {view === "kanban" ? (
+          <div className="kanban" style={{ gridTemplateColumns: "repeat(6, minmax(220px, 1fr))" }} data-testid="ws-kanban">
+            {COLUMNS.map((col) => {
+              const items = engs.filter((e) => e.status === col.key);
+              const isOnboarding = col.key === "ONBOARDING";
+              return (
+                <div className="kanban-col" key={col.key} data-testid={`kanban-col-${col.key}`}>
+                  <div className="kanban-col-header">
+                    <div>
+                      <div className="kanban-col-title">{col.label}</div>
+                      <div className="kanban-col-count">{items.length}</div>
+                    </div>
+                    {isOnboarding ? (
+                      <button onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-circle"
+                              style={{ width: 28, height: 28, borderRadius: "50%", background: "#1565c0", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                        <Plus size={14} />
+                      </button>
+                    ) : (
+                      <Lock size={11} style={{ color: "var(--text-tertiary)" }} />
+                    )}
                   </div>
-                  {isOnboarding ? (
-                    <button onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-circle"
-                            style={{ width: 28, height: 28, borderRadius: "50%", background: "#1565c0", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                      <Plus size={14} />
+                  <div className="stack-sm">
+                    {isOnboarding
+                      ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onMove={moveToCloudtax} onOpen={() => openOnboarding(e.id)} />)
+                      : items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)
+                    }
+                    {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 12 }}>No clients</div>}
+                  </div>
+                  {isOnboarding && (
+                    <button className="btn btn-primary w-full mt-3"
+                            onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-bottom">
+                      <Plus size={12} /> Add client
                     </button>
-                  ) : (
-                    <Lock size={11} style={{ color: "var(--text-tertiary)" }} />
                   )}
                 </div>
-                <div className="stack-sm">
-                  {isOnboarding
-                    ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onMove={moveToCloudtax} onOpen={() => openOnboarding(e.id)} />)
-                    : items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)
-                  }
-                  {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 12 }}>No clients</div>}
-                </div>
-                {isOnboarding && (
-                  <button className="btn btn-primary w-full mt-3"
-                          onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-bottom">
-                    <Plus size={12} /> Add client
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: -8 }}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => { setEditingEng(null); setShowAdd(true); }}
+                data-testid="add-client-table"
+              >
+                <Plus size={12} /> Add client
+              </button>
+            </div>
+            <EngagementTable
+              engagements={engs}
+              role="WS_PARTNER"
+              onRowClick={(e) => (e.status === "ONBOARDING" ? openOnboarding(e.id) : openFile(e.id))}
+              testid="ws-engagement-table"
+            />
+          </>
+        )}
       </div>
       {showAdd && <AddClientModal existing={editingEng} onClose={() => { setShowAdd(false); setEditingEng(null); }} onCreated={(newEid) => { load(); if (newEid) navigate(`/ws/onboarding/${newEid}`); }} />}
     </div>

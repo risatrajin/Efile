@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
+import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
 import { Plus, X } from "lucide-react";
 
 const COLUMNS = [
@@ -264,11 +265,17 @@ export default function AdminDashboard() {
   const [engs, setEngs] = useState([]);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState("clients");
+  const [view, setView] = useState(() => localStorage.getItem("ct_admin_dash_view") || "kanban");
 
   const load = async () => {
     try { const { data } = await api.get("/engagements"); setEngs(data); } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); }, []);
+
+  const setViewPersist = (v) => {
+    setView(v);
+    try { localStorage.setItem("ct_admin_dash_view", v); } catch { /* ignore */ }
+  };
 
   const adminTabs = [
     { key: "clients", label: "Clients" },
@@ -300,25 +307,43 @@ export default function AdminDashboard() {
         {err && <div className="alert alert-risk">{err}</div>}
 
         {tab === "clients" && (
-          <div className="kanban" style={{ gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(220px, 1fr))` }} data-testid="admin-kanban">
-            {COLUMNS.map((col) => {
-              const items = engs.filter((e) => e.status === col.key);
-              return (
-                <div className="kanban-col" key={col.key} data-testid={`admin-kanban-col-${col.key}`}>
-                  <div className="kanban-col-header">
-                    <div>
-                      <div className="kanban-col-title">{col.label}</div>
-                      <div className="kanban-col-count">{items.length}</div>
+          <>
+            <div
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}
+              data-testid="admin-clients-toolbar"
+            >
+              <h2 style={{ fontSize: 22, fontWeight: 700 }}>Clients pipeline</h2>
+              <ViewToggle value={view} onChange={setViewPersist} testid="admin-view-toggle" />
+            </div>
+            {view === "kanban" ? (
+              <div className="kanban" style={{ gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(220px, 1fr))` }} data-testid="admin-kanban">
+                {COLUMNS.map((col) => {
+                  const items = engs.filter((e) => e.status === col.key);
+                  return (
+                    <div className="kanban-col" key={col.key} data-testid={`admin-kanban-col-${col.key}`}>
+                      <div className="kanban-col-header">
+                        <div>
+                          <div className="kanban-col-title">{col.label}</div>
+                          <div className="kanban-col-count">{items.length}</div>
+                        </div>
+                      </div>
+                      <div className="stack-sm">
+                        {items.map((e) => <AdminCard key={e.id} eng={e} onClick={() => navigate(`/admin/client/${e.id}`)} />)}
+                        {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 8, textAlign: "center" }}>No clients</div>}
+                      </div>
                     </div>
-                  </div>
-                  <div className="stack-sm">
-                    {items.map((e) => <AdminCard key={e.id} eng={e} onClick={() => navigate(`/admin/client/${e.id}`)} />)}
-                    {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 8, textAlign: "center" }}>No clients</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EngagementTable
+                engagements={engs}
+                onRowClick={(e) => navigate(`/admin/client/${e.id}`)}
+                role="ADMIN"
+                testid="admin-engagement-table"
+              />
+            )}
+          </>
         )}
 
         {tab === "cpas" && <CpasTab engs={engs} />}
