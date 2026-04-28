@@ -152,6 +152,16 @@
 
 **Tests**: pytest **17/17 PASS** in new `test_t183_rebuild.py` (RBAC, validation, upload-resets-prior-state, position bounds, send preconditions, metadata schema, file streaming variants, legacy fallback, sign validation, sign RBAC, full PyMuPDF merge happy path verifying +1 embedded image on target page). Regression on `test_file_and_t183.py`: **15/15 PASS** after adding back-compat `signed: bool` to the metadata response.
 
+### Iter 20 (Feb 2026 — T183 + Filing polish: signature trim, signature display removal, filing summary)
+- **Signature canvas crash fix**: `react-signature-canvas`'s bundled `getTrimmedCanvas()` is broken in `trim-canvas` v0.1.4 (`is not a function`). Replaced with a manual `manualTrimCanvas()` helper inside `T183SigningModal.js` — walks pixel `imageData` to find the bounding box of non-transparent pixels and crops to that with a 2px pad. Both **Draw** (uses `padRef.current.getCanvas()`) and **Type** (uses the typed canvas) paths now flow through the helper before `.toDataURL("image/png")`.
+- **Signature image removed from FILED view**: stripped the "Your signature" preview block from both the standalone `<T183Card>` (Filed phase) and the Action Required T183 row (Review phase). Signed state shows only `Signed by [Name] · [Date]` + Preview + green Signed badge. Verified live: zero `<img data-testid="t183-signature-image">` on Thompson FILED.
+- **Filed Return Summary end-to-end**:
+  - Backend `POST /file-with-cra` now accepts an optional `filing_summary` query param (JSON). Whitelist parses to exactly `{net_income, total_tax_assessed, instalments_paid, balance_owing, payment_due_date}` — extras silently dropped, invalid JSON → 400.
+  - CPA `<FileWithCRACard>` extended with a "FILED RETURN SUMMARY" sub-card containing 4 currency inputs + 1 date picker; balance_owing is auto-calculated = total_tax − instalments and shown disabled. The form serializes only when at least one field is non-empty.
+  - Client Portal "FILED RETURN SUMMARY" reads `eng.filing_summary` (preferred) with fallback to legacy `eng.tax_summary`. All 5 rows render `—` when missing, formatted currency/date when present. Verified live: Thompson with summary = `{285000, 75000, 50000, 25000, 2026-08-31}` shows correct values; Nguyen without summary shows em-dash on every row.
+- Backend `/t183` metadata response retains both `status` (enum) and back-compat `signed` (boolean) — iter 12 regression resolved.
+- **Tests**: testing_agent_v3_fork iter 13 — backend filing_summary suite **3/3 PASS** (1 env-skip due to no IN_REVIEW engagement on hand). Regression on `test_t183_rebuild.py` + `test_file_and_t183.py` → **30/33 PASS** (3 env-skips due to seed data being in FILED state). Frontend Client Portal verified on Thompson + Nguyen; CPA file-with-CRA form testids verified by code review.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
