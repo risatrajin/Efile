@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 12 — Tested the rebuilt T183 e-signature flow end-to-end. Backend: 17/17 PASS in new test_t183_rebuild.py — covers RBAC (CLIENT/WS blocked from upload), validation (empty/non-pdf), upload+reset, position validation, send, GET metadata schema, file streaming (variant=auto/original/signed), legacy fallback (Thompson/Ahmed), sign validation, sign RBAC (CPA blocked), and the full PyMuPDF merge happy path which verified that the signed PDF on page 0 has exactly +1 image vs the original (orig_imgs → orig_imgs+1). Liu's engagement was used as the live subject and is now status='signed' with a real signed PDF stamped by PyMuPDF on disk. Frontend CPA: Thompson + Ahmed engagements both show t183-mgmt-card, t183-status-signed badge, t183-download-signed and t183-replace-btn; clicking Replace on Ahmed correctly opens the placement modal in upload phase with t183-upload-dropzone visible. Frontend Client: Thompson portal renders t183-signed-badge in the Action Required area as expected. REGRESSION FOUND: the GET /api/engagements/{eid}/t183 schema rename (`signed` boolean → `status` enum) silently broke 2 prior tests in test_file_and_t183.py (TestT183GetThompson::test_t183_metadata_signed_true_for_thompson and TestT183SignValidation::test_valid_client_sign_persists) — both fail with KeyError: 'signed'. The other regression failures in test_draft_history.py and test_draft_review_flow.py are pre-existing fixture issues (Thompson seeded as FILED, not IN_PREP) already documented in iteration_11.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/engagements/{eid}/t183", "issue": "Schema rename: response now has `status: 'signed'|'sent'|'draft'|null` instead of legacy `signed: bool`. Two prior test_file_and_t183.py tests assert meta['signed'] and now break with KeyError. Decide between (a) updating those tests or (b) returning both keys for backward compatibility."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_t183_rebuild.py",
+    "/app/test_reports/pytest/pytest_t183_rebuild.xml",
+    "/app/test_reports/pytest/pytest_regression_iter12.xml"
+  ],
+  "action_items": [
+    "Either update test_file_and_t183.py::TestT183GetThompson + TestT183SignValidation to read `meta['status'] == 'signed'` instead of `meta['signed'] is True`, OR have GET /t183 also include a backwards-compat boolean `signed = (status == 'signed')` to keep the prior contract.",
+    "(Carry-over) test_draft_history.py + test_draft_review_flow.py still fail because Thompson is seeded FILED rather than IN_PREP — switch their fixture client to Liu or Patel.",
+    "(Carry-over from iter11) Move corp_name input from Step 2 → Step 1 of WsDashboard Add Client modal — Step 1 Next still permanently disabled.",
+    "(Carry-over) /app/backend/server.py is now 2892 lines; consider splitting (notifications / documents / engagements / t183) into routers."
+  ],
+  "critical_code_review_comments": [
+    "server.py:2092-2120 _stamp_signature_on_pdf — uses PyMuPDF page.insert_image with keep_proportion=True and overlay=True. Verified end-to-end: original page 0 image count (2 in template) → 3 in signed PDF. Position math correct (percentages of page.rect.width/height with top-left origin since fitz uses PDF coordinate flip internally — visual placement matches expected bottom-right when y_pct=0.8).",
+    "server.py:2123-2169 upload_t183_pdf — correctly $unset all six derived t183_* fields on re-upload (signature_position, sent_at, signature, signed_at, signed_name, signed_object_key, signed_storage). Validation order (empty → 413 size → content_type) is correct. RBAC via require_role('CPA','ADMIN') verified: CLIENT and WS_PARTNER both 403.",
+    "server.py:2227-2251 get_t183 — backward compat for legacy: when no t183_original_object_key but t183_signed_at exists, returns status='signed' AND populates legacy_signature_image. Verified on Thompson + Ahmed.",
+    "server.py:2254-2297 get_t183_file variant=auto — falls back to bundled CRA template when no upload + no signed (legacy). Returns RedirectResponse(307) for S3, FileResponse for local. No 404 unless template missing AND no key.",
+    "server.py:2305-2356 sign_t183 — requires `data:image/` substring (NOT prefix; technically 'foo data:image/' would pass but unlikely to be reached). Strips signer_name and 400s on empty. Stores signed PDF object key + storage, sets status='signed', t183_signed_at, t183_signed_name. Notifies assigned_cpa_id when present.",
+    "REGRESSION: GET /t183 schema rename `signed`→`status` is a breaking API contract change. Caller-side: client portal & CPA management card already updated (verified working); test_file_and_t183.py was NOT updated. Add a backward-compat boolean or update those two tests.",
+    "import io added at line 6 — confirmed used by _stamp_signature_on_pdf for in-memory doc.save buffer."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_t183_rebuild.py (NEW — 17 tests, all PASS)",
+    "/app/test_reports/pytest/pytest_t183_rebuild.xml (NEW)",
+    "/app/test_reports/pytest/pytest_regression_iter12.xml (NEW)",
+    "/app/test_reports/iteration_12.json (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% on new T183 suite (17/17). Regression: 41/49 across 5 prior files — 2 failures are real schema-contract regressions in test_file_and_t183.py, the other 6 are pre-existing fixture-state failures already documented in iter11.",
+    "frontend": "85% — CPA T183ManagementCard verified on Thompson (signed) and Ahmed (legacy signed); Replace opens placement modal + upload dropzone. Client portal t183-signed-badge verified on Thompson. Did NOT fully exercise the live signing modal (sig pad Draw/Type tabs + complete) because the Liu engagement we used was already signed via API and Kaur has no T183 yet — the live modal launch path on a status=sent engagement remains unverified end-to-end in the browser."
+  },
+  "test_credentials": "All in /app/memory/test_credentials.md. Used: terryann@cloudtax.ca (CPA), thompson@example.com / liu@example.com / kaur@example.com / ahmed@example.com (clients), henry.ziegler@wealthsimple.com (WS), admin@cloudtax.ca (admin). All password CloudTax2026!.",
+  "seed_data_creation": "Liu's engagement (d032f4ac-209b-4493-8f76-eaaaf93e1fd6) was put through the full upload→position→send→sign cycle: t183_status='signed', signed PDF stored at /app/backend/uploads/t183/d032f4ac-.../signed_*.pdf, signed_name='Wei Liu'. To rerun fresh, mongo-unset t183_* fields on Liu first.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend T183 rebuild is fully verified — 17/17 new tests + PyMuPDF merge produces a real PDF with +1 embedded image on the target page. The two regression failures in test_file_and_t183.py are due to the {signed: bool}→{status: enum} schema rename — main agent must decide whether to update those tests or add a backward-compat key. Frontend CPA management card + status badges + Replace flow are verified on Thompson (modern signed) and Ahmed (legacy signed). The live signature pad modal (Draw + Type tabs, complete-sign disabled state) was NOT exercised in browser because no client engagement was in status=sent during testing — to retest, first call POST /t183/upload + /t183/position + /t183/send on Kaur or Patel as terryann, then login as that client and click t183-view-sign-btn.",
+  "rca_of_issue": "Schema rename in GET /api/engagements/{eid}/t183: server.py:2238-2250 now returns `status: 'signed'|'sent'|'draft'|null` (plus has_original/has_signed_pdf/signature_position/legacy_signature_image), DROPPING the legacy `signed: bool` key. The two failing tests in test_file_and_t183.py were written against the prior contract and assert `data['signed'] is True` and `meta['signed'] is True`. These now KeyError. The fix is two lines either way — either add `'signed': status == 'signed'` to the JSONResponse dict in get_t183, or update both tests to use `data['status'] == 'signed'`."
+}

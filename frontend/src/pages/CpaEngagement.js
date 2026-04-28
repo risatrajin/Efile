@@ -8,6 +8,7 @@ import { ChatThread } from "./Messages";
 import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
+import T183PlacementModal from "../components/shared/T183PlacementModal";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
 
@@ -282,6 +283,75 @@ function AddOppModal({ onClose, onCreate }) {
   );
 }
 
+function T183ManagementCard({ eng, t183, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const status = t183?.status || null;          // null | draft | sent | signed
+  const subText = (() => {
+    if (!status) return "Upload the pre-filled T183 PDF and place the client's signature box. Required to file with CRA.";
+    if (status === "draft") return "Place the signature placeholder, then send it to the client.";
+    if (status === "sent") return `Awaiting client signature${t183?.sent_at ? ` · sent ${fmtDate(t183.sent_at)}` : ""}.`;
+    if (status === "signed") return `Signed by ${t183?.signed_name || "client"}${t183?.signed_at ? ` · ${fmtDate(t183.signed_at)}` : ""}.`;
+    return "";
+  })();
+
+  const downloadSigned = async () => {
+    try {
+      const url = `/engagements/${eng.id}/t183/file?variant=signed`;
+      const resp = await api.get(url, { responseType: "blob" });
+      const blobUrl = URL.createObjectURL(resp.data);
+      window.open(blobUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (_) { /* swallow */ }
+  };
+
+  return (
+    <div className="card" data-testid="t183-mgmt-card" style={{ borderLeft: "3px solid var(--accent-dark)" }}>
+      <div className="flex items-center between" style={{ gap: 14 }}>
+        <div style={{ flex: 1 }}>
+          <div className="flex items-center" style={{ gap: 10 }}>
+            <h2 className="card-title" style={{ margin: 0 }}>T183 — Authorization to E-File</h2>
+            <T183StatusBadge status={status} />
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>{subText}</p>
+        </div>
+        <div className="flex gap-2">
+          {status === "signed" && t183?.has_signed_pdf && (
+            <button className="btn btn-secondary btn-sm" onClick={downloadSigned} data-testid="t183-download-signed">Download signed PDF</button>
+          )}
+          {status !== "signed" && (
+            <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)} data-testid="t183-manage-btn">
+              {!status ? "Upload T183" : status === "draft" ? "Place & send" : "Reposition / re-send"}
+            </button>
+          )}
+          {status === "signed" && (
+            <button className="btn btn-secondary btn-sm" onClick={() => setOpen(true)} data-testid="t183-replace-btn">Replace T183</button>
+          )}
+        </div>
+      </div>
+      {open && (
+        <T183PlacementModal
+          engagementId={eng.id}
+          t183={t183}
+          onClose={() => setOpen(false)}
+          onChange={onChanged}
+        />
+      )}
+    </div>
+  );
+}
+
+function T183StatusBadge({ status }) {
+  if (!status) return null;
+  const map = {
+    draft:  { label: "Draft",                bg: "#fff3e0", color: "#ef6c00" },
+    sent:   { label: "Awaiting signature",   bg: "#e3f2fd", color: "#1565c0" },
+    signed: { label: "Signed",               bg: "#e8f5e9", color: "#2e7d32" },
+  };
+  const s = map[status];
+  if (!s) return null;
+  return <span data-testid={`t183-status-${status}`} style={{ background: s.bg, color: s.color, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em" }}>{s.label}</span>;
+}
+
 function FlagIssueModal({ doc, onClose, onSave }) {
   const [note, setNote] = useState(doc?.issue_note || "");
   const [busy, setBusy] = useState(false);
@@ -352,6 +422,7 @@ export default function CpaEngagement() {
   const [showNewReq, setShowNewReq] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [t183, setT183] = useState(null);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [newTime, setNewTime] = useState({ category: "T2_PREPARATION", hours: "", description: "" });
   const [busy, setBusy] = useState(false);
@@ -359,7 +430,7 @@ export default function CpaEngagement() {
 
   const load = async () => {
     try {
-      const [a, b, c, d, e, f, h] = await Promise.all([
+      const [a, b, c, d, e, f, h, t] = await Promise.all([
         api.get(`/engagements/${eid}`),
         api.get(`/engagements/${eid}/documents`),
         api.get(`/engagements/${eid}/extracted-data`),
@@ -367,9 +438,16 @@ export default function CpaEngagement() {
         api.get(`/engagements/${eid}/time-entries`),
         api.get(`/engagements/${eid}/checklist`),
         api.get(`/engagements/${eid}/history`),
+        api.get(`/engagements/${eid}/t183`),
       ]);
-      setEng(a.data); setDocs(b.data); setExtracted(c.data); setOpps(d.data); setTime(e.data); setCl(f.data); setHistory(h.data);
+      setEng(a.data); setDocs(b.data); setExtracted(c.data); setOpps(d.data); setTime(e.data); setCl(f.data); setHistory(h.data); setT183(t.data);
     } catch (x) { setErr(fmtError(x)); }
+  };
+  const loadT183 = async () => {
+    try {
+      const t = await api.get(`/engagements/${eid}/t183`);
+      setT183(t.data);
+    } catch (_) { /* ignore */ }
   };
   useEffect(() => { load(); }, [eid]);
 
@@ -521,6 +599,11 @@ export default function CpaEngagement() {
         </div>
 
         {err && <div className="alert alert-risk">{err}</div>}
+
+        {/* T183 e-signature workflow — visible from REVIEW onward */}
+        {(eng.status === "IN_REVIEW" || eng.status === "DELIVERY" || eng.status === "FILED") && (
+          <T183ManagementCard eng={eng} t183={t183} onChanged={() => loadT183().then(load)} />
+        )}
 
         {/* Ready-to-file-with-CRA appears in REVIEW stage regardless of client approval.
             CPA may proceed as soon as the client has signed T183 (legal authorization). */}

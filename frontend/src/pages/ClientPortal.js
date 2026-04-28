@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
 import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag, PenLine, Plus } from "lucide-react";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
-import SignaturePadModal from "../components/shared/SignaturePadModal";
+import T183SigningModal from "../components/shared/T183SigningModal";
 
 const PHASES = [
   { key: "profile", label: "Profile" },
@@ -568,19 +568,18 @@ export default function ClientPortal() {
   };
 
   const [t183Open, setT183Open] = useState(false);
-  const [t183Busy, setT183Busy] = useState(false);
-  const submitT183Signature = async ({ signature, name }) => {
-    setT183Busy(true);
-    try {
-      await api.post(`/engagements/${eng.id}/t183/sign`, { signature, signer_name: name });
-      setT183Open(false);
-      await loadAll();
-    } catch (x) { setErr(fmtError(x)); }
-    setT183Busy(false);
+  const [t183, setT183] = useState(null);
+  useEffect(() => {
+    if (!eng?.id) return;
+    api.get(`/engagements/${eng.id}/t183`).then((r) => setT183(r.data)).catch(() => {});
+  }, [eng?.id, eng?.t183_status, eng?.t183_signed_at]);
+  const onT183Signed = async () => {
+    setT183Open(false);
+    await loadAll();
   };
-  const previewT183 = async () => {
+  const previewT183 = async (variant = "auto") => {
     try {
-      const url = `/engagements/${eng.id}/t183/file`;
+      const url = `/engagements/${eng.id}/t183/file?variant=${variant}`;
       const resp = await api.get(url, { responseType: "blob" });
       const blobUrl = URL.createObjectURL(resp.data);
       window.open(blobUrl, "_blank");
@@ -735,26 +734,32 @@ export default function ClientPortal() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>CRA T183 — Authorization to E-File</div>
                 <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                  {eng.t183_signed_at
-                    ? <>Signed by {eng.t183_signed_name} · {fmtDate(eng.t183_signed_at)}</>
-                    : "Required: sign to authorize CPA to file electronically with CRA."}
+                  {t183?.status === "signed" || eng.t183_signed_at
+                    ? <>Signed by {t183?.signed_name || eng.t183_signed_name} · {fmtDate(t183?.signed_at || eng.t183_signed_at)}</>
+                    : t183?.status === "sent"
+                      ? "Your CPA has prepared your T183 — open it to sign at the highlighted spot."
+                      : "Waiting on your CPA to prepare the T183 for your signature."}
                 </div>
               </div>
-              <button onClick={previewT183} className="btn btn-secondary btn-sm" data-testid="t183-preview">
-                <Eye size={14} /> Preview
-              </button>
-              {eng.t183_signed_at ? (
-                <span className="badge badge-complete" data-testid="t183-signed-badge" style={{ fontSize: 11 }}>Signed</span>
-              ) : (
-                <button onClick={() => setT183Open(true)} className="btn btn-primary btn-sm" data-testid="t183-sign-btn">
-                  <PenLine size={14} /> Sign T183
+              {(t183?.has_signed_pdf || t183?.has_original) && (
+                <button onClick={() => previewT183(t183?.has_signed_pdf ? "signed" : "original")} className="btn btn-secondary btn-sm" data-testid="t183-preview">
+                  <Eye size={14} /> {t183?.has_signed_pdf ? "Download signed" : "Preview"}
                 </button>
               )}
+              {(t183?.status === "signed" || eng.t183_signed_at) ? (
+                <span className="badge badge-complete" data-testid="t183-signed-badge" style={{ fontSize: 11 }}>Signed</span>
+              ) : t183?.status === "sent" ? (
+                <button onClick={() => setT183Open(true)} className="btn btn-primary btn-sm" data-testid="t183-view-sign-btn">
+                  <PenLine size={14} /> View & sign T183
+                </button>
+              ) : (
+                <span className="badge" data-testid="t183-waiting-badge" style={{ fontSize: 11, background: "var(--bg-subtle)", color: "var(--text-tertiary)", padding: "4px 10px", borderRadius: 999 }}>Awaiting CPA</span>
+              )}
             </div>
-            {eng.t183_signature && (
+            {(t183?.legacy_signature_image || (eng.t183_signature && !t183?.has_signed_pdf)) && (
               <div style={{ marginTop: 12, padding: 12, background: "var(--bg-subtle)", border: "1px solid var(--border-default)", borderRadius: 10 }}>
                 <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Your signature</div>
-                <img src={eng.t183_signature} alt="Client signature" data-testid="t183-signature-image" style={{ maxHeight: 80, display: "block" }} />
+                <img src={t183?.legacy_signature_image || eng.t183_signature} alt="Client signature" data-testid="t183-signature-image" style={{ maxHeight: 80, display: "block" }} />
               </div>
             )}
           </div>
@@ -918,7 +923,15 @@ export default function ClientPortal() {
       </div>
 
       <div style={{ height: 40 }} />
-      {t183Open && <SignaturePadModal defaultName={user?.name || ""} onClose={() => setT183Open(false)} onSubmit={submitT183Signature} busy={t183Busy} />}
+      {t183Open && (
+        <T183SigningModal
+          engagementId={eng.id}
+          t183={t183}
+          defaultName={user?.name || ""}
+          onClose={() => setT183Open(false)}
+          onSigned={onT183Signed}
+        />
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import io
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
@@ -2053,6 +2054,306 @@ async def delete_draft_pdf(eid: str, user: dict = Depends(require_role("CPA", "A
 # ==================== File with CRA + T183 Signature ====================
 
 T183_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "t183-25e.pdf")
+T183_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads", "t183")
+
+
+def _t183_storage_load(object_key: str) -> bytes:
+    """Read PDF bytes from local-disk fallback or S3."""
+    if not object_key:
+        raise FileNotFoundError("missing object key")
+    if object_key.startswith("local://"):
+        path = object_key[len("local://"):]
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+        with open(path, "rb") as f:
+            return f.read()
+    # S3 path
+    body = s3_service.get_object_bytes(object_key) if hasattr(s3_service, "get_object_bytes") else None
+    if body is None:
+        raise FileNotFoundError(object_key)
+    return body
+
+
+def _t183_storage_save(eid: str, kind: str, body: bytes, filename: str) -> tuple[str, str]:
+    """Persist PDF bytes. Returns (object_key, storage)."""
+    safe_name = "".join(c for c in (filename or f"{kind}.pdf") if c.isalnum() or c in "._-")[:80] or f"{kind}.pdf"
+    object_key = f"engagements/{eid}/t183/{kind}_{uuid.uuid4().hex}_{safe_name}"
+    if s3_service.put_object_bytes(object_key, body, "application/pdf"):
+        return object_key, "s3"
+    # Local fallback
+    local_dir = os.path.join(T183_UPLOAD_DIR, eid)
+    os.makedirs(local_dir, exist_ok=True)
+    local_path = os.path.join(local_dir, f"{kind}_{uuid.uuid4().hex}_{safe_name}")
+    with open(local_path, "wb") as f:
+        f.write(body)
+    return f"local://{local_path}", "local"
+
+
+def _stamp_signature_on_pdf(pdf_bytes: bytes, signature_data_url: str, position: dict) -> bytes:
+    """Use PyMuPDF to overlay the client's signature image onto the PDF at the
+    saved percentage coordinates. Returns the new PDF bytes.
+
+    `position` shape: {page: int (0-indexed), x_pct, y_pct, w_pct, h_pct} — all as
+    fractions of the page's media-box dimensions. Origin is top-left of the page."""
+    import fitz  # PyMuPDF
+    import base64 as _b64
+    if "," in signature_data_url:
+        sig_b64 = signature_data_url.split(",", 1)[1]
+    else:
+        sig_b64 = signature_data_url
+    sig_png = _b64.b64decode(sig_b64)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        page_idx = max(0, min(int(position.get("page", 0)), doc.page_count - 1))
+        page = doc[page_idx]
+        rect = page.rect
+        x = float(position.get("x_pct", 0)) * rect.width
+        y = float(position.get("y_pct", 0)) * rect.height
+        w = float(position.get("w_pct", 0.25)) * rect.width
+        h = float(position.get("h_pct", 0.06)) * rect.height
+        sig_rect = fitz.Rect(x, y, x + w, y + h)
+        page.insert_image(sig_rect, stream=sig_png, keep_proportion=True, overlay=True)
+        out = io.BytesIO()
+        doc.save(out, garbage=4, deflate=True, clean=True)
+        return out.getvalue()
+    finally:
+        doc.close()
+
+
+@api.post("/engagements/{eid}/t183/upload")
+async def upload_t183_pdf(eid: str, file: UploadFile = File(...), user: dict = Depends(require_role("CPA", "ADMIN"))):
+    """CPA uploads the pre-filled T183 PDF (status → 'draft'). Existing signed/sent
+    state is reset because a new upload starts a fresh signing cycle."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    body = await file.read()
+    if not body:
+        raise HTTPException(400, "Empty file")
+    if len(body) > 25 * 1024 * 1024:
+        raise HTTPException(413, "T183 PDF must be ≤ 25 MB")
+    if not (file.content_type == "application/pdf" or (file.filename or "").lower().endswith(".pdf")):
+        raise HTTPException(400, "T183 must be a PDF")
+
+    # Best-effort cleanup of previous original/signed if they were stored locally
+    for key in (eng.get("t183_original_object_key"), eng.get("t183_signed_object_key")):
+        if isinstance(key, str) and key.startswith("local://"):
+            try:
+                p = key[len("local://"):]
+                if os.path.isfile(p):
+                    os.remove(p)
+            except Exception:
+                pass
+
+    object_key, storage = _t183_storage_save(eid, "original", body, file.filename or "t183.pdf")
+    now = datetime.now(timezone.utc)
+    await db.engagements.update_one({"id": eid}, {
+        "$set": {
+            "t183_status": "draft",
+            "t183_original_object_key": object_key,
+            "t183_original_storage": storage,
+            "t183_original_file_name": file.filename or "t183.pdf",
+            "t183_uploaded_at": now,
+            "t183_uploaded_by": user["id"],
+            "updated_at": now,
+        },
+        "$unset": {
+            "t183_signature_position": "",
+            "t183_sent_at": "",
+            "t183_signature": "",
+            "t183_signed_at": "",
+            "t183_signed_name": "",
+            "t183_signed_object_key": "",
+            "t183_signed_storage": "",
+        },
+    })
+    return {"ok": True, "status": "draft", "file_name": file.filename, "storage": storage}
+
+
+class T183PositionIn(BaseModel):
+    page: int = 0
+    x_pct: float
+    y_pct: float
+    w_pct: float = 0.25
+    h_pct: float = 0.06
+
+
+@api.post("/engagements/{eid}/t183/position")
+async def set_t183_position(eid: str, body: T183PositionIn, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    """CPA places the signature placeholder. Saved as page-relative percentages so
+    the position survives any zoom/render scale on either side."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if not eng.get("t183_original_object_key"):
+        raise HTTPException(400, "Upload a T183 PDF first")
+    for v, name in ((body.x_pct, "x_pct"), (body.y_pct, "y_pct"), (body.w_pct, "w_pct"), (body.h_pct, "h_pct")):
+        if v < 0 or v > 1:
+            raise HTTPException(400, f"{name} must be in [0,1]")
+    pos = {"page": int(body.page), "x_pct": body.x_pct, "y_pct": body.y_pct, "w_pct": body.w_pct, "h_pct": body.h_pct}
+    await db.engagements.update_one({"id": eid}, {"$set": {
+        "t183_signature_position": pos,
+        "updated_at": datetime.now(timezone.utc),
+    }})
+    return {"ok": True, "position": pos}
+
+
+@api.post("/engagements/{eid}/t183/send")
+async def send_t183_to_client(eid: str, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    """CPA marks the T183 as ready for signing → notifies client."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if not eng.get("t183_original_object_key"):
+        raise HTTPException(400, "Upload a T183 PDF first")
+    if not eng.get("t183_signature_position"):
+        raise HTTPException(400, "Place the signature placeholder before sending")
+    now = datetime.now(timezone.utc)
+    await db.engagements.update_one({"id": eid}, {"$set": {
+        "t183_status": "sent",
+        "t183_sent_at": now,
+        "t183_sent_by": user["id"],
+        "updated_at": now,
+    }})
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if corp:
+        await notify(
+            corp["client_id"],
+            "Your T183 is ready for signature",
+            "Your CPA has prepared your T183 — sign it to authorize CRA filing.",
+            "t183_ready",
+            eid,
+        )
+    return {"ok": True, "status": "sent", "sent_at": now.isoformat()}
+
+
+@api.get("/engagements/{eid}/t183")
+async def get_t183(eid: str, user: dict = Depends(get_current_user)):
+    """Returns full T183 metadata + signature placement so the client can render
+    the placeholder at the exact position the CPA chose."""
+    from fastapi.responses import JSONResponse
+    eng = await get_engagement_or_404(eid, user)
+
+    # Backward compatibility: if there's no new flow but legacy signature exists,
+    # report 'signed' so older engagements (Thompson/Ahmed) keep their UX.
+    has_new = bool(eng.get("t183_original_object_key"))
+    legacy_signed = (not has_new) and bool(eng.get("t183_signed_at"))
+    status = eng.get("t183_status") or ("signed" if legacy_signed else None)
+    meta = {
+        "status": status,                                  # null | draft | sent | signed
+        "has_original": has_new,
+        "has_signed_pdf": bool(eng.get("t183_signed_object_key")),
+        "original_file_name": eng.get("t183_original_file_name"),
+        "uploaded_at": eng.get("t183_uploaded_at").isoformat() if eng.get("t183_uploaded_at") else None,
+        "sent_at": eng.get("t183_sent_at").isoformat() if eng.get("t183_sent_at") else None,
+        "signed_at": eng.get("t183_signed_at").isoformat() if eng.get("t183_signed_at") else None,
+        "signed_name": eng.get("t183_signed_name"),
+        "signature_position": eng.get("t183_signature_position"),
+        "legacy_signature_image": eng.get("t183_signature") if legacy_signed else None,
+    }
+    return JSONResponse(meta)
+
+
+@api.get("/engagements/{eid}/t183/file")
+async def get_t183_file(eid: str, variant: str = "auto", user: dict = Depends(get_current_user)):
+    """Streams the requested T183 PDF.
+
+    `variant`:
+      - `original` → CPA-uploaded unsigned PDF
+      - `signed`   → final signed PDF (after merge)
+      - `auto`     → signed if available else original; falls back to bundled CRA template
+                     for legacy engagements without an upload.
+    """
+    from fastapi.responses import FileResponse, RedirectResponse, Response
+    eng = await get_engagement_or_404(eid, user)
+
+    chosen_key = None
+    chosen_filename = "T183CORP.pdf"
+    if variant == "signed":
+        chosen_key = eng.get("t183_signed_object_key")
+        chosen_filename = "T183-signed.pdf"
+    elif variant == "original":
+        chosen_key = eng.get("t183_original_object_key")
+        chosen_filename = eng.get("t183_original_file_name") or "T183-original.pdf"
+    else:  # auto
+        chosen_key = eng.get("t183_signed_object_key") or eng.get("t183_original_object_key")
+        chosen_filename = (
+            "T183-signed.pdf" if eng.get("t183_signed_object_key")
+            else (eng.get("t183_original_file_name") or "T183.pdf")
+        )
+
+    if not chosen_key:
+        # Legacy fallback: bundled CRA template
+        if not os.path.isfile(T183_TEMPLATE_PATH):
+            raise HTTPException(404, "T183 not available")
+        return FileResponse(T183_TEMPLATE_PATH, media_type="application/pdf", filename="T183CORP.pdf")
+
+    if chosen_key.startswith("local://"):
+        path = chosen_key[len("local://"):]
+        if not os.path.isfile(path):
+            raise HTTPException(404, "T183 file missing on disk")
+        return FileResponse(path, media_type="application/pdf", filename=chosen_filename)
+    # S3
+    url = s3_service.generate_download_url(chosen_key, chosen_filename)
+    if not url:
+        raise HTTPException(500, "Failed to generate download URL")
+    return RedirectResponse(url=url, status_code=307)
+
+
+class T183SignIn(BaseModel):
+    signature: str  # data URL (image/png base64) of the canvas drawing
+    signer_name: str
+
+
+@api.post("/engagements/{eid}/t183/sign")
+async def sign_t183(eid: str, body: T183SignIn, user: dict = Depends(get_current_user)):
+    """Client signs the T183. Merges the signature image into the PDF at the saved
+    coordinates and stores the resulting signed PDF. Status → 'signed'."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] != "CLIENT":
+        raise HTTPException(403, "Only the client can sign the T183")
+    if not body.signature or "data:image/" not in body.signature:
+        raise HTTPException(400, "signature must be a base64 image data URL")
+    if not body.signer_name.strip():
+        raise HTTPException(400, "signer_name is required")
+
+    original_key = eng.get("t183_original_object_key")
+    position = eng.get("t183_signature_position")
+    now = datetime.now(timezone.utc)
+
+    signed_object_key = None
+    signed_storage = None
+
+    if original_key and position:
+        # Modern flow: actually merge the signature into the PDF
+        try:
+            original_bytes = _t183_storage_load(original_key)
+            signed_bytes = _stamp_signature_on_pdf(original_bytes, body.signature, position)
+            base = (eng.get("t183_original_file_name") or "T183.pdf").rsplit(".", 1)[0]
+            signed_object_key, signed_storage = _t183_storage_save(eid, "signed", signed_bytes, f"{base}-signed.pdf")
+        except Exception as exc:  # noqa: BLE001
+            log.exception("T183 stamping failed for %s", eid)
+            raise HTTPException(500, f"Failed to stamp signature on PDF: {exc}") from exc
+    # Legacy / incomplete flow: still record signature even if we can't stamp.
+    update = {
+        "t183_status": "signed",
+        "t183_signature": body.signature,
+        "t183_signed_name": body.signer_name.strip(),
+        "t183_signed_at": now,
+        "updated_at": now,
+    }
+    if signed_object_key:
+        update["t183_signed_object_key"] = signed_object_key
+        update["t183_signed_storage"] = signed_storage
+    await db.engagements.update_one({"id": eid}, {"$set": update})
+
+    if eng.get("assigned_cpa_id"):
+        await notify(
+            eng["assigned_cpa_id"],
+            "Client signed T183",
+            f"{body.signer_name.strip()} signed the T183 form.",
+            "t183_signed",
+            eid,
+        )
+    return {"ok": True, "signed_at": now.isoformat(), "signed_name": body.signer_name.strip(), "has_signed_pdf": bool(signed_object_key)}
 
 
 @api.post("/engagements/{eid}/file-with-cra")
@@ -2135,58 +2436,6 @@ async def file_with_cra(
         await notify(eng["ws_advisor_id"], "Filing complete", f"{(corp or {}).get('name') or eid[:8]} T2 filed with CRA", "filing_complete", eid)
     await notify_admins("T2 filed with CRA", f"{(corp or {}).get('name') or eid[:8]} has been filed.", "filing_complete_admin", eid)
     return {"ok": True, "filed_return_doc_id": filed_doc_id, "filing_confirmation": cra_confirmation.strip(), "storage": storage}
-
-
-@api.get("/engagements/{eid}/t183")
-async def get_t183(eid: str, user: dict = Depends(get_current_user)):
-    """Returns T183 signature metadata (whether signed, by whom, when)."""
-    from fastapi.responses import JSONResponse
-    eng = await get_engagement_or_404(eid, user)
-    meta = {
-        "signed": bool(eng.get("t183_signed_at")),
-        "signed_at": eng.get("t183_signed_at").isoformat() if eng.get("t183_signed_at") else None,
-        "signed_name": eng.get("t183_signed_name"),
-    }
-    return JSONResponse(meta)
-
-
-@api.get("/engagements/{eid}/t183/file")
-async def get_t183_file(eid: str, user: dict = Depends(get_current_user)):
-    """Returns the T183 PDF template bytes for inline preview / download."""
-    from fastapi.responses import FileResponse
-    eng = await get_engagement_or_404(eid, user)  # auth check
-    _ = eng
-    if not os.path.isfile(T183_TEMPLATE_PATH):
-        raise HTTPException(404, "T183 template missing")
-    return FileResponse(T183_TEMPLATE_PATH, media_type="application/pdf", filename="T183CORP.pdf")
-
-
-class T183SignIn(BaseModel):
-    signature: str  # data URL (image/png base64) of the canvas drawing
-    signer_name: str
-
-
-@api.post("/engagements/{eid}/t183/sign")
-async def sign_t183(eid: str, body: T183SignIn, user: dict = Depends(get_current_user)):
-    """Client signs the T183 — stores signature image + signed name + timestamp."""
-    db = get_db()
-    eng = await get_engagement_or_404(eid, user)
-    if user["role"] != "CLIENT":
-        raise HTTPException(403, "Only the client can sign the T183")
-    if not body.signature or "data:image/" not in body.signature:
-        raise HTTPException(400, "signature must be a base64 image data URL")
-    if not body.signer_name.strip():
-        raise HTTPException(400, "signer_name is required")
-    now = datetime.now(timezone.utc)
-    await db.engagements.update_one({"id": eid}, {"$set": {
-        "t183_signature": body.signature,
-        "t183_signed_name": body.signer_name.strip(),
-        "t183_signed_at": now,
-        "updated_at": now,
-    }})
-    if eng.get("assigned_cpa_id"):
-        await notify(eng["assigned_cpa_id"], "Client signed T183", f"{body.signer_name.strip()} signed the T183 form.", "t183_signed", eid)
-    return {"ok": True, "signed_at": now.isoformat(), "signed_name": body.signer_name.strip()}
 
 
 @api.post("/engagements/{eid}/move-to-review")
