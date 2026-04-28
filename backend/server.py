@@ -2238,6 +2238,7 @@ async def get_t183(eid: str, user: dict = Depends(get_current_user)):
     status = eng.get("t183_status") or ("signed" if legacy_signed else None)
     meta = {
         "status": status,                                  # null | draft | sent | signed
+        "signed": status == "signed",                      # back-compat boolean for older callers
         "has_original": has_new,
         "has_signed_pdf": bool(eng.get("t183_signed_object_key")),
         "original_file_name": eng.get("t183_original_file_name"),

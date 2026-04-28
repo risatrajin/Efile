@@ -134,6 +134,24 @@
 - **Notification gaps closed**: `notify_admins` helper fans out to every active admin. Admin gets `new_referral_admin` on WS submit-to-CloudTax and `filing_complete_admin` on every filing. CPA gets `cpa_assigned`, WS gets `ws_cpa_assigned`, and the client gets `client_cpa_assigned` whenever `assigned_cpa_id` flips on `PATCH /engagements/{eid}` (no double-fire when unchanged).
 - **Tests**: `testing_agent_v3_fork` iter 11 → backend **16/16 PASS** across `test_iter11_corp_uploads_notify.py` (14) + `test_iter11_file_no_approval.py` (2). Frontend e2e green after fixing the WS Step-1 corp-name placement.
 
+### Iter 19 (Feb 2026 — T183 e-signature rebuild end-to-end)
+**Backend** — full rewrite of the T183 endpoints with PyMuPDF-powered PDF stamping:
+- `POST /api/engagements/{eid}/t183/upload` (CPA): stores pre-filled PDF, status → `draft`, resets any prior cycle state.
+- `POST /api/engagements/{eid}/t183/position` (CPA): saves placeholder as page-relative percentages `{page, x_pct, y_pct, w_pct, h_pct}`.
+- `POST /api/engagements/{eid}/t183/send` (CPA): status → `sent`, fires `t183_ready` notification to client.
+- `POST /api/engagements/{eid}/t183/sign` (Client): merges signature PNG into the PDF using PyMuPDF `page.insert_image` at the saved coordinates → produces a **real signed PDF** with the signature visually embedded. Stores both the original and signed PDFs (S3 with local-disk fallback). Status → `signed`. Sets back-compat fields (`t183_signed_at`, `t183_signed_name`, `t183_signature`).
+- `GET /api/engagements/{eid}/t183` returns full metadata + back-compat `signed: bool` for older callers; `GET /t183/file?variant=auto|original|signed` streams the requested PDF with graceful fallback to the bundled CRA template for legacy engagements.
+
+**Frontend**:
+- `<T183PlacementModal>` (CPA) — `react-pdf` rendering, `useAuthedPdf` hook to fetch the auth-protected PDF as bytes, draggable yellow `SIGN HERE` placeholder with mouse + touch support.
+- `<T183SigningModal>` (Client) — `react-pdf` preview, pulsing blue `SIGN HERE` target at saved coordinates, signature pad with **Draw** (`react-signature-canvas`) and **Type** (rendered into a canvas with handwriting font) tabs. Complete-signing button gated until name + ink/text provided.
+- `<T183ManagementCard>` on CPA Engagement page — shows status badge (`draft`/`sent`/`signed`), "Upload T183" / "Place & send" / "Reposition / re-send" / "Download signed PDF" + "Replace T183" CTAs.
+- Client Portal Action Required → T183 row now reflects `null → AwaitingCPA badge`, `sent → View & sign`, `signed → green badge` with Download signed.
+
+**Dependencies**: `pymupdf 1.27.2.3` added to backend `requirements.txt`; `react-pdf 10.4.1` + `react-signature-canvas 1.x` added to frontend `package.json`. PDF.js worker loaded from CDN (matching version).
+
+**Tests**: pytest **17/17 PASS** in new `test_t183_rebuild.py` (RBAC, validation, upload-resets-prior-state, position bounds, send preconditions, metadata schema, file streaming variants, legacy fallback, sign validation, sign RBAC, full PyMuPDF merge happy path verifying +1 embedded image on target page). Regression on `test_file_and_t183.py`: **15/15 PASS** after adding back-compat `signed: bool` to the metadata response.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
