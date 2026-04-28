@@ -162,6 +162,19 @@
 - Backend `/t183` metadata response retains both `status` (enum) and back-compat `signed` (boolean) — iter 12 regression resolved.
 - **Tests**: testing_agent_v3_fork iter 13 — backend filing_summary suite **3/3 PASS** (1 env-skip due to no IN_REVIEW engagement on hand). Regression on `test_t183_rebuild.py` + `test_file_and_t183.py` → **30/33 PASS** (3 env-skips due to seed data being in FILED state). Frontend Client Portal verified on Thompson + Nguyen; CPA file-with-CRA form testids verified by code review.
 
+### Iter 21 (Feb 2026 — Wave B + C of Message 660: Forgot password, Admin expanded caps, Dashboard table toggle)
+**Backend** — added password recovery without leaving SES sandbox:
+- `POST /api/auth/forgot-password` ({email}) — issues a 30-min token in `password_reset_tokens` (kind=password_reset). Always returns `{ok:true, sent_via_email, reset_link}`; for unknown emails `reset_link` is `null` so no email-existence enumeration. SES is attempted via the new `ses_service.send_password_reset` helper; on sandbox failure the link is surfaced inline in the response so the UI can render it as a fallback.
+- `POST /api/auth/reset-password` ({token, password>=8}) — validates+expires token, updates `password_hash`, marks token used. Reuse → 400.
+
+**Frontend**:
+- `/forgot-password` and `/reset-password` routes (new `pages/ForgotPassword.js`). Login page now has a "Forgot your password?" link. Forgot page shows the inline fallback block (`forgot-fallback`) with an Open-reset-page CTA + raw link when the API surfaces one.
+- `AdminClientDetail` rewrite: parsed `notes` into per-row entries with edit/remove buttons (`tax-note-{i}` testids) + new "Add note" textarea; "Message client" now opens a modal embedding `<ChatThread>` for the engagement (reuses the existing CPA↔Client SSE thread); added `<StatusHistoryTimeline>` and a Documents card so Admin sees the same pipeline detail as WS Partners.
+- `AdminDashboard` + `WsDashboard`: new shared `<EngagementTable>` + `<ViewToggle>` (`/components/shared/EngagementTable.js`). Right-aligned Kanban ⇄ Table toggle next to the page title; preference persists in `localStorage` (`ct_admin_dash_view`, `ct_ws_dash_view`). Row click navigates to the right detail page.
+- `ses_service.send_password_reset` template added (warm CloudTax email body with reset CTA + 30-min expiry note).
+
+**Tests**: testing_agent_v3_fork iter 14 — backend `test_forgot_reset_password.py` **6/6 PASS** (valid email, unknown-email no-leak, case-insensitive lookup, full reset+revert cycle, used-token rejection, short-password rejection). Regression `test_t183_rebuild.py` + `test_admin_overhaul.py` **26/26 PASS**. Frontend Playwright e2e **100% on all listed flows** (forgot link → fallback rendering → reset confirmation → admin dashboard table toggle → AdminClientDetail tax-notes/message-modal/status-history/documents → WS dashboard table toggle). Admin password NOT touched; `kaur@example.com` reset-password test cycle reverted password back to seeded value.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
@@ -187,6 +200,8 @@
 
 ## Key endpoints
 - `POST /api/auth/login` — login
+- `POST /api/auth/forgot-password` — issue 30-min reset token (always returns ok=true; reset_link surfaced inline as SES-sandbox fallback)
+- `POST /api/auth/reset-password` — consume token + set new password (≥8 chars)
 - `GET  /api/auth/me` — current user
 - `POST /api/auth/change-password`
 - `PATCH /api/users/me` — update profile + notification_prefs (now correctly routed)
@@ -200,10 +215,12 @@
 
 ## Mocked / placeholder
 - 2FA toggle in Account Settings is UI-only (no backend logic)
-- AWS SES sandbox: emails to unverified recipients return success but don't actually deliver
-- AWS S3 CORS pending user action — presigned URL generation works, browser PUT will CORS-fail until configured
+- AWS SES sandbox: emails to unverified recipients return success but don't actually deliver — forgot-password endpoint surfaces the reset_link inline as a UI fallback so the flow remains usable
+- AWS S3 CORS pending user action — presigned URL generation works, browser PUT will CORS-fail until configured (local-disk fallback active in `s3_service.py`)
 
 ## Next action items
-1. User: verify SES sender + configure S3 CORS (P0 user-action)
-2. P1 polish: notification bell, document re-upload versioning, admin client filters
-3. P2: online presence, onboarding tour, refactor server.py into modules
+1. User: verify SES sender + grant `s3:PutObject` IAM (P0 user-action)
+2. CPA workspace: add "Extract data with AI" button + auto-extract toggle (P2)
+3. Online presence indicator in chat header using existing SSE `_subs` (P2)
+4. Refactor `server.py` (~2960 lines) into route modules (P2)
+5. P1 polish: notification bell UI (notifications collection already populated), document re-upload versioning, admin client filters
