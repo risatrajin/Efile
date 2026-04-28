@@ -194,6 +194,14 @@ async def notify(user_id: str, title: str, message: str, type_: str, engagement_
     })
 
 
+async def notify_admins(title: str, message: str, type_: str, engagement_id: str | None = None):
+    """Fan-out a notification to every active ADMIN user."""
+    db = get_db()
+    admins = [u async for u in db.users.find({"role": "ADMIN", "is_active": {"$ne": False}}, {"id": 1, "_id": 0})]
+    for a in admins:
+        await notify(a["id"], title, message, type_, engagement_id)
+
+
 PERMISSION_KEYS = [
     "view_clients", "onboard_clients", "assign_cpa", "reassign_cpa",
     "send_reminders", "send_messages", "view_docs", "move_clients",
@@ -634,6 +642,8 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
     db = get_db()
     if not body.client_email or not body.first_name:
         raise HTTPException(400, "first_name and client_email required to start a draft")
+    if not (body.corp_name or "").strip():
+        raise HTTPException(400, "corp_name is required — please provide the client's corporation name")
     full_name = f"{body.first_name.strip()} {body.last_name.strip()}".strip() if body.last_name else body.first_name.strip()
     email = body.client_email.lower()
     invite_link = None
@@ -767,6 +777,8 @@ async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depe
     if corp:
         corp_updates = {}
         if body.corp_name is not None:
+            if not body.corp_name.strip():
+                raise HTTPException(400, "corp_name cannot be empty")
             corp_updates["name"] = body.corp_name
         if body.province is not None:
             corp_updates["province"] = body.province
@@ -809,6 +821,17 @@ async def ws_submit_to_cloudtax(eid: str, user: dict = Depends(require_role("WS_
         "updated_at": now,
     }})
     await log_status_change(eid, user["id"], "ONBOARDING", "REFERRED", "Submitted to CloudTax by WS partner")
+    # Notify all admins so they can assign a CPA
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
+    partner_name = user.get("name") or user.get("email") or "WS partner"
+    client_label = (client.get("name") if client else "") or (corp.get("name") if corp else eid[:8])
+    await notify_admins(
+        "New client referred from Wealthsimple",
+        f"{partner_name} referred {client_label} — assign a CPA to begin intake.",
+        "new_referral_admin",
+        eid,
+    )
     # Seed documents + checklist
     docs = [
         {"id": str(uuid.uuid4()), "engagement_id": eid, **d, "status": "PENDING", "is_new_request": False, "issue_note": None, "request_note": None, "deferred_at": None, "created_at": now}
@@ -895,10 +918,54 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
                     ses_service.send_filing_complete(client["email"], client["name"], corp["name"], f"{FRONTEND_URL}/portal/{eid}")
             if eng.get("ws_advisor_id"):
                 await notify(eng["ws_advisor_id"], "Filing complete", f"{eng['id'][:8]} T2 filed with CRA", "filing_complete", eid)
+            await notify_admins("T2 filed with CRA", f"{(corp or {}).get('name') or eid[:8]} has been filed.", "filing_complete_admin", eid)
     if "cra_access_status" in updates and updates["cra_access_status"] == "ACCESS_VERIFIED":
         updates["cra_verified_at"] = now
         updates["cra_verified_by"] = user["id"]
+
+    # Detect a CPA assignment / re-assignment so we can notify the right people
+    cpa_changed = (
+        "assigned_cpa_id" in updates
+        and updates["assigned_cpa_id"]
+        and updates["assigned_cpa_id"] != eng.get("assigned_cpa_id")
+    )
+
     await db.engagements.update_one({"id": eid}, {"$set": updates})
+
+    if cpa_changed:
+        new_cpa_id = updates["assigned_cpa_id"]
+        cpa_user = await db.users.find_one({"id": new_cpa_id}, {"_id": 0})
+        corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+        client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
+        client_label = (client.get("name") if client else "") or (corp.get("name") if corp else eid[:8])
+        cpa_label = (cpa_user.get("name") if cpa_user else "your CPA") if cpa_user else "your CPA"
+        # Notify the newly-assigned CPA
+        await notify(
+            new_cpa_id,
+            "New client assigned to you",
+            f"{client_label} — you have been assigned as the CPA on this engagement.",
+            "cpa_assigned",
+            eid,
+        )
+        # Notify the WS partner so they see progress
+        if eng.get("ws_advisor_id"):
+            await notify(
+                eng["ws_advisor_id"],
+                "CPA assigned to your client",
+                f"{cpa_label} is now the CPA on {client_label}.",
+                "ws_cpa_assigned",
+                eid,
+            )
+        # Notify the client (only if they have already accepted the invite)
+        if client and client.get("password_hash"):
+            await notify(
+                client["id"],
+                "Your CPA has been assigned",
+                f"{cpa_label} will reach out shortly to start your tax filing.",
+                "client_cpa_assigned",
+                eid,
+            )
+
     eng = await db.engagements.find_one({"id": eid}, {"_id": 0})
     return eng
 
@@ -912,6 +979,18 @@ async def list_documents(eid: str, user: dict = Depends(get_current_user)):
         raise HTTPException(403, "WS partners cannot view documents")
     db = get_db()
     docs = [d async for d in db.documents.find({"engagement_id": eid}, {"_id": 0}).sort("sort_order", 1)]
+    # Normalize legacy single-file docs into a files[] array for the frontend
+    for d in docs:
+        if not d.get("files") and d.get("object_key"):
+            d["files"] = [{
+                "id": d.get("id") + "-legacy",
+                "object_key": d.get("object_key"),
+                "storage": d.get("storage"),
+                "file_name": d.get("file_name"),
+                "file_size": d.get("file_size"),
+                "mime_type": d.get("mime_type"),
+                "uploaded_at": d.get("uploaded_at"),
+            }]
     return docs
 
 
@@ -1017,7 +1096,9 @@ async def doc_remove_upload(doc_id: str, user: dict = Depends(get_current_user))
 @api.post("/documents/{doc_id}/upload")
 async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     """Server-side proxy upload — tries S3, falls back to local disk if S3 unavailable.
-    Used because direct browser PUT to S3 requires CORS + IAM s3:PutObject which may not be configured yet."""
+    Each call APPENDS a new entry into doc.files[] so a single document item (e.g. 'Bank statements')
+    can hold many uploaded files (e.g. 12 monthly statements). The legacy single-file fields on the
+    document mirror the LATEST uploaded file for backward compatibility with older readers."""
     db = get_db()
     doc = await db.documents.find_one({"id": doc_id})
     if not doc:
@@ -1049,23 +1130,114 @@ async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict
         log.warning("S3 upload failed for %s — stored locally at %s", doc_id, local_path)
 
     now = datetime.now(timezone.utc)
-    await db.documents.update_one({"id": doc_id}, {"$set": {
-        "status": "UPLOADED",
+    file_id = str(uuid.uuid4())
+    new_file = {
+        "id": file_id,
         "object_key": object_key,
         "storage": storage,
         "file_name": file.filename,
         "file_size": len(body),
         "mime_type": content_type,
         "uploaded_at": now,
-        "issue_note": None,
-        "deferred_at": None,
-    }})
+    }
+    await db.documents.update_one({"id": doc_id}, {
+        "$push": {"files": new_file},
+        "$set": {
+            # Keep legacy single-file fields synced with the latest upload (back-compat)
+            "status": "UPLOADED",
+            "object_key": object_key,
+            "storage": storage,
+            "file_name": file.filename,
+            "file_size": len(body),
+            "mime_type": content_type,
+            "uploaded_at": now,
+            "issue_note": None,
+            "deferred_at": None,
+        },
+    })
     if eng.get("assigned_cpa_id"):
         await notify(eng["assigned_cpa_id"], "Document uploaded", f"{doc['name']} uploaded", "document_uploaded", eng["id"])
     if eng["status"] == "REFERRED":
         await db.engagements.update_one({"id": eng["id"]}, {"$set": {"status": "INTAKE", "updated_at": now}})
         await log_status_change(eng["id"], user["id"], "REFERRED", "INTAKE", "First document uploaded")
-    return {"ok": True, "file_name": file.filename, "file_size": len(body), "storage": storage}
+    return {"ok": True, "file_id": file_id, "file_name": file.filename, "file_size": len(body), "storage": storage}
+
+
+@api.delete("/documents/{doc_id}/files/{file_id}")
+async def doc_delete_one_file(doc_id: str, file_id: str, user: dict = Depends(get_current_user)):
+    """Remove a single file from a document's files[] array.
+    If it was the last/only file, the document reverts to PENDING and legacy single-file fields are cleared."""
+    db = get_db()
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    eng = await get_engagement_or_404(doc["engagement_id"], user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "WS partners cannot delete documents")
+    files = list(doc.get("files") or [])
+    target = next((f for f in files if f.get("id") == file_id), None)
+    if not target:
+        raise HTTPException(404, "File not found")
+    # Remove from object storage
+    key = target.get("object_key") or ""
+    if key.startswith("local://"):
+        try:
+            p = key[len("local://"):]
+            if os.path.isfile(p):
+                os.remove(p)
+        except Exception:
+            pass
+    elif target.get("storage") == "s3":
+        try:
+            s3_service.delete_object(key)
+        except Exception:
+            pass
+    remaining = [f for f in files if f.get("id") != file_id]
+    if remaining:
+        latest = max(remaining, key=lambda f: f.get("uploaded_at") or datetime.min.replace(tzinfo=timezone.utc))
+        await db.documents.update_one({"id": doc_id}, {"$set": {
+            "files": remaining,
+            "object_key": latest.get("object_key"),
+            "storage": latest.get("storage"),
+            "file_name": latest.get("file_name"),
+            "file_size": latest.get("file_size"),
+            "mime_type": latest.get("mime_type"),
+            "uploaded_at": latest.get("uploaded_at"),
+            "status": "UPLOADED",
+        }})
+    else:
+        await db.documents.update_one({"id": doc_id}, {
+            "$set": {"files": [], "status": "PENDING"},
+            "$unset": {"object_key": "", "storage": "", "file_name": "", "file_size": "", "mime_type": "", "uploaded_at": "", "extracted_data": ""},
+        })
+    if eng.get("assigned_cpa_id"):
+        await notify(eng["assigned_cpa_id"], "Document removed", f"{doc['name']}: a file was removed by the client", "document_removed", eng["id"])
+    return {"ok": True, "remaining": len(remaining)}
+
+
+@api.get("/documents/{doc_id}/files/{file_id}/download")
+async def doc_download_one_file(doc_id: str, file_id: str, user: dict = Depends(get_current_user)):
+    """Download a specific file from a document's files[] array."""
+    from fastapi.responses import FileResponse, RedirectResponse, Response
+    db = get_db()
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    await get_engagement_or_404(doc["engagement_id"], user)
+    target = next((f for f in (doc.get("files") or []) if f.get("id") == file_id), None)
+    if not target:
+        raise HTTPException(404, "File not found")
+    key = target.get("object_key") or ""
+    if key.startswith("local://"):
+        path = key[len("local://"):]
+        if not os.path.isfile(path):
+            raise HTTPException(404, "File missing on disk")
+        return FileResponse(path, media_type=target.get("mime_type") or "application/octet-stream", filename=target.get("file_name"))
+    url = s3_service.generate_download_url(key, target.get("file_name"))
+    if not url:
+        raise HTTPException(500, "Failed to generate download URL")
+    return RedirectResponse(url=url, status_code=307)
+
 
 
 @api.get("/documents/{doc_id}/download-url")
@@ -1898,8 +2070,8 @@ async def file_with_cra(
     eng = await get_engagement_or_404(eid, user)
     if eng["status"] not in ("IN_REVIEW", "DELIVERY"):
         raise HTTPException(400, f"Cannot file from status {eng['status']}")
-    if not (eng.get("review_decision") or {}).get("decision") == "approved":
-        raise HTTPException(400, "Client has not approved the return yet")
+    # Note: client approval is NOT a hard precondition — CPA may file as soon as the client has signed T183.
+    # T183 is the legal authorization required by CRA.
     if not eng.get("t183_signed_at"):
         raise HTTPException(400, "Client must sign the T183 authorization before the return can be filed")
     if not cra_confirmation.strip():
@@ -1959,6 +2131,9 @@ async def file_with_cra(
     corp = await db.corporations.find_one({"id": eng["corporation_id"]})
     if corp:
         await notify(corp["client_id"], "Your T2 return has been filed", f"CRA confirmation {cra_confirmation.strip()}", "filed", eid)
+    if eng.get("ws_advisor_id"):
+        await notify(eng["ws_advisor_id"], "Filing complete", f"{(corp or {}).get('name') or eid[:8]} T2 filed with CRA", "filing_complete", eid)
+    await notify_admins("T2 filed with CRA", f"{(corp or {}).get('name') or eid[:8]} has been filed.", "filing_complete_admin", eid)
     return {"ok": True, "filed_return_doc_id": filed_doc_id, "filing_confirmation": cra_confirmation.strip(), "storage": storage}
 
 

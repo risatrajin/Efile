@@ -1,0 +1,55 @@
+{
+  "summary": "Iteration 11 — Tested 6 user-reported items: (1) corp_name mandatory (POST+PATCH), (2) Ready-to-file in REVIEW without client approval, (3) multi-file uploads per doc, (4) admin notify on new referral, (5) CPA notify on assignment, (6) ws/client/admin notification fan-out. Backend: 16/16 tests PASS across 2 new test files (test_iter11_corp_uploads_notify.py + test_iter11_file_no_approval.py). Frontend: Multi-file UI on Client Portal works (uploaded-file pill, Add another file btn, remove btn all render with correct testids on Kaur's m2.pdf). CPA Engagement IN_REVIEW shows 'Ready to file with CRA' card with File Now ENABLED above the green client-approved-callout (verified on Ahmed). CRITICAL FRONTEND BUG FOUND: WsDashboard 'Add new client' Step-1 Next button is PERMANENTLY disabled because step1Valid requires form.corp_name but the corp_name input is rendered on Step 2 — making it impossible for any WS partner to add a new client via the modal.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "WsDashboard.js — Add new client modal",
+        "issue": "Next button on Step 1 is permanently disabled. step1Valid = first_name && last_name && client_email && corp_name (line 51), but the corp_name input is only rendered on Step 2 (line 146). User can never advance from Step 1 → Step 2. End-to-end e2e flow for adding a new client is BROKEN. Fix: either move corp_name input onto Step 1 (recommended, matches the new 'mandatory' UX), OR remove corp_name from step1Valid and rely on Step 2's HTML5 required + the backend 400 (less ideal).",
+        "selector": "[data-testid=\"ac-next\"]",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_corp_uploads_notify.py",
+    "/app/backend/tests/test_iter11_file_no_approval.py",
+    "/app/test_reports/pytest/iter11_results.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): WsDashboard.js — Move the corp_name input field from Step 2 onto Step 1 (or otherwise unblock Step 1 Next button). Currently no WS partner can complete the Add Client modal. Suggested fix: add a 'Corporation name *' field block right above the Province dropdown on Step 1 (lines 113-116) and remove the duplicate from Step 2.",
+    "(Carry-over) /app/backend/server.py is now 2643 lines; consider splitting into routers (notifications, documents, engagements, t183).",
+    "(Carry-over) test_draft_review_flow.py and test_draft_history.py have fixture-dependency failures because they assume Thompson is IN_PREP but Thompson is seeded as FILED. Not regressions — switch them to a different client."
+  ],
+  "critical_code_review_comments": [
+    "server.py:645-646 corp_name validator on POST /engagements/onboarding correctly returns 400 with the keyword 'corp_name' in detail. PATCH validator at lines 779-781 correctly returns 400 'corp_name cannot be empty' on blank string.",
+    "server.py:197-205 notify_admins helper iterates ALL users where role='ADMIN' AND is_active != False — verified admin@cloudtax.ca receives both new_referral_admin AND filing_complete_admin rows.",
+    "server.py:927-967 cpa_changed detection correctly skips notifications when assigned_cpa_id is unchanged (test_no_notification_when_cpa_unchanged PASS). All 3 fan-out targets (new CPA, ws_advisor, client-with-password) get notified when cpa_id flips.",
+    "server.py:1095-1163 multi-file upload uses $push to files[] AND syncs the legacy single-file fields with the LATEST upload — verified by uploading 3 PDFs sequentially and confirming files[] has 3 entries while file_name=='iter11_test_2.pdf' (the last).",
+    "server.py:1166-1218 DELETE /documents/{doc_id}/files/{file_id} — RBAC blocks WS_PARTNER (403 verified). When last file removed, status reverts to PENDING and legacy fields are $unset — verified.",
+    "server.py:2058-2076 file-with-cra now has only 2 hard preconditions: status in (IN_REVIEW, DELIVERY) AND t183_signed_at is truthy. review_decision is intentionally NOT checked — verified by stripping Ahmed's review_decision via mongo and posting file-with-cra → 200.",
+    "server.py:984-1001 list_documents legacy normalization correctly synthesizes a 1-element files[] array with id='<doc.id>-legacy' for docs that have object_key but no files[] — verified.",
+    "FRONTEND BUG: WsDashboard.js:51 step1Valid includes form.corp_name but WsDashboard.js:146 the corp_name input is wrapped in {step === 2 && ...}. Logic dead-end."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_corp_uploads_notify.py (new — 14 tests, all PASS)",
+    "/app/backend/tests/test_iter11_file_no_approval.py (new — 2 tests, all PASS)",
+    "/app/test_reports/pytest/iter11_results.xml (new)",
+    "/app/test_reports/iteration_11.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% — 16/16 tests pass. corp_name validation (4 tests), submit-to-cloudtax admin notify (1), CPA assignment fan-out (2), multi-file uploads + delete + download + RBAC + revert-to-pending (6), legacy doc normalization (1), file-with-cra without approval (1), file-with-cra blocked without t183 (1).",
+    "frontend": "75% — Multi-file Client Portal UI verified PASS, CPA IN_REVIEW Ready-to-file card with File Now visible PASS, but WS Add Client modal CRITICAL BUG (Next button permanently disabled) blocks the end-to-end onboarding flow."
+  },
+  "test_credentials": "Admin admin@cloudtax.ca, WS henry.ziegler@wealthsimple.com, CPA terryann@cloudtax.ca, Client Kaur kaur@example.com, Client Ahmed (engagement d81902dc-5262-4435-8af1-19065ad1a3cc). All password CloudTax2026!.",
+  "seed_data_creation": "POST /engagements/onboarding created 4 TEST_-prefixed engagements during corp_name + admin-notify tests (will linger as ONBOARDING drafts in henry's pipeline; safe to ignore or clean up via mongo). The Ahmed engagement was temporarily mutated (status=IN_REVIEW + review_decision unset, then refiled, then restored) — final state is the ORIGINAL pre-test snapshot with status restored. Kaur's first PENDING doc had 3 files uploaded then all 3 deleted (final state PENDING, no files).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend changes are 100% verified. Only the WsDashboard step1Valid bug remains. After main agent moves the corp_name input to Step 1 (or removes it from step1Valid), re-run the e2e flow: WS opens Add Client modal → fills first/last/email/phone/province + corp_name → Next becomes ENABLED → Step 2 → Save → submit-to-cloudtax → admin notification arrives.",
+  "rca_of_issue": "The WsDashboard 'Add new client' Add-Client modal is split into 2 steps. Step 1 collects first_name, last_name, client_email, phone, province. Step 2 collects corp_name, fiscal_year_end, tier, notes. The author updated step1Valid to require form.corp_name (matching the 'corp_name mandatory' spec) but did NOT also move the corp_name input onto Step 1. Because corp_name input only renders inside the {step === 2 && ...} block, the user has no way to set form.corp_name to a truthy value while still on Step 1. As a result, the disabled={!step1Valid} on the Next button (line 120) keeps the button disabled forever. RECOMMENDED FIX: Add a 'Corporation name <span style={{color:'#c62828'}}>*</span>' field block to Step 1 (e.g. immediately after the Phone field, before Province) and either keep or remove the duplicate field on Step 2."
+}

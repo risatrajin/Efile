@@ -174,7 +174,7 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
             <h2 className="card-title" style={{ margin: 0 }}>Ready to file with CRA</h2>
             <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
               {t183Signed
-                ? "The client approved the return and signed T183. Submit your CRA confirmation and filed PDF to mark this engagement as filed."
+                ? "Submit your CRA confirmation and filed PDF to mark this engagement as filed."
                 : "Waiting on the client to sign T183. Filing is unlocked once the signature is on file."}
             </p>
           </div>
@@ -522,6 +522,12 @@ export default function CpaEngagement() {
 
         {err && <div className="alert alert-risk">{err}</div>}
 
+        {/* Ready-to-file-with-CRA appears in REVIEW stage regardless of client approval.
+            CPA may proceed as soon as the client has signed T183 (legal authorization). */}
+        {eng.status === "IN_REVIEW" && (
+          <FileWithCRACard eng={eng} onSubmit={fileWithCRA} busy={busy} />
+        )}
+
         {/* Client review feedback (Review stage) */}
         {eng.review_decision && (
           eng.review_decision.decision === "issue" ? (
@@ -536,21 +542,15 @@ export default function CpaEngagement() {
               </div>
             </div>
           ) : eng.review_decision.decision === "approved" ? (
-            <>
-              {/* File-with-CRA workflow appears BEFORE the approved confirmation, per UX spec */}
-              {eng.status !== "FILED" && (
-                <FileWithCRACard eng={eng} onSubmit={fileWithCRA} busy={busy} />
-              )}
-              <div data-testid="client-approved-callout" className="card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                  <Check size={20} style={{ color: "#2e7d32", marginTop: 2, flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#2e7d32" }}>Client approved the return</div>
-                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Approved {fmtDate(eng.review_decision.submitted_at)} — ready to file with CRA.</div>
-                  </div>
+            <div data-testid="client-approved-callout" className="card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                <Check size={20} style={{ color: "#2e7d32", marginTop: 2, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#2e7d32" }}>Client approved the return</div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Approved {fmtDate(eng.review_decision.submitted_at)} — ready to file with CRA.</div>
                 </div>
               </div>
-            </>
+            </div>
           ) : null
         )}
 

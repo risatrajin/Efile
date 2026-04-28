@@ -48,7 +48,7 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
     };
   });
 
-  const step1Valid = form.first_name && form.last_name && form.client_email;
+  const step1Valid = form.first_name && form.last_name && form.client_email && form.corp_name;
 
   const goNext = async () => {
     setBusy(true); setErr("");
@@ -142,8 +142,8 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
                   </div>
                 </div>
               )}
-              <div className="field"><label className="field-label">Corporation name</label>
-                <input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="ac-corp" /></div>
+              <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label>
+                <input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="ac-corp" required /></div>
               <div className="field"><label className="field-label">Fiscal year end</label>
                 <input className="input" type="date" value={form.fiscal_year_end} onChange={(e) => setForm({ ...form, fiscal_year_end: e.target.value })} data-testid="ac-fye" /></div>
               <div className="field">

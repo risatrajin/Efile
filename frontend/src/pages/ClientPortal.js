@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
-import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag, PenLine } from "lucide-react";
+import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag, PenLine, Plus } from "lucide-react";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 import SignaturePadModal from "../components/shared/SignaturePadModal";
 
@@ -119,12 +119,15 @@ function fmtSize(b) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function DocItem({ doc, onUpload, onDefer, onRemove, busy, onView, mode = "list" }) {
+function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView, onViewFile, mode = "list" }) {
   const isDone = ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(doc.status);
   const isIssue = doc.status === "ISSUE";
   const isReUploaded = doc.status === "UPLOADED" && doc.re_uploaded_at;
   const showUpdated = isReUploaded || (isDone && doc.uploaded_at && (new Date() - new Date(doc.uploaded_at) < 7 * 86400000));
-  const canRemove = isDone && doc.status === "UPLOADED" && mode === "interactive";
+  const canEdit = mode === "interactive";
+  // Unified files[] (server normalizes legacy single-file docs) sorted oldest → newest
+  const files = (doc.files && doc.files.length ? doc.files : []).slice().sort((a, b) => new Date(a.uploaded_at) - new Date(b.uploaded_at));
+  const addFileRef = useRef();
   return (
     <div data-testid={`doc-item-${doc.id}`} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "16px 0", borderBottom: "1px solid var(--border-default)", gap: 12 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -134,42 +137,65 @@ function DocItem({ doc, onUpload, onDefer, onRemove, busy, onView, mode = "list"
           {doc.is_required && !isDone && !isIssue && (
             <span style={{ background: "#fff3e0", color: "#ef6c00", fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, letterSpacing: 0.3 }}>REQUIRED</span>
           )}
+          {isDone && files.length > 1 && (
+            <span data-testid={`file-count-${doc.id}`} style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, letterSpacing: 0.3 }}>
+              {files.length} FILES
+            </span>
+          )}
         </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{doc.description}</div>
-        {isDone && doc.file_name && (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10 }}>
-            <button
-              type="button"
-              onClick={() => onView?.(doc)}
-              data-testid={`uploaded-file-${doc.id}`}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "6px 10px", background: "var(--bg-subtle)", borderRadius: 6,
-                fontSize: 12, color: "var(--text-primary)", border: "1px solid var(--border-default)",
-                cursor: onView ? "pointer" : "default", maxWidth: "100%",
-              }}
-            >
-              <FileText size={12} style={{ color: "#1565c0", flexShrink: 0 }} />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280 }}>{doc.file_name}</span>
-              {doc.file_size > 0 && <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtSize(doc.file_size)}</span>}
-            </button>
-            {canRemove && (
-              <button
-                type="button"
-                onClick={() => onRemove?.(doc)}
-                disabled={busy === doc.id}
-                data-testid={`remove-${doc.id}`}
-                title="Remove file"
-                style={{
-                  width: 28, height: 28, borderRadius: 6,
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  color: "#c62828", background: "transparent", transition: "background-color 120ms ease",
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "#fef5f5"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-              >
-                <Trash2 size={14} />
-              </button>
+        {isDone && files.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+            {files.map((f) => (
+              <div key={f.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => onViewFile ? onViewFile(doc, f) : onView?.(doc)}
+                  data-testid={`uploaded-file-${doc.id}-${f.id}`}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    padding: "6px 10px", background: "var(--bg-subtle)", borderRadius: 6,
+                    fontSize: 12, color: "var(--text-primary)", border: "1px solid var(--border-default)",
+                    cursor: "pointer", maxWidth: "100%",
+                  }}
+                >
+                  <FileText size={12} style={{ color: "#1565c0", flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280 }}>{f.file_name}</span>
+                  {f.file_size > 0 && <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtSize(f.file_size)}</span>}
+                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (files.length > 1 && onRemoveFile) onRemoveFile(doc, f);
+                      else onRemove?.(doc);
+                    }}
+                    disabled={busy === doc.id}
+                    data-testid={`remove-${doc.id}-${f.id}`}
+                    title="Remove file"
+                    style={{
+                      width: 24, height: 24, borderRadius: 6,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      color: "#c62828", background: "transparent", transition: "background-color 120ms ease",
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "#fef5f5"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  ><Trash2 size={12} /></button>
+                )}
+              </div>
+            ))}
+            {canEdit && onUpload && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => addFileRef.current?.click()}
+                  disabled={busy === doc.id}
+                  data-testid={`add-another-file-${doc.id}`}
+                  className="btn btn-secondary btn-sm"
+                  style={{ alignSelf: "flex-start", marginTop: 4 }}
+                ><Plus size={12} /> Add another file</button>
+                <HiddenFileInput inputRef={addFileRef} onPick={(f) => onUpload(doc, f)} />
+              </>
             )}
           </div>
         )}
@@ -484,6 +510,31 @@ export default function ClientPortal() {
     setBusy(null);
   };
 
+  const onRemoveFile = async (doc, file) => {
+    if (!window.confirm(`Remove "${file.file_name}"?`)) return;
+    setBusy(doc.id); setErr("");
+    try {
+      // Legacy single-file docs return a synthetic id "<doc.id>-legacy" — fall back to the doc-level delete
+      if (String(file.id || "").endsWith("-legacy")) {
+        await api.delete(`/documents/${doc.id}/upload`);
+      } else {
+        await api.delete(`/documents/${doc.id}/files/${file.id}`);
+      }
+      await loadAll();
+    } catch (x) { setErr(fmtError(x)); }
+    setBusy(null);
+  };
+
+  const onViewFile = async (doc, file) => {
+    if (!file?.id || String(file.id).endsWith("-legacy")) return onView(doc);
+    try {
+      const resp = await api.get(`/documents/${doc.id}/files/${file.id}/download`, { responseType: "blob" });
+      const blobUrl = URL.createObjectURL(resp.data);
+      window.open(blobUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (x) { setErr(fmtError(x)); }
+  };
+
   const onAnswer = async (q, answer) => {
     setBusy(q.id);
     try { await api.patch(`/engagements/${eng.id}/cpa-questions/${q.id}`, { answer }); await loadAll(); }
@@ -608,7 +659,7 @@ export default function ClientPortal() {
 
           <div className="card" data-testid="docs-interactive-card">
             <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS WE NEED</div>
-            {visibleDocs.filter((d) => d.status !== "ISSUE").map((d) => <DocItem key={d.id} doc={d} mode="interactive" onUpload={onUpload} onView={onView} onDefer={onDefer} onRemove={onRemove} busy={busy} />)}
+            {visibleDocs.filter((d) => d.status !== "ISSUE").map((d) => <DocItem key={d.id} doc={d} mode="interactive" onUpload={onUpload} onView={onView} onViewFile={onViewFile} onDefer={onDefer} onRemove={onRemove} onRemoveFile={onRemoveFile} busy={busy} />)}
             {issueDocs.map((d) => <div key={d.id} style={{ marginTop: 18 }}><IssueCard doc={d} onUpload={onUpload} /></div>)}
           </div>
         </>
