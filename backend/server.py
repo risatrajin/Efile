@@ -2363,6 +2363,7 @@ async def file_with_cra(
     cra_confirmation: str,
     filing_datetime: str,
     note: Optional[str] = None,
+    filing_summary: Optional[str] = None,
     file: UploadFile = File(...),
     user: dict = Depends(require_role("CPA", "ADMIN")),
 ):
@@ -2427,6 +2428,16 @@ async def file_with_cra(
         "filed_by_name": user.get("name") or user.get("email"),
         "updated_at": now,
     }
+    if filing_summary:
+        try:
+            import json as _json
+            parsed = _json.loads(filing_summary) if isinstance(filing_summary, str) else filing_summary
+            if isinstance(parsed, dict):
+                # Only persist whitelisted keys to avoid arbitrary writes
+                allowed = {"net_income", "total_tax_assessed", "instalments_paid", "balance_owing", "payment_due_date"}
+                eng_set["filing_summary"] = {k: v for k, v in parsed.items() if k in allowed}
+        except Exception:
+            raise HTTPException(400, "filing_summary must be valid JSON")
     await db.engagements.update_one({"id": eid}, {"$set": eng_set})
     await log_status_change(eid, user["id"], eng["status"], "FILED", f"Filed with CRA — confirmation {cra_confirmation.strip()}")
 

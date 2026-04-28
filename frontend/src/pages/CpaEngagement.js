@@ -139,6 +139,32 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
 }
 
 
+function parseFloatOrNull(v) {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = parseFloat(v);
+  return Number.isNaN(n) ? null : n;
+}
+
+function CurrencyInput({ value, onChange, disabled, testid }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", fontSize: 13, pointerEvents: "none" }}>$</span>
+      <input
+        className="input"
+        type="number"
+        step="0.01"
+        inputMode="decimal"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0.00"
+        data-testid={testid}
+        style={{ paddingLeft: 24 }}
+      />
+    </div>
+  );
+}
+
 function FileWithCRACard({ eng, onSubmit, busy }) {
   const t183Signed = !!eng.t183_signed_at;
   const [open, setOpen] = useState(false);
@@ -153,6 +179,18 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
   const [error, setError] = useState("");
   const inputRef = React.useRef();
 
+  // Filed return summary fields
+  const [netIncome, setNetIncome] = useState("");
+  const [totalTax, setTotalTax] = useState("");
+  const [instalmentsPaid, setInstalmentsPaid] = useState("");
+  const [paymentDue, setPaymentDue] = useState("");
+  const balanceOwing = (() => {
+    const t = parseFloat(totalTax);
+    const i = parseFloat(instalmentsPaid);
+    if (Number.isNaN(t) && Number.isNaN(i)) return "";
+    return ((t || 0) - (i || 0)).toFixed(2);
+  })();
+
   const submit = async () => {
     setError("");
     if (!t183Signed) { setError("Client must sign the T183 before filing."); return; }
@@ -161,7 +199,14 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
     if (!pickedFile) { setError("Please upload a PDF copy of the filed return."); return; }
     try {
       const isoFiling = new Date(filingAt).toISOString();
-      await onSubmit({ cra_confirmation: conf.trim(), filing_datetime: isoFiling, note: note.trim() || null, file: pickedFile });
+      const filingSummary = (netIncome || totalTax || instalmentsPaid || paymentDue) ? JSON.stringify({
+        net_income: parseFloatOrNull(netIncome),
+        total_tax_assessed: parseFloatOrNull(totalTax),
+        instalments_paid: parseFloatOrNull(instalmentsPaid),
+        balance_owing: parseFloatOrNull(balanceOwing),
+        payment_due_date: paymentDue || null,
+      }) : null;
+      await onSubmit({ cra_confirmation: conf.trim(), filing_datetime: isoFiling, note: note.trim() || null, filing_summary: filingSummary, file: pickedFile });
     } catch (x) {
       setError(x?.response?.data?.detail || x?.message || "Failed to file");
     }
@@ -227,6 +272,34 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
         <div className="field">
           <label className="field-label">Note (optional)</label>
           <textarea className="textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Any internal note about this filing..." data-testid="filing-note" />
+        </div>
+      </div>
+
+      {/* Filed Return Summary — shown to the client on the FILED dashboard */}
+      <div className="card" data-testid="filing-summary-card" style={{ marginTop: 18, background: "var(--bg-subtle)" }}>
+        <div className="section-label" style={{ marginBottom: 10 }}>FILED RETURN SUMMARY</div>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>These values will appear on the client's Filed dashboard. Leave blank to hide a row.</p>
+        <div className="stack-md">
+          <div className="field">
+            <label className="field-label">Net income for tax purposes</label>
+            <CurrencyInput value={netIncome} onChange={setNetIncome} testid="fs-net-income" />
+          </div>
+          <div className="field">
+            <label className="field-label">Total tax assessed</label>
+            <CurrencyInput value={totalTax} onChange={setTotalTax} testid="fs-total-tax" />
+          </div>
+          <div className="field">
+            <label className="field-label">Instalments paid</label>
+            <CurrencyInput value={instalmentsPaid} onChange={setInstalmentsPaid} testid="fs-instalments" />
+          </div>
+          <div className="field">
+            <label className="field-label">Balance owing <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>(auto-calculated)</span></label>
+            <CurrencyInput value={balanceOwing} onChange={() => {}} disabled testid="fs-balance-owing" />
+          </div>
+          <div className="field">
+            <label className="field-label">Payment due date</label>
+            <input className="input" type="date" value={paymentDue} onChange={(e) => setPaymentDue(e.target.value)} data-testid="fs-payment-due" />
+          </div>
         </div>
       </div>
 
@@ -485,13 +558,14 @@ export default function CpaEngagement() {
     setBusy(false);
   };
 
-  const fileWithCRA = async ({ cra_confirmation, filing_datetime, note, file }) => {
+  const fileWithCRA = async ({ cra_confirmation, filing_datetime, note, filing_summary, file }) => {
     setBusy(true); setErr("");
     try {
       const fd = new FormData();
       fd.append("file", file);
       const params = new URLSearchParams({ cra_confirmation, filing_datetime });
       if (note) params.set("note", note);
+      if (filing_summary) params.set("filing_summary", filing_summary);
       await api.post(`/engagements/${eid}/file-with-cra?${params.toString()}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       await load();
     } catch (x) { setErr(fmtError(x)); throw x; }

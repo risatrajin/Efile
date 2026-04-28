@@ -315,12 +315,6 @@ function T183Card({ eng, onPreview, onSign }) {
           </button>
         )}
       </div>
-      {eng.t183_signature && (
-        <div style={{ marginTop: 12, padding: 12, background: "var(--bg-subtle)", border: "1px solid var(--border-default)", borderRadius: 10 }}>
-          <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Your signature</div>
-          <img src={eng.t183_signature} alt="Client signature" data-testid="t183-signature-image" style={{ maxHeight: 80, display: "block" }} />
-        </div>
-      )}
     </div>
   );
 }
@@ -606,7 +600,8 @@ export default function ClientPortal() {
   const cpa = eng.assigned_cpa;
   const issueDocs = docs.filter((d) => d.status === "ISSUE");
   const visibleDocs = docs.filter((d) => !d.deferred_at);
-  const taxSummary = eng.tax_summary || {};
+  // Use the CPA-entered filing_summary (preferred) and fall back to legacy tax_summary
+  const taxSummary = eng.filing_summary || eng.tax_summary || {};
   const t2DraftDoc = eng.t2_draft_doc_id ? docs.find((d) => d.id === eng.t2_draft_doc_id) : null;
   const isFiled = eng.status === "FILED";
   const craConfNum = eng.filing_confirmation || `CRA-FILE-${(eng.id || "").slice(0, 6).toUpperCase()}`;
@@ -756,12 +751,6 @@ export default function ClientPortal() {
                 <span className="badge" data-testid="t183-waiting-badge" style={{ fontSize: 11, background: "var(--bg-subtle)", color: "var(--text-tertiary)", padding: "4px 10px", borderRadius: 999 }}>Awaiting CPA</span>
               )}
             </div>
-            {(t183?.legacy_signature_image || (eng.t183_signature && !t183?.has_signed_pdf)) && (
-              <div style={{ marginTop: 12, padding: 12, background: "var(--bg-subtle)", border: "1px solid var(--border-default)", borderRadius: 10 }}>
-                <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Your signature</div>
-                <img src={t183?.legacy_signature_image || eng.t183_signature} alt="Client signature" data-testid="t183-signature-image" style={{ maxHeight: 80, display: "block" }} />
-              </div>
-            )}
           </div>
 
           {eng.review_decision?.decision === "approved" ? (
@@ -842,15 +831,15 @@ export default function ClientPortal() {
           <div className="card" data-testid="filed-summary-card">
             <div className="section-label" style={{ marginBottom: 16 }}>FILED RETURN SUMMARY</div>
             {[
-              { k: "net_income", label: "Net income for tax purposes", val: fmtCurrency(taxSummary.net_income) },
-              { k: "total_tax", label: "Total tax assessed", val: fmtCurrency(taxSummary.total_tax) },
+              { k: "net_income", label: "Net income for tax purposes", val: taxSummary.net_income != null ? fmtCurrency(taxSummary.net_income) : "—" },
+              { k: "total_tax", label: "Total tax assessed", val: (taxSummary.total_tax_assessed ?? taxSummary.total_tax) != null ? fmtCurrency(taxSummary.total_tax_assessed ?? taxSummary.total_tax) : "—" },
               { k: "instalments_paid", label: "Instalments paid", val: taxSummary.instalments_paid != null ? fmtCurrency(-Math.abs(taxSummary.instalments_paid)) : "—" },
-              { k: "balance_owing", label: "Balance owing", val: fmtCurrency(taxSummary.balance_owing), bold: true, color: taxSummary.balance_owing > 0 ? "#ef6c00" : "var(--text-primary)" },
+              { k: "balance_owing", label: "Balance owing", val: taxSummary.balance_owing != null ? fmtCurrency(taxSummary.balance_owing) : "—", bold: true, color: taxSummary.balance_owing > 0 ? "#ef6c00" : "var(--text-primary)" },
               { k: "payment_due_date", label: "Payment due date", val: taxSummary.payment_due_date ? fmtDate(taxSummary.payment_due_date) : "—", color: "#ef6c00" },
             ].map((row) => (
               <div key={row.k} style={{ display: "flex", justifyContent: "space-between", padding: "14px 0", borderBottom: "1px solid var(--border-default)" }}>
                 <span style={{ fontSize: 13, fontWeight: row.bold ? 600 : 500 }}>{row.label}</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: row.color || "var(--text-primary)" }}>{row.val}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: row.color || "var(--text-primary)" }} data-testid={`fs-${row.k}`}>{row.val}</span>
               </div>
             ))}
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}>

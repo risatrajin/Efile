@@ -152,10 +152,10 @@ function SignaturePadInline({ defaultName, onCancel, onSubmit, busy }) {
     let signature;
     if (tab === "draw") {
       if (!hasInk) { setError("Please draw your signature."); return; }
-      signature = padRef.current.getTrimmedCanvas().toDataURL("image/png");
+      signature = manualTrimCanvas(padRef.current.getCanvas()).toDataURL("image/png");
     } else {
       if (!typed.trim()) { setError("Please type your signature."); return; }
-      signature = typedCanvasRef.current.toDataURL("image/png");
+      signature = manualTrimCanvas(typedCanvasRef.current).toDataURL("image/png");
     }
     onSubmit({ signature, name: name.trim() });
   };
@@ -238,6 +238,47 @@ function tabStyle(active) {
     fontSize: 12, fontWeight: 500, transition: "background-color 120ms ease",
     boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
   };
+}
+
+/**
+ * Manual replacement for react-signature-canvas's getTrimmedCanvas() — that
+ * helper has been broken since trim-canvas v0.1.4 changed its export shape.
+ * Walks the imageData, finds the bounding box of non-transparent pixels, and
+ * returns a new canvas cropped to that region. Falls back to the source
+ * canvas if it's empty.
+ */
+function manualTrimCanvas(canvas) {
+  if (!canvas) return canvas;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  if (!w || !h) return canvas;
+  const { data } = ctx.getImageData(0, 0, w, h);
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const alpha = data[(y * w + x) * 4 + 3];
+      if (alpha > 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return canvas; // empty
+  const pad = 2;
+  minX = Math.max(0, minX - pad);
+  minY = Math.max(0, minY - pad);
+  maxX = Math.min(w - 1, maxX + pad);
+  maxY = Math.min(h - 1, maxY + pad);
+  const tw = maxX - minX + 1;
+  const th = maxY - minY + 1;
+  const out = document.createElement("canvas");
+  out.width = tw;
+  out.height = th;
+  out.getContext("2d").drawImage(canvas, minX, minY, tw, th, 0, 0, tw, th);
+  return out;
 }
 
 function useAuthedPdf(url) {
