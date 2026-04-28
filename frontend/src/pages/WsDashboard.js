@@ -110,6 +110,8 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
                 <input className="input" type="email" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} placeholder="dr@clinicmail.ca" data-testid="ac-email" /></div>
               <div className="field"><label className="field-label">Phone</label>
                 <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 (416) 555-0000" data-testid="ac-phone" /></div>
+              <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label>
+                <input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="ac-corp" required /></div>
               <div className="field"><label className="field-label">Province</label>
                 <select className="select" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} data-testid="ac-province">
                   {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -142,8 +144,6 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
                   </div>
                 </div>
               )}
-              <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label>
-                <input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="ac-corp" required /></div>
               <div className="field"><label className="field-label">Fiscal year end</label>
                 <input className="input" type="date" value={form.fiscal_year_end} onChange={(e) => setForm({ ...form, fiscal_year_end: e.target.value })} data-testid="ac-fye" /></div>
               <div className="field">

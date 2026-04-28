@@ -127,6 +127,13 @@
 - **Frontend Filed celebration**: 🎉 Congratulations card now powered by real engagement data (`filed_by_name`, `filing_date`, `filing_confirmation`) + black "Download filed return" wired to `filed_return_doc_id` (not the draft).
 - **Tests**: 14 NEW tests in `test_file_and_t183.py` — ALL 14/14 PASS (RBAC for both endpoints, validation: empty signature/empty name/invalid data URL, status preconditions, success path, metadata GET reflects sign). Frontend e2e verified on Thompson (FILED): T183 card + signed badge + signature image all render in both Review and Filed phases.
 
+### Iter 18 (Feb 2026 — 6-item batch: corp_name required, file-without-approval, multi-file uploads, notification gaps)
+- **corp_name now mandatory**: backend `POST /engagements/onboarding` and `PATCH /engagements/{eid}/onboarding` return 400 when corp_name is missing/blank. Frontend `WsDashboard` Add-Client modal now collects corp_name on **Step 1** (with red `*`); `WsOnboardingDetail` field is also required.
+- **CPA can file before client approval**: removed the `review_decision.decision==='approved'` gate from `POST /file-with-cra`. T183 signature is the only legal precondition. The `<FileWithCRACard>` now renders for any engagement in `IN_REVIEW`, regardless of decision.
+- **Multi-file uploads per document**: each `POST /documents/{doc_id}/upload` `$push`-es into `doc.files[]` (legacy single-file fields are mirrored from the latest entry). New endpoints `DELETE /documents/{doc_id}/files/{file_id}` and `GET /documents/{doc_id}/files/{file_id}/download`. Legacy docs are normalized into a synthetic `files[]` on read. Client Portal `<DocItem>` now lists every file with its own pill + remove button + an **"Add another file"** CTA.
+- **Notification gaps closed**: `notify_admins` helper fans out to every active admin. Admin gets `new_referral_admin` on WS submit-to-CloudTax and `filing_complete_admin` on every filing. CPA gets `cpa_assigned`, WS gets `ws_cpa_assigned`, and the client gets `client_cpa_assigned` whenever `assigned_cpa_id` flips on `PATCH /engagements/{eid}` (no double-fire when unchanged).
+- **Tests**: `testing_agent_v3_fork` iter 11 → backend **16/16 PASS** across `test_iter11_corp_uploads_notify.py` (14) + `test_iter11_file_no_approval.py` (2). Frontend e2e green after fixing the WS Step-1 corp-name placement.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
