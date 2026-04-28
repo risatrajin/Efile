@@ -30,9 +30,9 @@ function InviteModal({ onClose, onDone }) {
         ) : (
           <div className="stack-md mt-4">
             <div className="field"><label className="field-label">Email</label>
-              <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="invite-email" /></div>
+              <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@example.com" data-testid="invite-email" /></div>
             <div className="field"><label className="field-label">Name</label>
-              <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="invite-name" /></div>
+              <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" data-testid="invite-name" /></div>
             <div className="field"><label className="field-label">Role</label>
               <select className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} data-testid="invite-role">
                 <option value="CLIENT">Client (physician)</option>
@@ -41,7 +41,7 @@ function InviteModal({ onClose, onDone }) {
                 <option value="ADMIN">Admin</option>
               </select></div>
             <div className="field"><label className="field-label">Phone (optional)</label>
-              <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+              <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 (416) 555-0000" /></div>
             {err && <div className="alert alert-risk">{err}</div>}
             <div className="flex gap-2" style={{ justifyContent: "flex-end" }}>
               <button className="btn btn-secondary" onClick={onClose}>Cancel</button>

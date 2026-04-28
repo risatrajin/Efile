@@ -370,7 +370,7 @@ function RolesTab() {
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }}
+          className="btn btn-primary"
           data-testid="add-member-open"
         ><Plus size={14} /> Add member</button>
       </div>
@@ -594,7 +594,7 @@ function DocTemplatesTab() {
           <span className="muted" style={{ fontSize: 12 }}>{items.length} items in <strong>{TIER_OPTIONS.find((t) => t.key === tier)?.label}</strong> template</span>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {savedAt && <span style={{ fontSize: 12, color: "#2e7d32" }}>Saved {savedAt.toLocaleTimeString()}</span>}
-            <button onClick={save} disabled={busy} data-testid="tmpl-save" style={{ padding: "10px 22px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }}>{busy ? "Saving…" : "Save changes"}</button>
+            <button onClick={save} disabled={busy} data-testid="tmpl-save" className="btn btn-primary">{busy ? "Saving…" : "Save changes"}</button>
           </div>
         </div>
 

@@ -172,10 +172,10 @@ export default function WsOnboardingDetail() {
             <div className="card" data-testid="form-client-info">
               <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Client information</h2>
               <div className="grid-2 mt-3" style={{ rowGap: 18 }}>
-                <div className="field"><label className="field-label">First name</label><input className="input" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} data-testid="f-first" /></div>
-                <div className="field"><label className="field-label">Last name</label><input className="input" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} data-testid="f-last" /></div>
-                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Email</label><input className="input" type="email" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} data-testid="f-email" /></div>
-                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Phone</label><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="f-phone" /></div>
+                <div className="field"><label className="field-label">First name</label><input className="input" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} placeholder="First name" data-testid="f-first" /></div>
+                <div className="field"><label className="field-label">Last name</label><input className="input" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} placeholder="Last name" data-testid="f-last" /></div>
+                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Email</label><input className="input" type="email" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} placeholder="client@example.com" data-testid="f-email" /></div>
+                <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Phone</label><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 (416) 555-0000" data-testid="f-phone" /></div>
                 <div className="field" style={{ gridColumn: "1 / span 2" }}><label className="field-label">Province</label>
                   <select className="select" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} data-testid="f-prov">{PROVINCES.map((p) => <option key={p}>{p}</option>)}</select>
                 </div>
@@ -186,7 +186,7 @@ export default function WsOnboardingDetail() {
             <div className="card" data-testid="form-engagement">
               <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Engagement</h2>
               <div className="stack-md mt-3">
-                <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label><input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} data-testid="f-corp" required /></div>
+                <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label><input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="f-corp" required /></div>
                 <div className="field"><label className="field-label">Fiscal year end</label><input className="input" type="date" value={form.fiscal_year_end} onChange={(e) => setForm({ ...form, fiscal_year_end: e.target.value })} data-testid="f-fye" /></div>
                 <div className="field">
                   <label className="field-label">Service tier</label>

@@ -2,14 +2,16 @@ import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { initials } from "../../lib/api";
-import { LogOut, Settings, Accessibility, Settings as SettingsIcon } from "lucide-react";
+import { LogOut, Settings, Accessibility, Settings as SettingsIcon, User } from "lucide-react";
 import NotificationBell from "./NotificationBell";
+import AccessibilityPanel from "./AccessibilityPanel";
 
 export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  const [a11yOpen, setA11yOpen] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -69,7 +71,31 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
         )}
       </div>
       <div className="flex items-center gap-2" style={{ position: "relative" }}>
-        {/* Avatar with dropdown — kept for profile / sign out */}
+        <button
+          onClick={() => navigate(settingsPath)}
+          data-testid="header-settings-icon"
+          title="Settings"
+          aria-label="Settings"
+          style={{ width: 36, height: 36, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background-color 120ms ease" }}
+          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
+          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+        >
+          <SettingsIcon size={18} />
+        </button>
+        <NotificationBell />
+        <button
+          data-testid="header-accessibility"
+          title="Accessibility"
+          aria-label="Open accessibility settings"
+          onClick={() => setA11yOpen(true)}
+          style={{ width: 36, height: 36, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background-color 120ms ease" }}
+          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
+          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+        >
+          <Accessibility size={18} />
+        </button>
+        <div style={{ width: 1, height: 24, background: "var(--border-default)", margin: "0 4px" }} />
+        {/* Avatar pill — moved to where Sign Out used to live. Sign Out is now ONLY available inside this dropdown. */}
         <div ref={ref} style={{ position: "relative" }}>
           <button
             onClick={() => setOpen((o) => !o)}
@@ -78,6 +104,8 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
             onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; e.currentTarget.style.borderColor = "var(--border-default)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; }}
             data-testid="header-avatar"
+            aria-haspopup="menu"
+            aria-expanded={open}
           >
             <div className="avatar avatar-sm" data-testid="user-avatar">{initials(user?.name || "")}</div>
             <div style={{ textAlign: "left", lineHeight: 1.15 }}>
@@ -86,15 +114,20 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
             </div>
           </button>
           {open && (
-            <div data-testid="user-menu" style={{
+            <div data-testid="user-menu" role="menu" style={{
               position: "absolute", top: "calc(100% + 8px)", right: 0,
               background: "#fff", border: "1px solid var(--border-default)", borderRadius: 12,
               padding: 8, minWidth: 240, boxShadow: "0 12px 32px rgba(0,0,0,0.10)", zIndex: 30,
             }}>
+              <div style={{ padding: "8px 12px 10px", borderBottom: "1px solid var(--border-default)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{user?.name}</div>
+                <div className="tertiary" style={{ fontSize: 11 }}>{user?.email}</div>
+              </div>
               <button
+                role="menuitem"
                 onClick={() => { setOpen(false); navigate(settingsPath); }}
                 className="flex items-center gap-2"
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-primary)", fontSize: 13, textAlign: "left", transition: "background-color 120ms ease" }}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-primary)", fontSize: 13, textAlign: "left", transition: "background-color 120ms ease", marginTop: 6 }}
                 onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
                 onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                 data-testid="header-account-link"
@@ -102,6 +135,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
                 <Settings size={14} /> {user?.role === "ADMIN" ? "Settings" : "Account settings"}
               </button>
               <button
+                role="menuitem"
                 onClick={async () => { setOpen(false); await onSignOut(); }}
                 className="flex items-center gap-2"
                 style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "#c62828", fontSize: 13, textAlign: "left", transition: "background-color 120ms ease" }}
@@ -114,39 +148,8 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
             </div>
           )}
         </div>
-        <div style={{ width: 1, height: 24, background: "var(--border-default)", margin: "0 4px" }} />
-        <button
-          onClick={() => navigate(settingsPath)}
-          data-testid="header-settings-icon"
-          title="Settings"
-          style={{ width: 36, height: 36, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background-color 120ms ease" }}
-          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
-          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-        >
-          <SettingsIcon size={18} />
-        </button>
-        <NotificationBell />
-        <button
-          data-testid="header-accessibility"
-          title="Accessibility"
-          onClick={(e) => e.preventDefault()}
-          style={{ width: 36, height: 36, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background-color 120ms ease" }}
-          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
-          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-        >
-          <Accessibility size={18} />
-        </button>
-        <button
-          onClick={onSignOut}
-          data-testid="header-signout-inline"
-          className="flex items-center gap-1"
-          style={{ padding: "8px 12px", borderRadius: 8, fontSize: 13, color: "var(--text-secondary)", transition: "background-color 120ms ease" }}
-          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
-          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-        >
-          <LogOut size={14} /> Sign out
-        </button>
       </div>
+      {a11yOpen && <AccessibilityPanel onClose={() => setA11yOpen(false)} />}
     </header>
   );
 }

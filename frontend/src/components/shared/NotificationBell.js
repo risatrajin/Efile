@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Bell, FileText, AlertCircle, ArrowRightCircle, UserPlus, CheckCircle2 } from "lucide-react";
+import { Bell, FileText, AlertCircle, ArrowRightCircle, UserPlus, CheckCircle2, MessageSquare, PenLine } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../lib/api";
 
 function timeAgo(iso) {
@@ -23,13 +25,55 @@ function timeAgo(iso) {
 
 function iconFor(type) {
   const map = {
-    document_uploaded: { Icon: FileText, color: "#2e7d32", bg: "#e8f5e9" },
-    document_issue: { Icon: AlertCircle, color: "#ef6c00", bg: "#fff3e0" },
-    status_advanced: { Icon: ArrowRightCircle, color: "#1565c0", bg: "#e3f2fd" },
-    new_referral: { Icon: UserPlus, color: "#5e35b1", bg: "#ede7f6" },
-    filing_complete: { Icon: CheckCircle2, color: "#2e7d32", bg: "#e8f5e9" },
+    document_uploaded:    { Icon: FileText,        color: "#2e7d32", bg: "#e8f5e9" },
+    document_issue:       { Icon: AlertCircle,     color: "#ef6c00", bg: "#fff3e0" },
+    document_removed:     { Icon: AlertCircle,     color: "#ef6c00", bg: "#fff3e0" },
+    status_advanced:      { Icon: ArrowRightCircle, color: "#1565c0", bg: "#e3f2fd" },
+    new_referral:         { Icon: UserPlus,        color: "#5e35b1", bg: "#ede7f6" },
+    new_referral_admin:   { Icon: UserPlus,        color: "#5e35b1", bg: "#ede7f6" },
+    cpa_assigned:         { Icon: UserPlus,        color: "#1565c0", bg: "#e3f2fd" },
+    ws_cpa_assigned:      { Icon: UserPlus,        color: "#1565c0", bg: "#e3f2fd" },
+    client_cpa_assigned:  { Icon: UserPlus,        color: "#1565c0", bg: "#e3f2fd" },
+    filing_complete:      { Icon: CheckCircle2,    color: "#2e7d32", bg: "#e8f5e9" },
+    filing_complete_admin:{ Icon: CheckCircle2,    color: "#2e7d32", bg: "#e8f5e9" },
+    filed:                { Icon: CheckCircle2,    color: "#2e7d32", bg: "#e8f5e9" },
+    draft_ready:          { Icon: FileText,        color: "#1565c0", bg: "#e3f2fd" },
+    client_message:       { Icon: MessageSquare,   color: "#5e35b1", bg: "#ede7f6" },
+    cpa_message:          { Icon: MessageSquare,   color: "#5e35b1", bg: "#ede7f6" },
+    client_issue:         { Icon: AlertCircle,     color: "#c62828", bg: "#fce4ec" },
+    client_approved:      { Icon: CheckCircle2,    color: "#2e7d32", bg: "#e8f5e9" },
+    t183_ready:           { Icon: PenLine,         color: "#1565c0", bg: "#e3f2fd" },
+    t183_signed:          { Icon: PenLine,         color: "#2e7d32", bg: "#e8f5e9" },
   };
   return map[type] || { Icon: Bell, color: "#616161", bg: "#f5f5f5" };
+}
+
+/**
+ * Build a deep-link path for a notification based on the user role + notification type.
+ * If we can't infer a meaningful destination, returns null and the click only
+ * marks the notification as read.
+ */
+function notifPathFor(n, userRole) {
+  const eid = n.engagement_id;
+  if (!eid) return null;
+  switch (userRole) {
+    case "ADMIN":
+      // Admin engagement detail page (Wave B will expand this with full Admin engagement view)
+      return `/admin/clients/${eid}`;
+    case "CPA":
+      return `/cpa/engagement/${eid}`;
+    case "WS_PARTNER": {
+      // WS partner has split detail pages: /ws/onboarding/:eid for ONBOARDING; /ws/file/:eid otherwise
+      // Fall back to /ws and let routing pick the right card.
+      return `/ws/file/${eid}`;
+    }
+    case "CLIENT":
+      // Client portal has only one path for everything
+      if (n.type === "client_message" || n.type === "cpa_message") return "/portal?tab=messages";
+      return "/portal";
+    default:
+      return null;
+  }
 }
 
 export default function NotificationBell() {
@@ -37,6 +81,8 @@ export default function NotificationBell() {
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const ref = useRef(null);
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   const load = async () => {
     try {
@@ -59,12 +105,18 @@ export default function NotificationBell() {
   }, []);
 
   const markOne = async (n) => {
-    if (n.is_read) return;
-    try {
-      await api.post(`/notifications/${n.id}/read`);
-      setItems((prev) => prev.map((x) => x.id === n.id ? { ...x, is_read: true } : x));
-      setUnread((u) => Math.max(0, u - 1));
-    } catch { /* ignore */ }
+    if (!n.is_read) {
+      try {
+        await api.post(`/notifications/${n.id}/read`);
+        setItems((prev) => prev.map((x) => x.id === n.id ? { ...x, is_read: true } : x));
+        setUnread((u) => Math.max(0, u - 1));
+      } catch { /* ignore */ }
+    }
+    const path = notifPathFor(n, user?.role);
+    if (path) {
+      setOpen(false);
+      navigate(path);
+    }
   };
 
   const markAll = async () => {
@@ -142,10 +194,10 @@ export default function NotificationBell() {
                     borderTop: "1px solid var(--border-subtle, #f0eeea)",
                     background: n.is_read ? "transparent" : "#f9fbff",
                     borderLeft: n.is_read ? "3px solid transparent" : "3px solid #1565c0",
-                    cursor: n.is_read ? "default" : "pointer",
+                    cursor: "pointer",
                     transition: "background-color 120ms ease",
                   }}
-                  onMouseEnter={(e) => { if (!n.is_read) e.currentTarget.style.background = "#eef4fb"; else e.currentTarget.style.background = "var(--bg-subtle)"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = n.is_read ? "var(--bg-subtle)" : "#eef4fb"; }}
                   onMouseLeave={(e) => e.currentTarget.style.background = n.is_read ? "transparent" : "#f9fbff"}
                 >
                   <div style={{

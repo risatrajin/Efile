@@ -1,5 +1,46 @@
 /* === CloudTax WS Pilot — Wealthsimple-inspired design system === */
 
+/* Accessibility scaling — applied via <html> classes from AccessibilityContext.
+   Default text-scale = 1.0; the panel multiplies via --a11y-text-scale. */
+html { font-size: calc(16px * var(--a11y-text-scale, 1)); }
+
+/* High contrast: bumps borders + text saturation */
+html.a11y-high-contrast {
+  --text-primary: #000;
+  --text-secondary: #2a2a2a;
+  --text-tertiary: #4d4d4d;
+  --border-default: #1a1a1a;
+  --border-subtle: #1a1a1a;
+  --border-strong: #000;
+  --bg-card: #ffffff;
+  --bg-subtle: #ffffff;
+}
+html.a11y-high-contrast .btn-secondary { border-width: 2px; }
+html.a11y-high-contrast .muted, html.a11y-high-contrast .tertiary { color: #1a1a1a !important; }
+
+/* Highlight links: yellow rounded background on every <a> + button[role=link] */
+html.a11y-highlight-links a,
+html.a11y-highlight-links .btn-link {
+  background: #fff59d !important;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+html.a11y-underline-links a,
+html.a11y-underline-links .btn-link { text-decoration: underline !important; text-underline-offset: 2px; }
+
+/* Reduce motion: disable animations & transitions globally */
+html.a11y-reduce-motion *,
+html.a11y-reduce-motion *::before,
+html.a11y-reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Bigger cursor */
+html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32'><path d='M4 4 L4 26 L11 19 L15 28 L19 26 L15 17 L24 17 Z' fill='%23000' stroke='%23fff' stroke-width='1.5'/></svg>") 4 4, auto !important; }
+
 :root {
   --bg-primary: #faf9f7;
   --bg-card: #ffffff;

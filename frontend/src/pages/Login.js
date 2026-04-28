@@ -40,11 +40,11 @@ export default function Login() {
         <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
           <div className="field">
             <label className="field-label">Email</label>
-            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="login-email" />
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" data-testid="login-email" />
           </div>
           <div className="field">
             <label className="field-label">Password</label>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required data-testid="login-password" />
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Enter your password" data-testid="login-password" />
           </div>
           {err && <div className="alert alert-risk" data-testid="login-error">{err}</div>}
           <button className="btn btn-primary w-full" disabled={busy} type="submit" data-testid="login-submit">
@@ -106,15 +106,15 @@ export function SetPassword() {
         <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
           <div className="field">
             <label className="field-label">Invitation token</label>
-            <input className="input" value={token} onChange={(e) => setToken(e.target.value)} required data-testid="setpwd-token" />
+            <input className="input" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="Paste the token from your invite email" data-testid="setpwd-token" />
           </div>
           <div className="field">
             <label className="field-label">New password (min 8 chars)</label>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required data-testid="setpwd-new" />
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Min. 8 characters" data-testid="setpwd-new" />
           </div>
           <div className="field">
             <label className="field-label">Confirm password</label>
-            <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required data-testid="setpwd-confirm" />
+            <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required placeholder="Re-enter password" data-testid="setpwd-confirm" />
           </div>
           {err && <div className="alert alert-risk">{err}</div>}
           <button className="btn btn-primary w-full" disabled={busy} type="submit" data-testid="setpwd-submit">
