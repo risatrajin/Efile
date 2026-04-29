@@ -192,6 +192,21 @@
 
 **Tests**: testing_agent_v3_fork iter 15 — backend `test_avatar_inbox.py` **10/10 PASS** (PNG roundtrip, mime/size rejection, WebP accepted, /messages/inbox role matrix incl. WS_PARTNER 403, write-then-list assertion). Frontend e2e: 4/5 fully PASS on first run; the one issue (AppHeader avatar not live-refreshing post-upload) was root-caused to browser caching the prior 404 at the same URL, fixed by versioning `avatar_url` in the backend response. Re-verified live: AppHeader avatar correctly switches to `<img>` after upload and reverts to gradient initials after Remove without page reload.
 
+### Iter 23 (Feb 2026 — 10-item visual + UX polish batch)
+**Frontend-only**:
+- `<UserAvatar>` — replaced 9-pair gradient palette with 9 single subtle flat colours. Inline style now `background: bg` (no `linear-gradient`).
+- Admin/CPA Messages icon now NAVIGATES to a dedicated full-page inbox at `/admin/messages` and `/cpa/messages` (new `pages/MessagesPage.js`, registered as `StaffMessagesPage` in `App.js`). Two-pane layout (filterable list + ChatThread on the right, URL-driven active conversation via `?eid=`). CLIENT keeps the lightweight popover. The `MessagesInboxButton` branches on `isStaff` so staff never see the popover.
+- Admin Settings now has the avatar upload card. Extracted the local `AvatarUploadCard` from `Account.js` into a shared `components/shared/AvatarUploadCard.js`. `AdminSettings.ProfileTab` wraps it and passes `onChange={(next)=>setUser({...u, avatar_url: next.avatar_url})}` so the AppHeader avatar updates live without reload. This also fixed the iter15 carry-over live-refresh bug.
+- Kanban hover lift — `index.css` `.kanban-card:hover` keeps `background:#fff`, adds layered `box-shadow` + `transform: translateY(-1px)`. Transition list extended to `box-shadow, border-color`.
+- CloudTax logo reduced from 28px → 22px in AppHeader.
+- CPA `FileWithCRACard` primary button label changed from "File Now" → "Update submission info".
+- `CpaEngagement` — added explicit `cpa-back-to-files` link above the page title.
+- `CpaEngagement` layout — moved `T183ManagementCard`, `FileWithCRACard`, and `client-approved-callout` / `client-issue-callout` from full-width siblings INTO the LEFT column of the `.two-col` grid. Right column (Review checklist + Time logged) unchanged.
+- `T183ManagementCard` — overrode default card padding to `16px 18px`, set `minHeight: 48` and `flexWrap: wrap` on the row so the heading + status badge + action button render compact and vertically centered.
+- `UploadDraftCard` — when `eng.review_decision?.decision === 'approved'` the card now hides the dropzone + instructions textarea + submit button + cancel-draft X. Renders `upload-draft-readonly` (green "Approved by client on {date}" callout + locked-state copy) + `upload-draft-instructions-readonly` showing the saved instructions string. Existing-draft Download row stays visible (read-only access preserved).
+
+**Tests**: testing_agent_v3_fork iter 16 — Frontend Playwright e2e **100% PASS on all 10 items + regression**. Avatar live-refresh issue from iter15 is now fully resolved. ReactRouter v7 console warnings are pre-existing/harmless. Backend untouched this batch.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
