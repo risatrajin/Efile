@@ -276,6 +276,25 @@
 
 ## Backlog (prioritized)
 
+### Iter 32 (Feb 2026 — targeted email updates + Roles & Permissions member management)
+
+**Operational (DB updates applied):**
+- Henry Ziegler: `henry.ziegler@wealthsimple.com` → `arani@cloudtax.ca`
+- Kris Kibler: `kris.kibler@wealthsimple.com` → `risatrajin@gmail.com`
+- Nim Balachandran (admin): `admin@cloudtax.ca` → `nim@cloudtax.ca`
+- **No external email was triggered** by these updates — only an in-app `email_changed` notification was recorded for each user. Resend / SES are only used for OTPs and the existing invite / filing-complete flows; the admin email-change path deliberately does NOT blast a transactional email.
+- `/app/memory/test_credentials.md` updated to reflect the new sign-in addresses.
+
+**Backend:**
+- `PATCH /users/{uid}` extended: `email` is now a writable field. Enforces lowercase, presence of `@`, and uniqueness (409 if another user already uses it). On change, writes an in-app `email_changed` notification to the affected user ("Your sign-in email was updated"). Audit log line `Admin X changed email of user Y from A -> B`.
+- `DELETE /users/{uid}` (NEW, admin-only): soft-deletes a non-client member by setting `is_active=false`, rotating the email to `deleted+<id8>@cloudtax.invalid` so the original address can be re-invited, stamps `removed_at / removed_by_id / removed_by_name` and `session_invalidated_at`. Rejects self-delete (400), last-admin-delete (400), and CLIENT deletes (400 with guidance to manage clients from the client record).
+
+**Frontend:**
+- `RolesTab` (AdminSettings) gained an **ACTIONS** column + a three-dot menu per row (`role-actions-trigger-{uid}` → menu `role-actions-menu-{uid}`) with two items:
+  - **Edit member** → opens `EditMemberModal` (name + sign-in email). Email-change field surfaces a clear callout that an in-app notification will be emitted and the current session stays valid.
+  - **Remove member** → opens a confirmation dialog (`remove-member-modal`) explaining the side-effects (engagement history preserved, email freed for re-invite), then calls `DELETE /users/{uid}`.
+- Outside-click closes the menu. Esc/backdrop close the modals.
+
 ### Iter 31 (Feb 2026 — Ready-to-file polish: heading rename, multi-file uploads + remove, button rename, client visibility into CPA's filing note)
 
 **Item 1 — Card heading:** the form heading inside the file-with-CRA modal renamed from "File with CRA" → "**Ready to file with CRA**" so it matches the trigger card.

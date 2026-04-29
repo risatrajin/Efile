@@ -768,13 +768,82 @@ async def update_user(uid: str, body: dict, user: dict = Depends(require_role("A
     if uid == "me":
         raise HTTPException(404, "Not found")
     db = get_db()
-    allowed = {"name", "role", "phone", "is_active", "display_role", "permissions"}
+    target = await db.users.find_one({"id": uid})
+    if not target:
+        raise HTTPException(404, "User not found")
+    allowed = {"name", "role", "phone", "is_active", "display_role", "permissions", "email"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields")
+    # Email change path: enforce uniqueness + notify the affected user (in-app).
+    email_changed = False
+    old_email = target.get("email")
+    if "email" in updates:
+        new_email = (updates["email"] or "").strip().lower()
+        if not new_email or "@" not in new_email:
+            raise HTTPException(400, "A valid email is required")
+        if new_email != (old_email or "").lower():
+            existing = await db.users.find_one({"email": new_email, "id": {"$ne": uid}})
+            if existing:
+                raise HTTPException(409, f"Another user already uses {new_email}")
+            updates["email"] = new_email
+            email_changed = True
+        else:
+            # No change — drop to avoid an unnecessary write.
+            updates.pop("email")
+    if not updates:
+        raise HTTPException(400, "No changes to apply")
     await db.users.update_one({"id": uid}, {"$set": updates})
     u = await db.users.find_one({"id": uid}, {"password_hash": 0, "_id": 0})
+    if email_changed:
+        # In-app notification to the target user so they know their login has changed.
+        # Email delivery is not triggered — we surface it in the app; the admin
+        # can separately message them outside the system if they want.
+        try:
+            await notify(uid, "Your sign-in email was updated", f"Your account email was changed to {updates['email']} by an admin. Please use the new address next time you sign in.", "email_changed", None)
+        except Exception as e:
+            log.warning("Failed to notify user %s of email change: %s", uid, e)
+        log.info("Admin %s changed email of user %s from %s -> %s", user.get("email"), uid, old_email, updates["email"])
     return u
+
+
+@api.delete("/users/{uid}")
+async def delete_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
+    """Remove a member. Protects against self-delete and last-admin-delete.
+    CLIENT accounts are NOT deleted via this endpoint — client data is bound
+    to engagements and requires a separate lifecycle. For staff (CPA, WS,
+    ADMIN, or any non-CLIENT role) this flips `is_active=False` and rewrites
+    the email so the address is free to be re-invited later.
+    """
+    if uid == user["id"]:
+        raise HTTPException(400, "You cannot remove your own account")
+    db = get_db()
+    target = await db.users.find_one({"id": uid})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("role") == "CLIENT":
+        raise HTTPException(400, "Client accounts are managed from the client record, not from Roles & Permissions")
+    # Prevent removing the last active admin.
+    if target.get("role") == "ADMIN":
+        active_admins = await db.users.count_documents({"role": "ADMIN", "is_active": {"$ne": False}})
+        if active_admins <= 1:
+            raise HTTPException(400, "Cannot remove the last active admin")
+    # Soft-delete: deactivate + free the email so it can be re-invited.
+    freed_email = f"deleted+{uid[:8]}@cloudtax.invalid"
+    await db.users.update_one(
+        {"id": uid},
+        {"$set": {
+            "is_active": False,
+            "email": freed_email,
+            "removed_at": datetime.now(timezone.utc),
+            "removed_by_id": user["id"],
+            "removed_by_name": user.get("name") or user.get("email"),
+            # Invalidate any active sessions — they'll be 401'd on next /me call.
+            "session_invalidated_at": datetime.now(timezone.utc),
+        }},
+    )
+    log.info("Admin %s removed user %s (%s)", user.get("email"), uid, target.get("email"))
+    return {"ok": True, "id": uid}
 
 
 @api.get("/users/team")

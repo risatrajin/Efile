@@ -3,7 +3,7 @@
 All seeded users use password: **CloudTax2026!**
 
 ## Admin
-- Email: `admin@cloudtax.ca`
+- Email: `nim@cloudtax.ca` (was `admin@cloudtax.ca` — updated Apr 29, 2026)
 - Password: `CloudTax2026!`
 - Home: `/admin/dashboard`
 
@@ -13,8 +13,8 @@ All seeded users use password: **CloudTax2026!**
 - Home: `/cpa/files`
 
 ## Wealthsimple partners
-- `henry.ziegler@wealthsimple.com` / `CloudTax2026!`
-- `kris.kibler@wealthsimple.com` / `CloudTax2026!`
+- `arani@cloudtax.ca` / `CloudTax2026!` (Henry Ziegler — was `henry.ziegler@wealthsimple.com`, updated Apr 29, 2026)
+- `risatrajin@gmail.com` / `CloudTax2026!` (Kris Kibler — was `kris.kibler@wealthsimple.com`, updated Apr 29, 2026)
 - Home: `/ws/dashboard`
 
 ## Physicians (clients)

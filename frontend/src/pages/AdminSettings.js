@@ -6,7 +6,7 @@ import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import TwoFactorCard from "../components/shared/TwoFactorCard";
 import PasswordField from "../components/shared/PasswordField";
-import { ArrowLeft, Plus, X, Download, Check } from "lucide-react";
+import { ArrowLeft, Plus, X, Download, Check, MoreVertical, Pencil, Trash2, Mail } from "lucide-react";
 const PERMISSION_COLUMNS = [
   { key: "view_clients", label: "VIEW CLIENTS", title: "View Clients" },
   { key: "onboard_clients", label: "ONBOARD CLIENTS", title: "Onboard Clients" },
@@ -360,11 +360,25 @@ function RolesTab() {
   const [team, setTeam] = useState([]);
   const [err, setErr] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState(null);     // user object being edited
+  const [confirmRemove, setConfirmRemove] = useState(null);  // user pending removal
+  const [openMenu, setOpenMenu] = useState(null);   // uid with actions menu open
 
   const load = async () => {
     try { const { data } = await api.get("/users/team"); setTeam(data); } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); }, []);
+
+  // Close the actions menu on any outside click.
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (!e.target.closest || !e.target.closest("[data-testid^='role-actions-']")) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
 
   const updatePerm = async (uid, key, value) => {
     const u = team.find((x) => x.id === uid);
@@ -377,6 +391,18 @@ function RolesTab() {
   const updateDisplayRole = async (uid, dr) => {
     setTeam(team.map((x) => x.id === uid ? { ...x, display_role: dr } : x));
     try { await api.patch(`/users/${uid}`, { display_role: dr }); } catch { load(); }
+  };
+
+  const doRemove = async () => {
+    if (!confirmRemove) return;
+    setErr("");
+    try {
+      await api.delete(`/users/${confirmRemove.id}`);
+      setConfirmRemove(null);
+      await load();
+    } catch (x) {
+      setErr(fmtError(x));
+    }
   };
 
   return (
@@ -454,6 +480,59 @@ function RolesTab() {
                       )}
                     </td>
                   ))}
+                  {/* Three-dot actions menu */}
+                  <td style={{ padding: "14px 8px", textAlign: "center", position: "relative" }} data-testid={`role-actions-${u.id}`}>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === u.id ? null : u.id); }}
+                      data-testid={`role-actions-trigger-${u.id}`}
+                      aria-label={`Actions for ${u.name}`}
+                      style={{
+                        width: 28, height: 28, borderRadius: 6, border: "none", background: "transparent",
+                        color: "var(--text-secondary)", cursor: "pointer", display: "inline-flex",
+                        alignItems: "center", justifyContent: "center",
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    ><MoreVertical size={16} /></button>
+                    {openMenu === u.id && (
+                      <div
+                        data-testid={`role-actions-menu-${u.id}`}
+                        style={{
+                          position: "absolute", right: 8, top: "calc(100% - 4px)",
+                          background: "#fff", border: "1px solid var(--border-default)",
+                          borderRadius: 10, boxShadow: "0 10px 24px rgba(0,0,0,0.10)",
+                          zIndex: 50, minWidth: 200, padding: 4, textAlign: "left",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => { setEditing(u); setOpenMenu(null); }}
+                          data-testid={`role-actions-edit-${u.id}`}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            width: "100%", padding: "9px 12px", borderRadius: 6,
+                            background: "transparent", border: "none", cursor: "pointer", fontSize: 13,
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                        ><Pencil size={14} /> Edit member</button>
+                        <button
+                          type="button"
+                          onClick={() => { setConfirmRemove(u); setOpenMenu(null); }}
+                          data-testid={`role-actions-remove-${u.id}`}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            width: "100%", padding: "9px 12px", borderRadius: 6,
+                            background: "transparent", border: "none", cursor: "pointer", fontSize: 13,
+                            color: "#c62828",
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "#ffebee"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                        ><Trash2 size={14} /> Remove member</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -461,6 +540,95 @@ function RolesTab() {
         </table>
       </div>
       {showAdd && <AddMemberModal onClose={() => setShowAdd(false)} onDone={load} />}
+      {editing && <EditMemberModal user={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />}
+      {confirmRemove && (
+        <div className="modal-overlay" onClick={() => setConfirmRemove(null)} data-testid="remove-member-modal">
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}>Remove {confirmRemove.name}?</h3>
+            <p className="muted" style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 6 }}>
+              <strong>{confirmRemove.name}</strong> (<code>{confirmRemove.email}</code>) will lose access immediately. Any engagements they&apos;re assigned to will keep the history — you can reassign them from the engagement page.
+            </p>
+            <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>The email address will be freed so you can re-invite a different person to it later.</p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setConfirmRemove(null)} data-testid="remove-member-cancel">Cancel</button>
+              <button
+                onClick={doRemove}
+                data-testid="remove-member-confirm"
+                style={{ padding: "8px 16px", borderRadius: 8, background: "#c62828", color: "#fff", fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer" }}
+              >Remove member</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Edit-member modal — update display name and sign-in email. Emits an in-app
+ * notification to the affected user when their email changes (admin action).
+ * Role changes are NOT edited here; we keep role transitions as an explicit
+ * "recreate via invite" operation to avoid accidental privilege changes.
+ */
+function EditMemberModal({ user, onClose, onDone }) {
+  const [name, setName] = useState(user.name || "");
+  const [email, setEmail] = useState(user.email || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const emailChanged = (email.trim().toLowerCase() !== (user.email || "").toLowerCase());
+  const nameChanged = name.trim() !== (user.name || "").trim();
+  const canSave = !busy && name.trim() && email.trim() && (emailChanged || nameChanged);
+
+  const submit = async () => {
+    setBusy(true); setErr("");
+    try {
+      const payload = {};
+      if (nameChanged) payload.name = name.trim();
+      if (emailChanged) payload.email = email.trim();
+      await api.patch(`/users/${user.id}`, payload);
+      onDone();
+    } catch (x) {
+      setErr(fmtError(x));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose} data-testid="edit-member-modal">
+      <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <div className="flex items-center between" style={{ marginBottom: 18 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 600 }}>Edit {user.display_role || user.role} member</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={14} /></button>
+        </div>
+        <div className="stack-md">
+          <div className="field">
+            <label className="field-label">Full name</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} data-testid="edit-member-name" />
+          </div>
+          <div className="field">
+            <label className="field-label">Sign-in email</label>
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="edit-member-email" />
+            {emailChanged && (
+              <div className="muted" style={{ fontSize: 11, marginTop: 6, display: "flex", alignItems: "flex-start", gap: 6 }}>
+                <Mail size={12} style={{ marginTop: 2 }} />
+                <span>The member will receive an in-app notification that their sign-in email changed. Their current session stays active; they must use the new address next time they sign out.</span>
+              </div>
+            )}
+          </div>
+          {err && <div className="alert alert-risk" data-testid="edit-member-err">{err}</div>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+            <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={!canSave}
+              onClick={submit}
+              data-testid="edit-member-save"
+            >{busy ? "Saving…" : "Save changes"}</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
