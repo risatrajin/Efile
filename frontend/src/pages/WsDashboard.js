@@ -54,18 +54,17 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
   const goNext = async () => {
     setBusy(true); setErr("");
     try {
+      const payload = {
+        first_name: form.first_name, last_name: form.last_name,
+        client_email: form.client_email, phone: form.phone, province: form.province,
+        corp_name: form.corp_name,
+      };
       if (!eid) {
-        const { data } = await api.post("/engagements/onboarding", {
-          first_name: form.first_name, last_name: form.last_name,
-          client_email: form.client_email, phone: form.phone, province: form.province,
-        });
+        const { data } = await api.post("/engagements/onboarding", payload);
         setEid(data.id);
         if (data.invite_link) setInviteLink(data.invite_link);
       } else {
-        await api.patch(`/engagements/${eid}/onboarding`, {
-          first_name: form.first_name, last_name: form.last_name,
-          client_email: form.client_email, phone: form.phone, province: form.province,
-        });
+        await api.patch(`/engagements/${eid}/onboarding`, payload);
       }
       setStep(2);
     } catch (x) { setErr(fmtError(x)); }

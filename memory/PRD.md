@@ -276,6 +276,11 @@
 
 ## Backlog (prioritized)
 
+### Iter 29 (Feb 2026 — WS Add-Client P0 fix + ResizeObserver overlay suppression)
+**Frontend**:
+- `WsDashboard.AddClientModal.goNext()` — Step 1 → Step 2 transition was POST/PATCHing `/engagements/onboarding` WITHOUT the `corp_name` field, even though the user had filled it in. The backend's mandatory-corp_name guard (iter 18) consequently rejected with 400 "corp_name is required". Fix: include `corp_name: form.corp_name` in both the create-POST and update-PATCH bodies. Verified live: typed "Kristin Medical Corp" → Next button now advances to Step 2 with the invite banner shown and no error.
+- `index.js` — hardened the existing ResizeObserver-noise suppressor by registering window error / unhandledrejection listeners with `{capture:true}` (so they fire BEFORE `react-error-overlay`'s listeners) and additionally muting `console.error` for the same message + hiding the dev-overlay iframe if it slips through. Verified live: with the WS Add-Client modal open, no "Uncaught runtime errors" overlay appears.
+
 ### Iter 28 (Feb 2026 — Messages page width fix + start-new-conversation search)
 **Backend**:
 - `GET /api/messages/inbox` — CPA + ADMIN now both receive ALL permitted engagements (with or without messages). Previously only ADMIN got empty conversations; CPA was filtered down to assigned engagements with at least one message. CLIENT continues to skip empty rows.
