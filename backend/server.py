@@ -465,6 +465,90 @@ async def me_full(user: dict = Depends(get_current_user)):
     return me
 
 
+# ==================== Avatar (profile picture) ====================
+
+ALLOWED_AVATAR_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_AVATAR_BYTES = 4 * 1024 * 1024  # 4 MB
+
+
+@api.post("/users/me/avatar")
+async def upload_my_avatar(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Upload a profile picture for the current user. S3 with local-disk fallback (mirrors document upload)."""
+    db = get_db()
+    body = await file.read()
+    if len(body) > MAX_AVATAR_BYTES:
+        raise HTTPException(400, f"Image too large (max {MAX_AVATAR_BYTES // (1024 * 1024)} MB)")
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in ALLOWED_AVATAR_MIMES:
+        raise HTTPException(400, "Unsupported image type. Use PNG, JPEG, WebP or GIF.")
+
+    safe_name = (file.filename or "avatar").replace("/", "_").replace("\\", "_")
+    object_key = f"avatars/{user['id']}/{uuid.uuid4().hex}_{safe_name}"
+    storage = "s3"
+    if not s3_service.put_object_bytes(object_key, body, content_type):
+        storage = "local"
+        local_dir = os.path.join(os.path.dirname(__file__), "uploads", "avatars", user["id"])
+        os.makedirs(local_dir, exist_ok=True)
+        local_path = os.path.join(local_dir, f"{uuid.uuid4().hex}_{safe_name}")
+        with open(local_path, "wb") as f:
+            f.write(body)
+        object_key = f"local://{local_path}"
+        log.warning("S3 avatar upload failed for %s — stored locally at %s", user["id"], local_path)
+
+    # Public-ish URL routed through our backend (always served via /api so RBAC stays consistent)
+    avatar_url = f"/api/users/{user['id']}/avatar"
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "avatar_object_key": object_key,
+            "avatar_storage": storage,
+            "avatar_mime": content_type,
+            "avatar_url": avatar_url,
+            "avatar_updated_at": datetime.now(timezone.utc),
+        }},
+    )
+    return {"avatar_url": avatar_url, "storage": storage}
+
+
+@api.delete("/users/me/avatar")
+async def delete_my_avatar(user: dict = Depends(get_current_user)):
+    """Remove the current user's profile picture (frontend will fall back to initials)."""
+    db = get_db()
+    me = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    key = (me or {}).get("avatar_object_key")
+    if key and key.startswith("local://"):
+        try:
+            os.remove(key[len("local://"):])
+        except OSError:
+            pass
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$unset": {"avatar_object_key": "", "avatar_storage": "", "avatar_mime": "", "avatar_url": "", "avatar_updated_at": ""}},
+    )
+    return {"ok": True}
+
+
+@api.get("/users/{uid}/avatar")
+async def get_user_avatar(uid: str, user: dict = Depends(get_current_user)):
+    """Stream a user's profile picture. All authenticated users can view any avatar."""
+    db = get_db()
+    target = await db.users.find_one({"id": uid}, {"_id": 0, "avatar_object_key": 1, "avatar_mime": 1})
+    key = (target or {}).get("avatar_object_key")
+    if not key:
+        raise HTTPException(404, "No avatar")
+    mime = target.get("avatar_mime") or "image/jpeg"
+    from fastapi.responses import FileResponse, Response
+    if key.startswith("local://"):
+        path = key[len("local://"):]
+        if not os.path.exists(path):
+            raise HTTPException(404, "Avatar file missing")
+        return FileResponse(path, media_type=mime)
+    body = s3_service.get_object_bytes(key)
+    if body is None:
+        raise HTTPException(404, "Avatar unavailable")
+    return Response(content=body, media_type=mime)
+
+
 @api.patch("/users/{uid}")
 async def update_user(uid: str, body: dict, user: dict = Depends(require_role("ADMIN"))):
     if uid == "me":
@@ -2815,6 +2899,112 @@ def _serialize_msg(m: dict, sender: dict | None) -> dict:
     if isinstance(out.get("created_at"), datetime):
         out["created_at"] = out["created_at"].isoformat()
     out["sender"] = {"id": sender["id"], "name": sender["name"], "role": sender["role"]} if sender else None
+    return out
+
+
+@api.get("/messages/inbox")
+async def messages_inbox(user: dict = Depends(get_current_user)):
+    """All conversations the user can see, with last-message preview + unread count.
+
+    ADMIN sees every engagement that has at least one message OR every active engagement (so
+    they can pro-actively reach out). CPA → only their assigned engagements. CLIENT → their
+    own engagement. WS_PARTNER → 403 (partners are messaging-disabled per spec).
+    """
+    db = get_db()
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "Not permitted")
+
+    # Resolve which engagements this user is allowed to see
+    if user["role"] == "ADMIN":
+        engs = [e async for e in db.engagements.find({"status": {"$ne": "ONBOARDING"}}, {"_id": 0})]
+    elif user["role"] == "CPA":
+        engs = [e async for e in db.engagements.find({"assigned_cpa_id": user["id"]}, {"_id": 0})]
+    elif user["role"] == "CLIENT":
+        my_corps = [c async for c in db.corporations.find({"client_id": user["id"]}, {"id": 1, "_id": 0})]
+        cids = [c["id"] for c in my_corps]
+        engs = [e async for e in db.engagements.find({"corporation_id": {"$in": cids}}, {"_id": 0})]
+    else:
+        engs = []
+
+    if not engs:
+        return []
+
+    eng_ids = [e["id"] for e in engs]
+    corp_ids = list({e["corporation_id"] for e in engs if e.get("corporation_id")})
+    cpa_ids = list({e["assigned_cpa_id"] for e in engs if e.get("assigned_cpa_id")})
+
+    corps = {}
+    async for c in db.corporations.find({"id": {"$in": corp_ids}}, {"_id": 0}):
+        corps[c["id"]] = c
+    client_ids = list({c.get("client_id") for c in corps.values() if c.get("client_id")})
+    user_ids = list({*client_ids, *cpa_ids})
+    users_map = {}
+    async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0}):
+        users_map[u["id"]] = u
+
+    # Last message per engagement (single aggregation pipeline)
+    last_msgs = {}
+    pipeline = [
+        {"$match": {"engagement_id": {"$in": eng_ids}}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": "$engagement_id",
+            "msg_id": {"$first": "$id"},
+            "content": {"$first": "$content"},
+            "attachment_name": {"$first": "$attachment_name"},
+            "sender_id": {"$first": "$sender_id"},
+            "created_at": {"$first": "$created_at"},
+        }},
+    ]
+    async for row in db.messages.aggregate(pipeline):
+        last_msgs[row["_id"]] = row
+
+    # Unread counts per engagement (messages not sent by current user, is_read=False)
+    unread_pipeline = [
+        {"$match": {"engagement_id": {"$in": eng_ids}, "sender_id": {"$ne": user["id"]}, "is_read": False}},
+        {"$group": {"_id": "$engagement_id", "count": {"$sum": 1}}},
+    ]
+    unread_map = {}
+    async for row in db.messages.aggregate(unread_pipeline):
+        unread_map[row["_id"]] = row["count"]
+
+    out = []
+    for e in engs:
+        corp = corps.get(e.get("corporation_id")) or {}
+        client = users_map.get(corp.get("client_id")) or {}
+        cpa = users_map.get(e.get("assigned_cpa_id")) if e.get("assigned_cpa_id") else None
+        last = last_msgs.get(e["id"])
+        last_at = last["created_at"] if last else e.get("updated_at") or e.get("created_at")
+        if isinstance(last_at, datetime):
+            last_at = last_at.isoformat()
+        if not last and user["role"] == "ADMIN":
+            # For admins: always include the engagement so they can initiate a chat
+            pass
+        elif not last:
+            # Skip empty conversations for non-admins
+            continue
+        out.append({
+            "engagement_id": e["id"],
+            "engagement_status": e.get("status"),
+            "client": {
+                "id": client.get("id"),
+                "name": client.get("name") or "—",
+                "email": client.get("email"),
+                "avatar_url": client.get("avatar_url"),
+            } if client else None,
+            "corporation": {"name": corp.get("name") or "—"} if corp else None,
+            "assigned_cpa": {"id": cpa.get("id"), "name": cpa.get("name")} if cpa else None,
+            "last_message": {
+                "content": (last or {}).get("content") or "",
+                "attachment_name": (last or {}).get("attachment_name"),
+                "sender_id": (last or {}).get("sender_id"),
+                "created_at": last_at,
+            } if last else None,
+            "unread_count": unread_map.get(e["id"], 0),
+            "last_at": last_at,
+        })
+    # Sort: unread first, then most-recent last_at
+    out.sort(key=lambda r: (-(1 if r["unread_count"] > 0 else 0), r["last_at"] or ""), reverse=True)
     return out
 
 

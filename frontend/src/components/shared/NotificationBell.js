@@ -58,18 +58,15 @@ function notifPathFor(n, userRole) {
   if (!eid) return null;
   switch (userRole) {
     case "ADMIN":
-      // Admin engagement detail page (Wave B will expand this with full Admin engagement view)
-      return `/admin/clients/${eid}`;
+      return `/admin/client/${eid}`;
     case "CPA":
       return `/cpa/engagement/${eid}`;
-    case "WS_PARTNER": {
-      // WS partner has split detail pages: /ws/onboarding/:eid for ONBOARDING; /ws/file/:eid otherwise
-      // Fall back to /ws and let routing pick the right card.
+    case "WS_PARTNER":
+      // ONBOARDING-stage referrals route to the onboarding wizard; everything else to the file detail.
+      if (n.type === "new_referral" || n.type === "ws_onboarding") return `/ws/onboarding/${eid}`;
       return `/ws/file/${eid}`;
-    }
     case "CLIENT":
-      // Client portal has only one path for everything
-      if (n.type === "client_message" || n.type === "cpa_message") return "/portal?tab=messages";
+      if (n.type === "client_message" || n.type === "cpa_message") return "/portal/messages";
       return "/portal";
     default:
       return null;

@@ -1,17 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
-import { initials } from "../../lib/api";
-import { LogOut, Settings, Accessibility, Settings as SettingsIcon, User } from "lucide-react";
+import { LogOut, Settings, Settings as SettingsIcon } from "lucide-react";
 import NotificationBell from "./NotificationBell";
-import AccessibilityPanel from "./AccessibilityPanel";
+import AccessibilityMenu from "./AccessibilityMenu";
+import MessagesInboxButton from "./MessagesInboxButton";
+import UserAvatar from "./UserAvatar";
 
 export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
-  const [a11yOpen, setA11yOpen] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -71,6 +71,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
         )}
       </div>
       <div className="flex items-center gap-2" style={{ position: "relative" }}>
+        {(user?.role === "ADMIN" || user?.role === "CPA" || user?.role === "CLIENT") && <MessagesInboxButton />}
         <button
           onClick={() => navigate(settingsPath)}
           data-testid="header-settings-icon"
@@ -83,17 +84,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
           <SettingsIcon size={18} />
         </button>
         <NotificationBell />
-        <button
-          data-testid="header-accessibility"
-          title="Accessibility"
-          aria-label="Open accessibility settings"
-          onClick={() => setA11yOpen(true)}
-          style={{ width: 36, height: 36, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background-color 120ms ease" }}
-          onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
-          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-        >
-          <Accessibility size={18} />
-        </button>
+        <AccessibilityMenu />
         <div style={{ width: 1, height: 24, background: "var(--border-default)", margin: "0 4px" }} />
         {/* Avatar pill — moved to where Sign Out used to live. Sign Out is now ONLY available inside this dropdown. */}
         <div ref={ref} style={{ position: "relative" }}>
@@ -107,7 +98,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
             aria-haspopup="menu"
             aria-expanded={open}
           >
-            <div className="avatar avatar-sm" data-testid="user-avatar">{initials(user?.name || "")}</div>
+            <UserAvatar user={user} size={28} testid="user-avatar" />
             <div style={{ textAlign: "left", lineHeight: 1.15 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }} data-testid="user-name">{user?.name}</div>
               <div className="tertiary" style={{ fontSize: 11 }} data-testid="user-email">{user?.email}</div>
@@ -149,7 +140,6 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
           )}
         </div>
       </div>
-      {a11yOpen && <AccessibilityPanel onClose={() => setA11yOpen(false)} />}
     </header>
   );
 }

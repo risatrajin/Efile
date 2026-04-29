@@ -20,13 +20,19 @@ html.a11y-high-contrast .muted, html.a11y-high-contrast .tertiary { color: #1a1a
 
 /* Highlight links: yellow rounded background on every <a> + button[role=link] */
 html.a11y-highlight-links a,
-html.a11y-highlight-links .btn-link {
+html.a11y-highlight-links .btn-link,
+html.a11y-highlight-links .nav-tab,
+html.a11y-highlight-links .link-underline,
+html.a11y-highlight-links [role="link"] {
   background: #fff59d !important;
   padding: 1px 4px;
   border-radius: 4px;
 }
 html.a11y-underline-links a,
-html.a11y-underline-links .btn-link { text-decoration: underline !important; text-underline-offset: 2px; }
+html.a11y-underline-links .btn-link,
+html.a11y-underline-links .nav-tab,
+html.a11y-underline-links .link-underline,
+html.a11y-underline-links [role="link"] { text-decoration: underline !important; text-underline-offset: 2px; }
 
 /* Reduce motion: disable animations & transitions globally */
 html.a11y-reduce-motion *,

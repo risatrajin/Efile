@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError } from "../lib/api";
-import { LogOut, ShieldCheck, KeyRound, BookOpen, Download, Phone } from "lucide-react";
+import { LogOut, ShieldCheck, KeyRound, BookOpen, Download, Phone, Camera, Trash2 } from "lucide-react";
 import AppHeader from "../components/shared/AppHeader";
+import UserAvatar from "../components/shared/UserAvatar";
 
 function Toggle({ checked, onChange, testid }) {
   return (
@@ -46,6 +47,111 @@ function InfoRow({ label, value, editing, onChange, testid }) {
       ) : (
         <div style={{ fontSize: 14, fontWeight: 500, paddingTop: 2 }} data-testid={testid}>{value || "—"}</div>
       )}
+    </div>
+  );
+}
+
+function AvatarUploadCard({ me, setMe, setUser }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  // Cache-bust query param so the new image renders immediately after upload
+  const [bust, setBust] = useState(() => Date.now());
+
+  const userForAvatar = me?.avatar_url
+    ? { ...me, avatar_url: `${me.avatar_url}?v=${bust}` }
+    : me;
+
+  const onPick = () => { inputRef.current?.click(); };
+
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!/^image\//.test(f.type)) {
+      setErr("Please select an image file (PNG, JPEG, WebP or GIF).");
+      e.target.value = "";
+      return;
+    }
+    setErr(""); setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const { data } = await api.post("/users/me/avatar", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const next = { ...me, avatar_url: data.avatar_url };
+      setMe(next);
+      setUser((u) => (u && typeof u === "object" ? { ...u, avatar_url: data.avatar_url } : u));
+      setBust(Date.now());
+    } catch (x) {
+      setErr(fmtError(x));
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const onRemove = async () => {
+    setErr(""); setBusy(true);
+    try {
+      await api.delete("/users/me/avatar");
+      const next = { ...me };
+      delete next.avatar_url;
+      setMe(next);
+      setUser((u) => {
+        if (!u || typeof u !== "object") return u;
+        const copy = { ...u };
+        delete copy.avatar_url;
+        return copy;
+      });
+    } catch (x) {
+      setErr(fmtError(x));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card" data-testid="avatar-upload-card">
+      <div className="section-label" style={{ marginBottom: 16 }}>PROFILE PICTURE</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <UserAvatar user={userForAvatar} size={80} testid="avatar-upload-preview" />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{me.name}</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+            PNG, JPEG, WebP or GIF · max 4 MB. We&apos;ll use a colourful initials avatar if none is set.
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={onPick}
+              disabled={busy}
+              data-testid="avatar-upload-btn"
+            >
+              <Camera size={12} /> {me.avatar_url ? "Change photo" : "Upload photo"}
+            </button>
+            {me.avatar_url && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onRemove}
+                disabled={busy}
+                data-testid="avatar-remove-btn"
+              >
+                <Trash2 size={12} /> Remove
+              </button>
+            )}
+          </div>
+          {err && <div className="alert alert-risk mt-2" data-testid="avatar-upload-err">{err}</div>}
+        </div>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={onFile}
+        style={{ display: "none" }}
+        data-testid="avatar-upload-input"
+      />
     </div>
   );
 }
@@ -123,6 +229,8 @@ export default function AccountPage() {
     <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="account-page">
       <h1 className="page-title">Account settings</h1>
       {err && <div className="alert alert-risk">{err}</div>}
+
+      <AvatarUploadCard me={me} setMe={setMe} setUser={setUser} />
 
       {/* Account information */}
       <div className="card" data-testid="account-info-card">
