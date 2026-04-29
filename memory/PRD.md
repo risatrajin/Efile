@@ -223,6 +223,26 @@
 
 **Tests**: testing_agent_v3_fork iter 17 — Frontend Playwright + backend pytest **100% PASS on all 11 items + regression**. New `test_iter17_filed_gate.py` 6/6 (single-field block, dual-field block, ADMIN role, CPA role, sanity + GET-after-block confirmation). Zero issues. Visual gap admins/CPAs see between explanatory note and disabled FILED option matches spec.
 
+### Iter 25 (Feb 2026 — 9-item batch: 2FA email OTP, search/filter, FiledReturnCard for CPA, AI extract error surfacing, per-doc reminder)
+**Backend**:
+- Auth — added OTP-based 2FA with email delivery and SES-sandbox fallback (`debug_otp` in response): `/auth/2fa/enable-init`, `/auth/2fa/enable-confirm`, `/auth/2fa/disable` (password-required), and `/auth/2fa/verify-login`. `/auth/login` now short-circuits with `{two_factor_required, challenge_id, sent_via_email, debug_otp, email}` when `user.two_factor_enabled`. `_make_otp_code` (secrets-backed 6-digit), `_issue_otp` (10-min TTL), `_consume_otp` (max-5 attempts then burn) shared helpers. New collection `otp_challenges` (id, user_id, purpose, code_hash, attempts, expires_at, used).
+- `ses_service.send_otp_code` template (subject + warm body with the 6-digit code styled).
+- `/documents/{doc_id}/extract` now flips status → `EXTRACTED` ONLY when the LLM result has neither `error` nor `parse_error`. Failures persist `extracted_data` for diagnosis but keep status unchanged.
+- `/documents/{doc_id}/remind` — NEW per-doc reminder endpoint (CPA/ADMIN). 6-hour cooldown via `reminder_sent_at`; reuses `ses_service.send_deferred_reminder` + in-app `notify` to client. Returns 429 inside cooldown.
+
+**Frontend**:
+- `<TwoFactorCard>` (NEW shared) — embedded enrollment flow (init → fallback display → code entry → confirm) and disable flow (password re-auth). Wired into `Account.js` and `AdminSettings.ProfileTab`.
+- `Login.js` split into Password and OTP stages. OTP stage shows the sandbox fallback inline so users can still sign in when SES is sandbox-restricted.
+- `AuthContext` — `login()` now returns `{ok:false, twoFactorRequired:true, ...}` on the gate, plus a new `verifyLoginOtp(challengeId, code)` flow.
+- `<EngagementTable>` gained an internal toolbar (search across client/corp/CPA + stage filter + tier filter + count summary). `WsDashboard` passes a custom `stageOptions` array to surface ONBOARDING.
+- `CpaFiles.js` rewritten with its own search + stage + tier filters above the existing table.
+- `MessagesPage.js` — Back button moved ABOVE the title; grid template tightened to `minmax(280,320) minmax(0,1fr)` with `maxWidth: 1100` so the panels feel right at any viewport. `ChatThread` resets its `err` state on engagement change to clear the stale 403 the user reported.
+- `Account.js` Help & Support text updated to "Have questions? Contact us at support@cloudtax.ca or call +1 888-953-2112".
+- `<FiledReturnCard>` extracted to `components/shared/FiledReturnCard.js`; both `AdminClientDetail` and `CpaEngagement` import it. `CpaEngagement` now renders the card in the left column when `eng.status === 'FILED'`.
+- `CpaEngagement` — `runExtract` surfaces backend `error`/`parse_error` strings via the engagement-level `err` alert. New `remindDoc` calls `/documents/{id}/remind`; per-doc Send-reminder button appears on hover for not-yet-uploaded rows (works regardless of `client_approved` state).
+
+**Tests**: testing_agent_v3_fork iter 18 — Backend pytest **100%** (full 2FA enable→login-OTP→verify→disable cycle + per-doc remind 200/429 cooldown). Frontend Playwright **~97%** with the only outstanding finding being a data-shape observation (FiledReturnCard renders all 5 summary rows unconditionally with `—` placeholders; `filed-download-btn` correctly hides when `filed_return_doc_id` is null). Zero blocking issues. All 2FA flags reset to OFF post-test.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
