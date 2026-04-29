@@ -1,11 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
-import { LogOut, Settings, Settings as SettingsIcon } from "lucide-react";
+import { LogOut, Settings, Home } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 import AccessibilityMenu from "./AccessibilityMenu";
 import MessagesInboxButton from "./MessagesInboxButton";
 import UserAvatar from "./UserAvatar";
+
+function dashboardPathFor(role) {
+  if (role === "CLIENT") return "/portal";
+  if (role === "WS_PARTNER") return "/ws/dashboard";
+  if (role === "CPA") return "/cpa/files";
+  if (role === "ADMIN") return "/admin/dashboard";
+  return "/";
+}
 
 export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   const { user, logout } = useAuth();
@@ -71,18 +79,19 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
         )}
       </div>
       <div className="flex items-center gap-2" style={{ position: "relative" }}>
-        {(user?.role === "ADMIN" || user?.role === "CPA" || user?.role === "CLIENT") && <MessagesInboxButton />}
+        {/* Home — first item; navigates to the role-appropriate dashboard. */}
         <button
-          onClick={() => navigate(settingsPath)}
-          data-testid="header-settings-icon"
-          title="Settings"
-          aria-label="Settings"
+          onClick={() => navigate(dashboardPathFor(user?.role))}
+          data-testid="header-home-icon"
+          title="Dashboard"
+          aria-label="Go to dashboard"
           style={{ width: 36, height: 36, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background-color 120ms ease" }}
           onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
           onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
         >
-          <SettingsIcon size={18} />
+          <Home size={18} />
         </button>
+        {(user?.role === "ADMIN" || user?.role === "CPA" || user?.role === "CLIENT") && <MessagesInboxButton />}
         <NotificationBell />
         <AccessibilityMenu />
         <div style={{ width: 1, height: 24, background: "var(--border-default)", margin: "0 4px" }} />

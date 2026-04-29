@@ -484,10 +484,19 @@ export default function AdminClientDetail() {
                 } catch (x) { setErr(fmtError(x)); }
                 setBusy(false);
               }}
-              disabledKeys={
-                eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
-              }
-              note={eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? "CPA must upload the T2 draft PDF before moving to Review." : null}
+              disabledKeys={(() => {
+                const blocked = [];
+                if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) blocked.push("IN_REVIEW");
+                if (!eng.t183_signed_at || !eng.filing_confirmation) blocked.push("FILED");
+                return blocked;
+              })()}
+              note={(() => {
+                if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) return "CPA must upload the T2 draft PDF before moving to Review.";
+                if (!eng.t183_signed_at && !eng.filing_confirmation) return "Move to Filed is locked until the client signs T183 and the CPA completes 'Update submission info'.";
+                if (!eng.t183_signed_at) return "Move to Filed is locked: client must sign the T183 first.";
+                if (!eng.filing_confirmation) return "Move to Filed is locked: CPA must complete 'Update submission info' (CRA confirmation + filed PDF).";
+                return null;
+              })()}
               testid="admin-move-to"
             />
             {ready && eng.status === "REFERRED" && (

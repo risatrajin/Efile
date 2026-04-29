@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError } from "../lib/api";
-import { LogOut, ShieldCheck, KeyRound, BookOpen, Download, Phone } from "lucide-react";
+import { LogOut, KeyRound, BookOpen, Download, Phone, ArrowLeft } from "lucide-react";
 import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 
@@ -122,6 +122,9 @@ export default function AccountPage() {
   const isClient = user?.role === "CLIENT";
   const content = (
     <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="account-page">
+      <Link to={user?.role === "CLIENT" ? "/portal" : "/"} className="btn-link" data-testid="account-back" style={{ width: "fit-content" }}>
+        <ArrowLeft size={12} /> Back
+      </Link>
       <h1 className="page-title">Account settings</h1>
       {err && <div className="alert alert-risk">{err}</div>}
 
@@ -173,16 +176,6 @@ export default function AccountPage() {
       {/* Security & privacy */}
       <div className="card" data-testid="security-card">
         <div className="section-label" style={{ marginBottom: 16 }}>SECURITY & PRIVACY</div>
-        <div className="list-row">
-          <div className="flex items-center gap-3">
-            <ShieldCheck size={16} style={{ color: "var(--text-secondary)" }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>Two-factor authentication</div>
-              <div className="tertiary" style={{ fontSize: 11 }}>{me.two_factor_enabled ? "Enabled" : "Not enabled"}</div>
-            </div>
-          </div>
-          <a className="btn-link" href="#" onClick={(e) => e.preventDefault()} data-testid="enable-2fa">{me.two_factor_enabled ? "Disable" : "Enable 2FA"}</a>
-        </div>
         <div className="list-row">
           <div className="flex items-center gap-3">
             <KeyRound size={16} style={{ color: "var(--text-secondary)" }} />

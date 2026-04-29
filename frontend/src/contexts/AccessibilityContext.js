@@ -32,6 +32,12 @@ export function AccessibilityProvider({ children }) {
     const root = document.documentElement;
     root.style.setProperty("--a11y-text-scale", state.textSize / 100);
     root.style.zoom = state.zoom !== 100 ? `${state.zoom}%` : "";
+    // The app uses px (not rem) for nearly every text style, so scaling the html
+    // font-size has no visible effect. Apply text-size as a `zoom` on <body>
+    // (independent of page-zoom on <html>) so px-based fonts actually scale.
+    if (document.body) {
+      document.body.style.zoom = state.textSize !== 100 ? `${state.textSize}%` : "";
+    }
     root.classList.toggle("a11y-high-contrast", !!state.highContrast);
     root.classList.toggle("a11y-highlight-links", !!state.highlightLinks);
     root.classList.toggle("a11y-reduce-motion", !!state.reduceMotion);

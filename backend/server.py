@@ -1046,6 +1046,13 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
         elif s == "DELIVERY":
             updates["delivery_date"] = now
         elif s == "FILED":
+            # Hard gate: T183 must be signed AND submission info recorded before
+            # this engagement can be marked FILED via the Move-to dropdown.
+            # (The "Update submission info" form sets both fields atomically.)
+            if not eng.get("t183_signed_at"):
+                raise HTTPException(400, "Cannot move to Filed: client must sign T183 first.")
+            if not eng.get("filing_confirmation"):
+                raise HTTPException(400, "Cannot move to Filed: complete 'Update submission info' (CRA confirmation + filed PDF) first.")
             updates["filing_date"] = now
             ref = eng.get("referral_date")
             if ref:

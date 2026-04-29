@@ -69,11 +69,22 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="app-root">
+    <div className="app-root" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <AppHeader />
-      <div className="page-wide" data-testid="messages-page">
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
-          <h1 className="page-title">Messages</h1>
+      <div
+        className="page-wide"
+        data-testid="messages-page"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          paddingTop: 16,
+          paddingBottom: 16,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+          <h1 className="page-title" style={{ margin: 0 }}>Messages</h1>
           <button onClick={() => navigate(-1)} className="btn-link" data-testid="messages-page-back">
             <ArrowLeft size={12} /> Back
           </button>
@@ -82,11 +93,11 @@ export default function MessagesPage() {
 
         <div
           style={{
+            flex: 1,
+            minHeight: 0,
             display: "grid",
             gridTemplateColumns: "minmax(280px, 360px) 1fr",
             gap: 16,
-            background: "transparent",
-            minHeight: "calc(100vh - 220px)",
           }}
         >
           {/* List */}
@@ -98,7 +109,7 @@ export default function MessagesPage() {
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              minHeight: 480,
+              minHeight: 0,
             }}
             data-testid="messages-page-list"
           >
@@ -187,7 +198,7 @@ export default function MessagesPage() {
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              minHeight: 480,
+              minHeight: 0,
             }}
             data-testid="messages-page-thread"
           >
@@ -197,21 +208,21 @@ export default function MessagesPage() {
               </div>
             ) : (
               <>
-                <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-default)", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-default)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
                   <UserAvatar user={active.client} size={36} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{active.client?.name || "—"}</div>
                     <div className="muted" style={{ fontSize: 12 }}>{active.corporation?.name || ""}</div>
                   </div>
                 </div>
-                <div style={{ flex: 1, minHeight: 0, padding: 16 }}>
+                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                   <ChatThread
                     engagementId={active.engagement_id}
                     headerUser={null}
                     hideHeader={true}
                     mineRightAlign={true}
                     mineColor="dark"
-                    height={520}
+                    height="100%"
                     onUnreadChange={() => load()}
                   />
                 </div>

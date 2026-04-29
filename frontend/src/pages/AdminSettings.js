@@ -651,8 +651,8 @@ export default function AdminSettings() {
     <div className="app-root">
       <AppHeader />
       <div className="page-wide stack-lg" style={{ paddingTop: 24, maxWidth: 1100 }}>
-        <Link to="/admin/dashboard" className="muted flex items-center gap-2" style={{ fontSize: 13, width: "fit-content", textDecoration: "none" }} data-testid="back-to-portal">
-          <ArrowLeft size={14} /> Back to portal
+        <Link to="/admin/dashboard" className="btn-link" style={{ width: "fit-content" }} data-testid="back-to-portal">
+          <ArrowLeft size={12} /> Back to dashboard
         </Link>
         <h1 style={{ fontSize: 28, fontWeight: 600, marginTop: 8 }}>Settings</h1>
 

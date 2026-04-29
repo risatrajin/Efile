@@ -211,6 +211,16 @@ h2.section-title, .section-title {
   outline: none;
   transition: border-color 120ms ease;
 }
+.select {
+  /* Native select chevron — extra right padding so the OS-rendered angle never overlaps the value */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23555' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
 .textarea { height: auto; min-height: 88px; padding: 10px 12px; resize: vertical; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--accent-dark); }
 .field { display: block; }
@@ -346,9 +356,21 @@ h2.section-title, .section-title {
 }
 .kanban-card:hover {
   background: #fff;
-  border-color: rgba(21, 101, 192, 0.35);
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
   transform: translateY(-1px);
+}
+
+/* Document checklist row — keep Download visible always; hide AI-extract / Flag-issue
+   until the row is hovered. */
+.doc-row .doc-row-hover-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.doc-row:hover .doc-row-hover-actions,
+.doc-row:focus-within .doc-row-hover-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 .kanban-card.dimmed { opacity: 0.7; }
 

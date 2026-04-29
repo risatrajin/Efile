@@ -17,7 +17,7 @@ function DocIcon({ status }) {
   if (status === "EXTRACTED") return <Check size={14} style={{ color: "#6a1b9a" }} />;
   if (status === "UPLOADED") return <Check size={14} style={{ color: "#1565c0" }} />;
   if (status === "ISSUE") return <AlertCircle size={14} style={{ color: "#c62828" }} />;
-  return <CircleDashed size={14} style={{ color: "#b5b0ab" }} />;
+  return <CircleDashed size={14} style={{ color: "#ef6c00" }} />;
 }
 
 function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy }) {
@@ -709,17 +709,20 @@ export default function CpaEngagement() {
             <MoveToDropdown
               current={eng.status}
               onChange={(next) => advanceStatus(next)}
-              disabledKeys={
-                // Block IN_REVIEW until a draft is uploaded
-                eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
-              }
-              note={
-                eng.status === "FILED"
-                  ? "Already filed with CRA. Move back only to apply corrections — filing data is preserved."
-                  : eng.status === "IN_PREP" && !eng.t2_draft_doc_id
-                    ? "Upload the T2 draft PDF below before moving to Review."
-                    : null
-              }
+              disabledKeys={(() => {
+                const blocked = [];
+                if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) blocked.push("IN_REVIEW");
+                if (!eng.t183_signed_at || !eng.filing_confirmation) blocked.push("FILED");
+                return blocked;
+              })()}
+              note={(() => {
+                if (eng.status === "FILED") return "Already filed with CRA. Move back only to apply corrections — filing data is preserved.";
+                if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) return "Upload the T2 draft PDF below before moving to Review.";
+                if (!eng.t183_signed_at && !eng.filing_confirmation) return "Move to Filed is locked until the client signs T183 and you complete 'Update submission info'.";
+                if (!eng.t183_signed_at) return "Move to Filed is locked: client must sign the T183 first.";
+                if (!eng.filing_confirmation) return "Move to Filed is locked: complete 'Update submission info' (CRA confirmation + filed PDF).";
+                return null;
+              })()}
               testid="cpa-move-to"
             />
           </div>
@@ -791,7 +794,11 @@ export default function CpaEngagement() {
               </div>
               <div className="mt-3">
                 {docs.filter((d) => !d.deferred_at).map((d) => (
-                  <div className="list-row" key={d.id} data-testid={`cpa-doc-${d.id}`}>
+                  <div
+                    className="list-row doc-row"
+                    key={d.id}
+                    data-testid={`cpa-doc-${d.id}`}
+                  >
                     <div style={{ flex: 1 }}>
                       <div className="flex items-center gap-2">
                         <DocIcon status={d.status} />
@@ -811,21 +818,35 @@ export default function CpaEngagement() {
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-2">
-                      {d.object_key && <button className="btn btn-ghost btn-sm" onClick={() => downloadDoc(d)} data-testid={`download-${d.id}`}><Download size={12} /></button>}
-                      {d.object_key && d.status !== "EXTRACTED" && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => runExtract(d)} disabled={busy} data-testid={`extract-${d.id}`}>
-                          <Sparkles size={12} /> AI extract
-                        </button>
-                      )}
-                      {d.object_key && (d.status === "UPLOADED" || d.status === "EXTRACTED") && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => markReviewed(d)} data-testid={`review-${d.id}`}>
-                          <Check size={12} /> Mark reviewed
-                        </button>
-                      )}
-                      {(d.object_key || d.status === "UPLOADED" || d.status === "REVIEWED" || d.status === "EXTRACTED" || d.status === "ISSUE") && (
-                        <button className="btn btn-ghost btn-sm" onClick={() => setFlagDoc(d)} data-testid={`flag-${d.id}`}>
-                          <Flag size={12} /> {d.status === "ISSUE" ? "Edit issue" : "Flag issue"}
+                    <div className="doc-row-actions flex gap-2 items-center">
+                      {/* Hover-only actions */}
+                      <div className="doc-row-hover-actions flex gap-2">
+                        {d.object_key && d.status !== "EXTRACTED" && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => runExtract(d)} disabled={busy} data-testid={`extract-${d.id}`}>
+                            <Sparkles size={12} /> AI extract
+                          </button>
+                        )}
+                        {d.object_key && (d.status === "UPLOADED" || d.status === "EXTRACTED") && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => markReviewed(d)} data-testid={`review-${d.id}`}>
+                            <Check size={12} /> Mark reviewed
+                          </button>
+                        )}
+                        {(d.object_key || d.status === "UPLOADED" || d.status === "REVIEWED" || d.status === "EXTRACTED" || d.status === "ISSUE") && (
+                          <button className="btn btn-ghost btn-sm" onClick={() => setFlagDoc(d)} data-testid={`flag-${d.id}`}>
+                            <Flag size={12} /> {d.status === "ISSUE" ? "Edit issue" : "Flag issue"}
+                          </button>
+                        )}
+                      </div>
+                      {/* Always-visible Download — anchored to the right */}
+                      {d.object_key && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => downloadDoc(d)}
+                          data-testid={`download-${d.id}`}
+                          title="Download"
+                          aria-label="Download"
+                        >
+                          <Download size={12} />
                         </button>
                       )}
                     </div>
