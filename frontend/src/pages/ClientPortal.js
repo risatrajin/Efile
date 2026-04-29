@@ -809,6 +809,34 @@ export default function ClientPortal() {
               Filed by <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{eng.filed_by_name || cpa?.name || "your CPA"}</span> on <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{fmtDate(eng.filing_date)}</span>. CRA has acknowledged the submission. A PDF copy is below for your records.
             </p>
 
+            {/* CPA's filing note — surfaced to the client so they get any "how to pay
+                the balance / next steps" context the CPA wrote at filing time. */}
+            {eng.filing_note && (
+              <div
+                data-testid="client-filing-note"
+                style={{
+                  marginTop: 16,
+                  padding: "12px 14px",
+                  background: "#e8f5e9",
+                  border: "1px solid #c8e6c9",
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                }}
+              >
+                <MessageSquare size={14} style={{ color: "#2e7d32", flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: "#1b5e20", textTransform: "uppercase", marginBottom: 4 }}>
+                    Note from {eng.filed_by_name || cpa?.name || "your CPA"}
+                  </div>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: "#0d2914", whiteSpace: "pre-wrap" }}>
+                    {eng.filing_note}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: "flex", alignItems: "center", gap: 24, marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border-default)", flexWrap: "wrap" }}>
               <div>
                 <div className="muted" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>CRA confirmation</div>

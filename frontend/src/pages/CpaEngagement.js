@@ -226,7 +226,9 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
         ? "Waiting on the client to sign T183. Filing is unlocked once the signature is on file."
         : "");
   const [open, setOpen] = useState(false);
-  const [pickedFile, setPickedFile] = useState(null);
+  // Filed return PDFs — multiple supported. Order matters: index 0 becomes the
+  // primary filed return; the rest are stored as attachments.
+  const [pickedFiles, setPickedFiles] = useState([]);
   const [conf, setConf] = useState("");
   const [filingAt, setFilingAt] = useState(() => {
     const d = new Date(); d.setSeconds(0, 0);
@@ -260,7 +262,7 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
     if (!t183Signed) { setError("Client must sign the T183 before filing."); return; }
     if (!conf.trim()) { setError("CRA confirmation number is required."); return; }
     if (!filingAt) { setError("Filing date and time are required."); return; }
-    if (!pickedFile) { setError("Please upload a PDF copy of the filed return."); return; }
+    if (!pickedFiles || pickedFiles.length === 0) { setError("Please upload at least one PDF copy of the filed return."); return; }
     // Filed return summary is now mandatory — these values are surfaced on the
     // client's Filed dashboard, so we must capture them at filing time.
     const ni = parseFloatOrNull(netIncome);
@@ -285,7 +287,7 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
         balance_owing: bo,
         payment_due_date: paymentDue || null,
       });
-      await onSubmit({ cra_confirmation: conf.trim(), filing_datetime: isoFiling, note: note.trim() || null, filing_summary: filingSummary, file: pickedFile });
+      await onSubmit({ cra_confirmation: conf.trim(), filing_datetime: isoFiling, note: note.trim() || null, filing_summary: filingSummary, files: pickedFiles });
     } catch (x) {
       setError(x?.response?.data?.detail || x?.message || "Failed to file");
     }
@@ -318,10 +320,10 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
   return (
     <div className="card" data-testid="file-with-cra-form" style={{ borderLeft: "3px solid var(--accent-dark)" }}>
       <div className="flex items-center between" style={{ marginBottom: 4 }}>
-        <h2 className="card-title" style={{ margin: 0 }}>File with CRA</h2>
+        <h2 className="card-title" style={{ margin: 0 }}>Ready to file with CRA</h2>
         <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)} data-testid="file-now-close"><X size={14} /></button>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Enter the CRA acknowledgement details and upload the final filed PDF.</p>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Enter the CRA acknowledgement details and upload the final filed PDF(s).</p>
 
       <div className="stack-md">
         <div className="field">
@@ -333,7 +335,7 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
           <input className="input" type="datetime-local" value={filingAt} onChange={(e) => setFilingAt(e.target.value)} data-testid="filing-datetime-input" />
         </div>
         <div className="field">
-          <label className="field-label">Filed return PDF *</label>
+          <label className="field-label">Filed return PDF(s) *</label>
           <div
             onClick={() => inputRef.current?.click()}
             data-testid="filed-pdf-dropzone"
@@ -343,14 +345,75 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
             }}
           >
             <Upload size={18} style={{ color: "var(--text-tertiary)", marginBottom: 6 }} />
-            <div style={{ fontSize: 13, fontWeight: 500 }}>{pickedFile ? pickedFile.name : "Drop PDF here or click to browse"}</div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>PDF up to 50 MB</div>
-            <input ref={inputRef} type="file" accept="application/pdf,.pdf" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && setPickedFile(e.target.files[0])} data-testid="filed-pdf-input" />
+            <div style={{ fontSize: 13, fontWeight: 500 }}>
+              {pickedFiles.length === 0
+                ? "Drop PDF(s) here or click to browse"
+                : `${pickedFiles.length} file${pickedFiles.length === 1 ? "" : "s"} selected — click to add more`}
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Up to 50 MB per file. Supports multiple PDFs.</div>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                if (!files.length) return;
+                // Append to existing list, dedupe by name+size to avoid accidental dupes.
+                setPickedFiles((prev) => {
+                  const seen = new Set(prev.map((f) => `${f.name}__${f.size}`));
+                  const next = [...prev];
+                  for (const f of files) {
+                    const key = `${f.name}__${f.size}`;
+                    if (!seen.has(key)) { next.push(f); seen.add(key); }
+                  }
+                  return next;
+                });
+                // Reset input so the same file can be re-picked after a remove
+                e.target.value = "";
+              }}
+              data-testid="filed-pdf-input"
+            />
           </div>
+          {/* Picked-files list with remove + re-upload affordances */}
+          {pickedFiles.length > 0 && (
+            <div className="stack-sm" style={{ marginTop: 10 }} data-testid="filed-pdf-list">
+              {pickedFiles.map((f, i) => (
+                <div
+                  key={`${f.name}-${i}`}
+                  data-testid={`filed-pdf-item-${i}`}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 12px", background: "var(--bg-subtle)",
+                    border: "1px solid var(--border-default)", borderRadius: 8,
+                  }}
+                >
+                  <FileText size={16} style={{ color: "#1565c0", flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {f.name}
+                      {i === 0 && <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 600, letterSpacing: 0.4, color: "#2e7d32", background: "#e8f5e9", padding: "2px 7px", borderRadius: 999 }}>PRIMARY</span>}
+                    </div>
+                    <div className="muted" style={{ fontSize: 11 }}>{(f.size / 1024).toFixed(1)} KB</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setPickedFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                    aria-label={`Remove ${f.name}`}
+                    data-testid={`filed-pdf-remove-${i}`}
+                    title="Remove"
+                  ><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="field">
           <label className="field-label">Note (optional)</label>
-          <textarea className="textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Any internal note about this filing..." data-testid="filing-note" />
+          <textarea className="textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="A short note to the client about this filing (e.g. how to pay the balance, next steps)..." data-testid="filing-note" />
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>This note is shown to the client on their Filed dashboard.</div>
         </div>
       </div>
 
@@ -387,7 +450,7 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
       <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 16 }}>
         <button className="btn btn-secondary btn-sm" onClick={() => setOpen(false)}>Cancel</button>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy} data-testid="file-now-submit">
-          <Send size={12} /> {busy ? "Filing…" : "Submit filing"}
+          <Send size={12} /> {busy ? "Filing…" : "Send and move to Filed"}
         </button>
       </div>
     </div>
@@ -644,11 +707,12 @@ export default function CpaEngagement() {
     setBusy(false);
   };
 
-  const fileWithCRA = async ({ cra_confirmation, filing_datetime, note, filing_summary, file }) => {
+  const fileWithCRA = async ({ cra_confirmation, filing_datetime, note, filing_summary, files }) => {
     setBusy(true); setErr("");
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      // Backend now accepts a list under the "files" field.
+      for (const f of files) fd.append("files", f);
       const params = new URLSearchParams({ cra_confirmation, filing_datetime });
       if (note) params.set("note", note);
       if (filing_summary) params.set("filing_summary", filing_summary);

@@ -7,7 +7,7 @@ import io
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, APIRouter, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -2887,11 +2887,13 @@ async def file_with_cra(
     filing_datetime: str,
     note: Optional[str] = None,
     filing_summary: Optional[str] = None,
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
     user: dict = Depends(require_role("CPA", "ADMIN")),
 ):
-    """CPA submits the filed return to CRA: PDF copy + CRA confirmation # + filing datetime + optional note.
-    Sets engagement status = FILED."""
+    """CPA submits the filed return to CRA: one or more PDF copies + CRA confirmation # + filing datetime + optional note.
+    The first file becomes the primary `Filed T2 Return`; any additional files
+    are stored as `Filed return attachment` documents and listed alongside it
+    on the client/CPA Filed dashboards. Sets engagement status = FILED."""
     db = get_db()
     eng = await get_engagement_or_404(eid, user)
     if eng["status"] not in ("IN_REVIEW", "DELIVERY"):
@@ -2912,6 +2914,8 @@ async def file_with_cra(
         raise HTTPException(400, "Client must approve the draft (Your Review → Everything looks good) before the return can be filed")
     if not cra_confirmation.strip():
         raise HTTPException(400, "CRA confirmation number is required")
+    if not files:
+        raise HTTPException(400, "At least one PDF copy of the filed return is required")
 
     try:
         filing_dt = datetime.fromisoformat(filing_datetime.replace("Z", "+00:00"))
@@ -2920,42 +2924,62 @@ async def file_with_cra(
     except Exception:
         raise HTTPException(400, "filing_datetime must be a valid ISO datetime")
 
-    body = await file.read()
-    if not body:
-        raise HTTPException(400, "Empty file")
-    if len(body) > 50 * 1024 * 1024:
-        raise HTTPException(413, "File exceeds 50 MB limit")
-
-    safe_name = "".join(c for c in (file.filename or "filed.pdf") if c.isalnum() or c in "._-")[:80] or "filed.pdf"
-    object_key = f"engagements/{eid}/filed/{uuid.uuid4().hex}_{safe_name}"
-    content_type = file.content_type or "application/pdf"
-    storage = "s3"
-    if not s3_service.put_object_bytes(object_key, body, content_type):
-        storage = "local"
-        local_dir = os.path.join(os.path.dirname(__file__), "uploads", eid, "filed")
-        os.makedirs(local_dir, exist_ok=True)
-        local_path = os.path.join(local_dir, f"{uuid.uuid4().hex}_{safe_name}")
-        with open(local_path, "wb") as f:
-            f.write(body)
-        object_key = f"local://{local_path}"
+    # Read + persist every uploaded file. The first one becomes the primary
+    # "Filed T2 Return"; the rest are saved as attachments.
+    persisted_docs: list[dict] = []
+    for idx, up in enumerate(files):
+        body = await up.read()
+        if not body:
+            raise HTTPException(400, f"Empty file: {up.filename or 'untitled'}")
+        if len(body) > 50 * 1024 * 1024:
+            raise HTTPException(413, f"File '{up.filename or 'untitled'}' exceeds 50 MB limit")
+        safe_name = "".join(c for c in (up.filename or f"filed-{idx}.pdf") if c.isalnum() or c in "._-")[:80] or f"filed-{idx}.pdf"
+        object_key = f"engagements/{eid}/filed/{uuid.uuid4().hex}_{safe_name}"
+        content_type = up.content_type or "application/pdf"
+        storage = "s3"
+        if not s3_service.put_object_bytes(object_key, body, content_type):
+            storage = "local"
+            local_dir = os.path.join(os.path.dirname(__file__), "uploads", eid, "filed")
+            os.makedirs(local_dir, exist_ok=True)
+            local_path = os.path.join(local_dir, f"{uuid.uuid4().hex}_{safe_name}")
+            with open(local_path, "wb") as f:
+                f.write(body)
+            object_key = f"local://{local_path}"
+        persisted_docs.append({
+            "object_key": object_key,
+            "storage": storage,
+            "filename": up.filename,
+            "size": len(body),
+            "content_type": content_type,
+            "is_primary": idx == 0,
+        })
 
     now = datetime.now(timezone.utc)
-    filed_doc_id = str(uuid.uuid4())
-    await db.documents.insert_one({
-        "id": filed_doc_id, "engagement_id": eid,
-        "category": "FILED_RETURN", "name": "Filed T2 Return",
-        "description": "Final T2 return submitted to CRA",
-        "is_required": False, "sort_order": 9998,
-        "status": "UPLOADED", "object_key": object_key, "storage": storage,
-        "file_name": file.filename, "file_size": len(body), "mime_type": content_type,
-        "uploaded_at": now, "created_at": now,
-    })
+    primary_doc_id: Optional[str] = None
+    attachment_doc_ids: list[str] = []
+    for idx, p in enumerate(persisted_docs):
+        doc_id = str(uuid.uuid4())
+        await db.documents.insert_one({
+            "id": doc_id, "engagement_id": eid,
+            "category": "FILED_RETURN" if p["is_primary"] else "FILED_RETURN_ATTACHMENT",
+            "name": "Filed T2 Return" if p["is_primary"] else f"Filed return attachment {idx}",
+            "description": "Final T2 return submitted to CRA" if p["is_primary"] else "Supporting document filed alongside the T2",
+            "is_required": False, "sort_order": 9998 + idx,
+            "status": "UPLOADED", "object_key": p["object_key"], "storage": p["storage"],
+            "file_name": p["filename"], "file_size": p["size"], "mime_type": p["content_type"],
+            "uploaded_at": now, "created_at": now,
+        })
+        if p["is_primary"]:
+            primary_doc_id = doc_id
+        else:
+            attachment_doc_ids.append(doc_id)
 
     eng_set = {
         "status": "FILED",
         "filing_date": filing_dt,
         "filing_confirmation": cra_confirmation.strip(),
-        "filed_return_doc_id": filed_doc_id,
+        "filed_return_doc_id": primary_doc_id,
+        "filed_attachment_doc_ids": attachment_doc_ids,
         "filing_note": (note or "").strip() or None,
         "filed_by_id": user["id"],
         "filed_by_name": user.get("name") or user.get("email"),
@@ -2997,7 +3021,13 @@ async def file_with_cra(
     if eng.get("ws_advisor_id"):
         await notify(eng["ws_advisor_id"], "Filing complete", f"{(corp or {}).get('name') or eid[:8]} T2 filed with CRA", "filing_complete", eid)
     await notify_admins("T2 filed with CRA", f"{(corp or {}).get('name') or eid[:8]} has been filed.", "filing_complete_admin", eid)
-    return {"ok": True, "filed_return_doc_id": filed_doc_id, "filing_confirmation": cra_confirmation.strip(), "storage": storage}
+    return {
+        "ok": True,
+        "filed_return_doc_id": primary_doc_id,
+        "filed_attachment_doc_ids": attachment_doc_ids,
+        "filing_confirmation": cra_confirmation.strip(),
+        "files_count": len(persisted_docs),
+    }
 
 
 @api.post("/engagements/{eid}/move-to-review")

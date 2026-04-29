@@ -276,6 +276,19 @@
 
 ## Backlog (prioritized)
 
+### Iter 31 (Feb 2026 — Ready-to-file polish: heading rename, multi-file uploads + remove, button rename, client visibility into CPA's filing note)
+
+**Item 1 — Card heading:** the form heading inside the file-with-CRA modal renamed from "File with CRA" → "**Ready to file with CRA**" so it matches the trigger card.
+
+**Item 2 — Multi-file upload with remove/re-upload:**
+- Backend `POST /engagements/{eid}/file-with-cra` parameter changed from `file: UploadFile = File(...)` to `files: List[UploadFile] = File(...)`. Persists every file: index 0 becomes the primary `FILED_RETURN` document; the rest are saved as `FILED_RETURN_ATTACHMENT` docs. New `engagement.filed_attachment_doc_ids: list[str]` records the secondary file ids. Returns `files_count` to the caller.
+- Frontend: `pickedFiles` state replaces single `pickedFile`. Drop zone accepts `multiple`; selecting more files appends (deduped by name+size). New picked-files list with `data-testid="filed-pdf-list"` showing each file with a `PRIMARY` badge on the first, file size, and an X remove button (`filed-pdf-remove-{i}`). Re-upload is a remove + add combo since selection is purely client-side until submit.
+- "Note (optional)" copy clarified that it's shown to the client.
+
+**Item 3 — Submit button:** "Submit filing" → "**Send and move to Filed**".
+
+**Item 4 — Client visibility into CPA's filing note:** the client's Filed dashboard now shows a green callout (`client-filing-note`) titled "**Note from {filed_by_name}**" right under the "Filed by … on …. CRA has acknowledged the submission." sentence. Rendered only when `eng.filing_note` is present. White-space preserved so multi-line notes ("how to pay your balance, next steps") survive verbatim.
+
 ### Iter 30 (Feb 2026 — 8-item batch from msg #768, Iteration A)
 **Item 1 — ResizeObserver overlay (truly fixed):** moved the noise-suppressor into an inline `<script>` in `public/index.html` `<head>` so it executes BEFORE webpack runtime / react-error-overlay attach their listeners. Now intercepts via capture-phase `error` + `unhandledrejection`, overrides `window.onerror`, mutes matching `console.error`, and adds a CSS rule hiding `iframe#webpack-dev-server-client-overlay`. Verified live on the Set-Password page that triggered it.
 
