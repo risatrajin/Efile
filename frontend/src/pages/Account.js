@@ -6,6 +6,7 @@ import { LogOut, KeyRound, BookOpen, Download, Phone, ArrowLeft } from "lucide-r
 import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import TwoFactorCard from "../components/shared/TwoFactorCard";
+import PasswordField from "../components/shared/PasswordField";
 
 function Toggle({ checked, onChange, testid }) {
   return (
@@ -137,14 +138,6 @@ export default function AccountPage() {
         }}
       />
 
-      <TwoFactorCard
-        me={me}
-        onChange={(next) => {
-          setMe(next);
-          setUser((u) => (u && typeof u === "object" ? { ...u, two_factor_enabled: !!next.two_factor_enabled } : u));
-        }}
-      />
-
       {/* Account information */}
       <div className="card" data-testid="account-info-card">
         <div className="section-label" style={{ marginBottom: 16 }}>ACCOUNT INFORMATION</div>
@@ -184,7 +177,7 @@ export default function AccountPage() {
 
       {/* Security & privacy */}
       <div className="card" data-testid="security-card">
-        <div className="section-label" style={{ marginBottom: 16 }}>SECURITY & PRIVACY</div>
+        <div className="section-label" style={{ marginBottom: 16 }}>SECURITY &amp; PRIVACY</div>
         <div className="list-row">
           <div className="flex items-center gap-3">
             <KeyRound size={16} style={{ color: "var(--text-secondary)" }} />
@@ -206,11 +199,11 @@ export default function AccountPage() {
             ) : (
               <form onSubmit={submitPw} className="stack-md">
                 <div className="field"><label className="field-label">Current password</label>
-                  <input className="input" type="password" value={pwForm.current_password} onChange={(e) => setPwForm({ ...pwForm, current_password: e.target.value })} required data-testid="pw-current" /></div>
+                  <PasswordField value={pwForm.current_password} onChange={(e) => setPwForm({ ...pwForm, current_password: e.target.value })} testid="pw-current" autoComplete="current-password" /></div>
                 <div className="field"><label className="field-label">New password (min 8)</label>
-                  <input className="input" type="password" value={pwForm.new_password} onChange={(e) => setPwForm({ ...pwForm, new_password: e.target.value })} required data-testid="pw-new" /></div>
+                  <PasswordField value={pwForm.new_password} onChange={(e) => setPwForm({ ...pwForm, new_password: e.target.value })} testid="pw-new" autoComplete="new-password" /></div>
                 <div className="field"><label className="field-label">Confirm new password</label>
-                  <input className="input" type="password" value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })} required data-testid="pw-confirm" /></div>
+                  <PasswordField value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })} testid="pw-confirm" autoComplete="new-password" /></div>
                 {pwErr && <div className="alert alert-risk">{pwErr}</div>}
                 <div className="flex gap-2">
                   <button type="submit" className="btn btn-primary btn-sm" disabled={pwBusy} data-testid="pw-submit">{pwBusy ? <span className="spinner" /> : "Update password"}</button>
@@ -220,6 +213,17 @@ export default function AccountPage() {
             )}
           </div>
         )}
+
+        <div style={{ height: 1, background: "var(--border-default)", margin: "20px 0" }} />
+
+        <TwoFactorCard
+          me={me}
+          embedded
+          onChange={(next) => {
+            setMe(next);
+            setUser((u) => (u && typeof u === "object" ? { ...u, two_factor_enabled: !!next.two_factor_enabled } : u));
+          }}
+        />
       </div>
 
       {/* Help & support */}

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, fmtError } from "../lib/api";
+import PasswordField from "../components/shared/PasswordField";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -200,22 +201,22 @@ export function ResetPassword() {
           )}
           <div className="field">
             <label className="field-label">New password (min 8 chars)</label>
-            <input
-              className="input" type="password" required
+            <PasswordField
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Min. 8 characters"
-              data-testid="reset-new"
+              testid="reset-new"
+              autoComplete="new-password"
             />
           </div>
           <div className="field">
             <label className="field-label">Confirm password</label>
-            <input
-              className="input" type="password" required
+            <PasswordField
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               placeholder="Re-enter password"
-              data-testid="reset-confirm"
+              testid="reset-confirm"
+              autoComplete="new-password"
             />
           </div>
           {err && <div className="alert alert-risk" data-testid="reset-error">{err}</div>}

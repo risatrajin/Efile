@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronDown, Check, Lock } from "lucide-react";
+import { ChevronDown, Check, Lock, CheckCircle2 } from "lucide-react";
 
 const STAGES = [
   { key: "REFERRED", label: "Referred", description: "Awaiting CPA assignment" },
@@ -22,7 +22,10 @@ export default function MoveToDropdown({ current, onChange, disabledKeys = [], n
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const currentLabel = STAGES.find((s) => s.key === current)?.label || current;
+  const isFiled = current === "FILED";
+  const currentLabel = isFiled
+    ? "Filed"
+    : (STAGES.find((s) => s.key === current)?.label || current);
   const currentIdx = STAGE_INDEX[current] ?? -1;
 
   const select = (key) => {
@@ -48,7 +51,11 @@ export default function MoveToDropdown({ current, onChange, disabledKeys = [], n
         onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 999, background: "#1565c0" }} />
+          {isFiled ? (
+            <CheckCircle2 size={14} style={{ color: "#1565c0" }} strokeWidth={2.5} />
+          ) : (
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: "#1565c0" }} />
+          )}
           Step: {currentLabel}
         </span>
         <ChevronDown size={14} />
@@ -57,13 +64,34 @@ export default function MoveToDropdown({ current, onChange, disabledKeys = [], n
         <div data-testid={`${testid}-menu`} style={{
           position: "absolute", right: 0, top: "calc(100% + 6px)",
           background: "#fff", border: "1px solid var(--border-default)", borderRadius: 12,
-          minWidth: 280, padding: 6,
+          minWidth: 300, padding: 6,
           boxShadow: "0 12px 32px rgba(0,0,0,0.10)", zIndex: 30,
         }}>
-          <div className="section-label" style={{ padding: "10px 12px 6px" }}>MOVE TO STEP</div>
+          {isFiled && (
+            <div
+              data-testid={`${testid}-filed-banner`}
+              style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                padding: "12px 12px 12px 12px",
+                background: "#e3f2fd",
+                border: "1px solid #bbdefb",
+                borderRadius: 10,
+                margin: "6px 6px 8px",
+              }}
+            >
+              <CheckCircle2 size={16} style={{ color: "#1565c0", flexShrink: 0, marginTop: 1 }} strokeWidth={2.5} />
+              <div style={{ fontSize: 12, lineHeight: 1.5, color: "#0d47a1" }}>
+                <div style={{ fontWeight: 600, marginBottom: 2 }}>Already filed with CRA.</div>
+                Move back only to apply corrections — filing data is preserved.
+              </div>
+            </div>
+          )}
+          <div className="section-label" style={{ padding: "10px 12px 6px" }}>
+            {isFiled ? "ROLL BACK TO" : "MOVE TO STEP"}
+          </div>
           {STAGES.map((s, i) => {
-            const isCurrent = s.key === current;
-            const isPast = i < currentIdx;
+            const isCurrent = !isFiled && s.key === current;
+            const isPast = !isFiled && i < currentIdx;
             const disabled = disabledKeys.includes(s.key);
             return (
               <button
@@ -104,7 +132,7 @@ export default function MoveToDropdown({ current, onChange, disabledKeys = [], n
               </button>
             );
           })}
-          {note && (
+          {note && !isFiled && (
             <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-default)", marginTop: 4 }}>
               <div className="muted" style={{ fontSize: 11, lineHeight: 1.5 }}>{note}</div>
             </div>

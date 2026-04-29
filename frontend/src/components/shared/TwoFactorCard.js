@@ -15,8 +15,10 @@ import { api, fmtError } from "../../lib/api";
  * Props:
  *  - me: current user object (must contain two_factor_enabled)
  *  - onChange: called with the patched user after enable/disable success
+ *  - embedded: when true, omit the outer `.card` + section-label so the
+ *    component can be slotted inside another SECURITY & PRIVACY card.
  */
-export default function TwoFactorCard({ me, onChange }) {
+export default function TwoFactorCard({ me, onChange, embedded = false }) {
   const enabled = !!me?.two_factor_enabled;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -94,9 +96,8 @@ export default function TwoFactorCard({ me, onChange }) {
     }
   };
 
-  return (
-    <div className="card" data-testid="two-factor-card">
-      <div className="section-label" style={{ marginBottom: 16 }}>SECURITY</div>
+  const body = (
+    <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div
           style={{
@@ -227,6 +228,16 @@ export default function TwoFactorCard({ me, onChange }) {
       {err && stage === "idle" && (
         <div className="alert alert-risk mt-3" data-testid="two-factor-err">{err}</div>
       )}
+    </>
+  );
+
+  if (embedded) {
+    return <div data-testid="two-factor-card">{body}</div>;
+  }
+  return (
+    <div className="card" data-testid="two-factor-card">
+      <div className="section-label" style={{ marginBottom: 16 }}>SECURITY &amp; PRIVACY</div>
+      {body}
     </div>
   );
 }

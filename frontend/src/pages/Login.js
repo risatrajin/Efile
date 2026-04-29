@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError } from "../lib/api";
+import PasswordField from "../components/shared/PasswordField";
 
 function roleToHome(role) {
   if (role === "CLIENT") return "/portal";
@@ -21,6 +22,16 @@ export default function Login() {
   // 2FA challenge state — when present, swap the form for an OTP entry
   const [otpState, setOtpState] = useState(null);
   const [otpCode, setOtpCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendInfo, setResendInfo] = useState("");
+
+  // Cooldown ticker for the resend button.
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   React.useEffect(() => {
     if (user && user !== false) navigate(roleToHome(user.role), { replace: true });
@@ -38,8 +49,11 @@ export default function Login() {
         sentViaEmail: r.sentViaEmail,
         debugOtp: r.debugOtp,
         email: r.email,
+        expiresInSec: r.expiresInSec || 300,
       });
       setOtpCode("");
+      setResendCooldown(r.resendAfterSec || 30);
+      setResendInfo("");
       return;
     }
     setErr(r.error);
@@ -53,10 +67,34 @@ export default function Login() {
     if (!r.ok) { setErr(r.error); return; }
   };
 
+  const onResendOtp = async () => {
+    if (resendCooldown > 0 || resendBusy) return;
+    setResendBusy(true); setErr(""); setResendInfo("");
+    try {
+      const { data } = await api.post("/auth/2fa/resend", { challenge_id: otpState.challengeId });
+      setOtpState({
+        challengeId: data.challenge_id,
+        sentViaEmail: !!data.sent_via_email,
+        debugOtp: data.debug_otp || null,
+        email: data.email || otpState.email,
+        expiresInSec: data.expires_in_sec || 300,
+      });
+      setOtpCode("");
+      setResendCooldown(data.resend_after_sec || 30);
+      setResendInfo(data.sent_via_email ? "A new code has been emailed." : "A new code has been generated.");
+    } catch (x) {
+      setErr(fmtError(x));
+    } finally {
+      setResendBusy(false);
+    }
+  };
+
   const cancelOtp = () => {
     setOtpState(null);
     setOtpCode("");
     setErr("");
+    setResendCooldown(0);
+    setResendInfo("");
   };
 
   return (
@@ -75,7 +113,13 @@ export default function Login() {
               </div>
               <div className="field">
                 <label className="field-label">Password</label>
-                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Enter your password" data-testid="login-password" />
+                <PasswordField
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  testid="login-password"
+                  autoComplete="current-password"
+                />
               </div>
               {err && <div className="alert alert-risk" data-testid="login-error">{err}</div>}
               <button className="btn btn-primary w-full" disabled={busy} type="submit" data-testid="login-submit">
@@ -94,8 +138,8 @@ export default function Login() {
             <h2 className="section-title">Two-factor verification</h2>
             <p className="muted" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
               {otpState.sentViaEmail
-                ? <>We sent a 6-digit code to <strong>{otpState.email}</strong>. It expires in 10 minutes.</>
-                : <>Email delivery is currently unavailable — use the code shown below to continue. (SES sandbox fallback)</>}
+                ? <>We sent a 6-digit code to <strong>{otpState.email}</strong>. It expires in 5 minutes.</>
+                : <>Email delivery is currently unavailable — use the code shown below to continue. (Sandbox fallback)</>}
             </p>
             <form onSubmit={onSubmitOtp} className="stack-md" style={{ marginTop: 16 }}>
               <div className="field">
@@ -134,18 +178,33 @@ export default function Login() {
                 </div>
               )}
               {err && <div className="alert alert-risk" data-testid="login-otp-error">{err}</div>}
+              {resendInfo && <div className="alert" style={{ background: "#e8f5e9", color: "#1b5e20", fontSize: 12 }} data-testid="login-otp-resend-info">{resendInfo}</div>}
               <button className="btn btn-primary w-full" disabled={busy || otpCode.length !== 6} type="submit" data-testid="login-otp-submit">
                 {busy ? <span className="spinner" /> : "Verify and sign in"}
               </button>
-              <button
-                type="button"
-                className="btn-link"
-                onClick={cancelOtp}
-                data-testid="login-otp-cancel"
-                style={{ alignSelf: "center", fontSize: 12 }}
-              >
-                Use a different account
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  className="btn-link"
+                  onClick={onResendOtp}
+                  disabled={resendCooldown > 0 || resendBusy}
+                  data-testid="login-otp-resend"
+                  style={{ fontSize: 12 }}
+                >
+                  {resendCooldown > 0
+                    ? `Resend code in ${resendCooldown}s`
+                    : (resendBusy ? "Sending…" : "Resend code")}
+                </button>
+                <button
+                  type="button"
+                  className="btn-link"
+                  onClick={cancelOtp}
+                  data-testid="login-otp-cancel"
+                  style={{ fontSize: 12 }}
+                >
+                  Use a different account
+                </button>
+              </div>
             </form>
           </>
         )}
@@ -205,11 +264,11 @@ export function SetPassword() {
           </div>
           <div className="field">
             <label className="field-label">New password (min 8 chars)</label>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Min. 8 characters" data-testid="setpwd-new" />
+            <PasswordField value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" testid="setpwd-new" autoComplete="new-password" />
           </div>
           <div className="field">
             <label className="field-label">Confirm password</label>
-            <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required placeholder="Re-enter password" data-testid="setpwd-confirm" />
+            <PasswordField value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter password" testid="setpwd-confirm" autoComplete="new-password" />
           </div>
           {err && <div className="alert alert-risk">{err}</div>}
           <button className="btn btn-primary w-full" disabled={busy} type="submit" data-testid="setpwd-submit">

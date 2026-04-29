@@ -243,15 +243,30 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
     if (!conf.trim()) { setError("CRA confirmation number is required."); return; }
     if (!filingAt) { setError("Filing date and time are required."); return; }
     if (!pickedFile) { setError("Please upload a PDF copy of the filed return."); return; }
+    // Filed return summary is now mandatory — these values are surfaced on the
+    // client's Filed dashboard, so we must capture them at filing time.
+    const ni = parseFloatOrNull(netIncome);
+    const tt = parseFloatOrNull(totalTax);
+    const ip = parseFloatOrNull(instalmentsPaid);
+    const bo = parseFloatOrNull(balanceOwing);
+    const missing = [];
+    if (ni === null) missing.push("Net income");
+    if (tt === null) missing.push("Total tax assessed");
+    if (ip === null) missing.push("Instalments paid");
+    if (bo === null) missing.push("Balance owing");
+    if (missing.length) {
+      setError(`Please complete the Filed Return Summary. Missing: ${missing.join(", ")}.`);
+      return;
+    }
     try {
       const isoFiling = new Date(filingAt).toISOString();
-      const filingSummary = (netIncome || totalTax || instalmentsPaid || paymentDue) ? JSON.stringify({
-        net_income: parseFloatOrNull(netIncome),
-        total_tax_assessed: parseFloatOrNull(totalTax),
-        instalments_paid: parseFloatOrNull(instalmentsPaid),
-        balance_owing: parseFloatOrNull(balanceOwing),
+      const filingSummary = JSON.stringify({
+        net_income: ni,
+        total_tax_assessed: tt,
+        instalments_paid: ip,
+        balance_owing: bo,
         payment_due_date: paymentDue || null,
-      }) : null;
+      });
       await onSubmit({ cra_confirmation: conf.trim(), filing_datetime: isoFiling, note: note.trim() || null, filing_summary: filingSummary, file: pickedFile });
     } catch (x) {
       setError(x?.response?.data?.detail || x?.message || "Failed to file");
@@ -323,23 +338,23 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
 
       {/* Filed Return Summary — shown to the client on the FILED dashboard */}
       <div className="card" data-testid="filing-summary-card" style={{ marginTop: 18, background: "var(--bg-subtle)" }}>
-        <div className="section-label" style={{ marginBottom: 10 }}>FILED RETURN SUMMARY</div>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>These values will appear on the client's Filed dashboard. Leave blank to hide a row.</p>
+        <div className="section-label" style={{ marginBottom: 10 }}>FILED RETURN SUMMARY *</div>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Required. These values appear on the client&apos;s Filed dashboard.</p>
         <div className="stack-md">
           <div className="field">
-            <label className="field-label">Net income for tax purposes</label>
+            <label className="field-label">Net income for tax purposes *</label>
             <CurrencyInput value={netIncome} onChange={setNetIncome} testid="fs-net-income" />
           </div>
           <div className="field">
-            <label className="field-label">Total tax assessed</label>
+            <label className="field-label">Total tax assessed *</label>
             <CurrencyInput value={totalTax} onChange={setTotalTax} testid="fs-total-tax" />
           </div>
           <div className="field">
-            <label className="field-label">Instalments paid</label>
+            <label className="field-label">Instalments paid *</label>
             <CurrencyInput value={instalmentsPaid} onChange={setInstalmentsPaid} testid="fs-instalments" />
           </div>
           <div className="field">
-            <label className="field-label">Balance owing <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>(auto-calculated)</span></label>
+            <label className="field-label">Balance owing * <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>(auto-calculated)</span></label>
             <CurrencyInput value={balanceOwing} onChange={() => {}} disabled testid="fs-balance-owing" />
           </div>
           <div className="field">

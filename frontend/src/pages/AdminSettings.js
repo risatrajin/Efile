@@ -5,6 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import TwoFactorCard from "../components/shared/TwoFactorCard";
+import PasswordField from "../components/shared/PasswordField";
 import { ArrowLeft, Plus, X, Download, Check } from "lucide-react";
 const PERMISSION_COLUMNS = [
   { key: "view_clients", label: "VIEW CLIENTS", title: "View Clients" },
@@ -137,24 +138,24 @@ function ProfileTab({ me, refresh, setUser }) {
         <form onSubmit={submitPw} className="stack-md">
           <div className="field">
             <label className="field-label">CURRENT PASSWORD</label>
-            <input type="password" className="input" placeholder="Enter current password"
+            <PasswordField placeholder="Enter current password"
               value={pwForm.current_password}
               onChange={(e) => setPwForm({ ...pwForm, current_password: e.target.value })}
-              data-testid="pw-current" required />
+              testid="pw-current" autoComplete="current-password" />
           </div>
           <div className="field">
             <label className="field-label">NEW PASSWORD</label>
-            <input type="password" className="input" placeholder="Enter new password"
+            <PasswordField placeholder="Enter new password"
               value={pwForm.new_password}
               onChange={(e) => setPwForm({ ...pwForm, new_password: e.target.value })}
-              data-testid="pw-new" required />
+              testid="pw-new" autoComplete="new-password" />
           </div>
           <div className="field">
             <label className="field-label">CONFIRM PASSWORD</label>
-            <input type="password" className="input" placeholder="Confirm new password"
+            <PasswordField placeholder="Confirm new password"
               value={pwForm.confirm}
               onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
-              data-testid="pw-confirm" required />
+              testid="pw-confirm" autoComplete="new-password" />
           </div>
           {pwErr && <div className="alert alert-risk">{pwErr}</div>}
           {pwDone && <div className="muted" style={{ color: "#2e7d32", fontSize: 13 }}>Password updated.</div>}

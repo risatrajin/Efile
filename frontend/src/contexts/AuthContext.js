@@ -32,6 +32,8 @@ export function AuthProvider({ children }) {
           sentViaEmail: !!data.sent_via_email,
           debugOtp: data.debug_otp || null,
           email: data.email || email,
+          expiresInSec: data.expires_in_sec || 300,
+          resendAfterSec: data.resend_after_sec || 30,
         };
       }
       if (data.token) localStorage.setItem("ct_token", data.token);

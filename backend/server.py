@@ -22,6 +22,7 @@ from auth import (
 )
 import s3_service
 import ses_service
+import email_service
 import ai_service
 from config import (
     docs_for_tier, review_checklist_for_tier, TIER_PRICING,
@@ -268,7 +269,8 @@ def redact_for_client(eng: dict) -> dict:
 
 # ==================== Auth ====================
 
-OTP_TTL_MIN = 10
+OTP_TTL_MIN = 5
+OTP_RESEND_COOLDOWN_SEC = 30
 OTP_PURPOSE_LOGIN = "login"
 OTP_PURPOSE_ENABLE_2FA = "enable_2fa"
 
@@ -279,14 +281,32 @@ def _make_otp_code() -> str:
     return f"{_secrets.randbelow(1_000_000):06d}"
 
 
-async def _issue_otp(user_id: str, purpose: str) -> tuple[str, str]:
+async def _issue_otp(user_id: str, purpose: str, *, enforce_cooldown: bool = True) -> tuple[str, str]:
     """Insert a fresh OTP challenge and return (challenge_id, plain_code).
-    Caller is responsible for emailing the code; we never store it in plaintext."""
+    Caller is responsible for emailing the code; we never store it in plaintext.
+
+    When ``enforce_cooldown`` is True (default), a 429 is raised if the most
+    recent challenge for this user+purpose (used or not) is younger than
+    ``OTP_RESEND_COOLDOWN_SEC`` seconds. This protects users from being spammed
+    when they double-tap "send code".
+    """
     db = get_db()
+    now = datetime.now(timezone.utc)
+    if enforce_cooldown:
+        recent = await db.otp_challenges.find_one(
+            {"user_id": user_id, "purpose": purpose},
+            sort=[("created_at", -1)],
+        )
+        if recent:
+            created_at = recent.get("created_at")
+            if created_at and created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at and (now - created_at).total_seconds() < OTP_RESEND_COOLDOWN_SEC:
+                wait = int(OTP_RESEND_COOLDOWN_SEC - (now - created_at).total_seconds())
+                raise HTTPException(429, f"Please wait {max(wait, 1)}s before requesting another code")
     code = _make_otp_code()
     challenge_id = str(uuid.uuid4())
     code_hash = hash_password(code)
-    now = datetime.now(timezone.utc)
     await db.otp_challenges.insert_one({
         "id": challenge_id,
         "user_id": user_id,
@@ -338,10 +358,13 @@ async def login(body: LoginIn, request: Request, response: Response):
 
     # 2FA gate: when enabled, return a challenge instead of an access token.
     if user.get("two_factor_enabled"):
-        challenge_id, code = await _issue_otp(user["id"], OTP_PURPOSE_LOGIN)
+        # Cooldown is bypassed here because login is the entry-point — if the
+        # user is in a fresh login flow they shouldn't hit a stale 429. The
+        # explicit "Resend code" action *does* use the cooldown.
+        challenge_id, code = await _issue_otp(user["id"], OTP_PURPOSE_LOGIN, enforce_cooldown=False)
         sent_via_email = False
         try:
-            r = ses_service.send_otp_code(user["email"], user.get("name") or "there", code, "sign in")
+            r = email_service.send_otp_code(user["email"], user.get("name") or "there", code, "sign in")
             sent_via_email = bool(r.get("success"))
         except Exception as e:
             log.warning("send_otp_code (login) failed: %s", e)
@@ -350,9 +373,11 @@ async def login(body: LoginIn, request: Request, response: Response):
             "two_factor_required": True,
             "challenge_id": challenge_id,
             "sent_via_email": sent_via_email,
-            # SES sandbox fallback: surface the OTP so test users without inbox access can sign in.
+            # Sandbox / unconfigured fallback: surface the OTP so test users without inbox access can sign in.
             "debug_otp": None if sent_via_email else code,
             "email": user["email"],
+            "expires_in_sec": OTP_TTL_MIN * 60,
+            "resend_after_sec": OTP_RESEND_COOLDOWN_SEC,
         }
 
     token = create_access_token(user["id"], user["email"], user["role"])
@@ -380,10 +405,10 @@ async def enable_2fa_init(user: dict = Depends(get_current_user)):
     """Send an OTP to the user's email to confirm enabling 2FA."""
     if user.get("two_factor_enabled"):
         return {"ok": True, "already_enabled": True}
-    challenge_id, code = await _issue_otp(user["id"], OTP_PURPOSE_ENABLE_2FA)
+    challenge_id, code = await _issue_otp(user["id"], OTP_PURPOSE_ENABLE_2FA, enforce_cooldown=False)
     sent_via_email = False
     try:
-        r = ses_service.send_otp_code(user["email"], user.get("name") or "there", code, "enable two-factor authentication")
+        r = email_service.send_otp_code(user["email"], user.get("name") or "there", code, "enable two-factor authentication")
         sent_via_email = bool(r.get("success"))
     except Exception as e:
         log.warning("send_otp_code (enable_2fa) failed: %s", e)
@@ -393,6 +418,49 @@ async def enable_2fa_init(user: dict = Depends(get_current_user)):
         "challenge_id": challenge_id,
         "sent_via_email": sent_via_email,
         "debug_otp": None if sent_via_email else code,
+        "expires_in_sec": OTP_TTL_MIN * 60,
+        "resend_after_sec": OTP_RESEND_COOLDOWN_SEC,
+    }
+
+
+@api.post("/auth/2fa/resend")
+async def resend_otp(body: dict):
+    """Re-issue an OTP for an in-flight challenge. Subject to a 30-second
+    cooldown to prevent spam. Used by both the login OTP step and the 2FA
+    enrolment flow.
+    """
+    challenge_id = (body or {}).get("challenge_id")
+    if not challenge_id:
+        raise HTTPException(400, "Missing challenge_id")
+    db = get_db()
+    row = await db.otp_challenges.find_one({"id": challenge_id})
+    if not row:
+        raise HTTPException(400, "Invalid challenge")
+    purpose = row.get("purpose")
+    if purpose not in (OTP_PURPOSE_LOGIN, OTP_PURPOSE_ENABLE_2FA):
+        raise HTTPException(400, "Unsupported challenge")
+    user = await db.users.find_one({"id": row["user_id"]})
+    if not user:
+        raise HTTPException(400, "Invalid challenge")
+    # Burn the previous (still-valid) challenge so we never have two live codes.
+    await db.otp_challenges.update_one({"id": challenge_id}, {"$set": {"used": True}})
+    new_challenge_id, code = await _issue_otp(user["id"], purpose, enforce_cooldown=True)
+    sent_via_email = False
+    try:
+        purpose_label = "sign in" if purpose == OTP_PURPOSE_LOGIN else "enable two-factor authentication"
+        r = email_service.send_otp_code(user["email"], user.get("name") or "there", code, purpose_label)
+        sent_via_email = bool(r.get("success"))
+    except Exception as e:
+        log.warning("send_otp_code (resend) failed: %s", e)
+    log.info("OTP resent: %s purpose=%s code=%s sent=%s", user["email"], purpose, code, sent_via_email)
+    return {
+        "ok": True,
+        "challenge_id": new_challenge_id,
+        "sent_via_email": sent_via_email,
+        "debug_otp": None if sent_via_email else code,
+        "email": user["email"],
+        "expires_in_sec": OTP_TTL_MIN * 60,
+        "resend_after_sec": OTP_RESEND_COOLDOWN_SEC,
     }
 
 
@@ -2765,16 +2833,33 @@ async def file_with_cra(
         "filed_by_name": user.get("name") or user.get("email"),
         "updated_at": now,
     }
-    if filing_summary:
-        try:
-            import json as _json
-            parsed = _json.loads(filing_summary) if isinstance(filing_summary, str) else filing_summary
-            if isinstance(parsed, dict):
-                # Only persist whitelisted keys to avoid arbitrary writes
-                allowed = {"net_income", "total_tax_assessed", "instalments_paid", "balance_owing", "payment_due_date"}
-                eng_set["filing_summary"] = {k: v for k, v in parsed.items() if k in allowed}
-        except Exception:
-            raise HTTPException(400, "filing_summary must be valid JSON")
+    # Strict validation: filing_summary is mandatory before transitioning to FILED.
+    # The CPA's "Update submission info" form must be complete; this prevents
+    # accidental filings without the financial summary clients see post-filing.
+    if not filing_summary:
+        raise HTTPException(400, "Filing summary is required. Please complete the 'Update submission info' form before filing.")
+    try:
+        import json as _json
+        parsed = _json.loads(filing_summary) if isinstance(filing_summary, str) else filing_summary
+    except Exception:
+        raise HTTPException(400, "filing_summary must be valid JSON")
+    if not isinstance(parsed, dict):
+        raise HTTPException(400, "filing_summary must be a JSON object")
+    allowed = {"net_income", "total_tax_assessed", "instalments_paid", "balance_owing", "payment_due_date"}
+    required = {"net_income", "total_tax_assessed", "instalments_paid", "balance_owing"}
+    cleaned: dict = {}
+    for k in allowed:
+        v = parsed.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        cleaned[k] = v
+    missing = [k for k in required if k not in cleaned]
+    if missing:
+        raise HTTPException(
+            400,
+            f"Filing summary is incomplete. Required fields missing: {', '.join(missing)}",
+        )
+    eng_set["filing_summary"] = cleaned
     await db.engagements.update_one({"id": eid}, {"$set": eng_set})
     await log_status_change(eid, user["id"], eng["status"], "FILED", f"Filed with CRA — confirmation {cra_confirmation.strip()}")
 
