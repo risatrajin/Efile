@@ -724,18 +724,13 @@ export default function CpaEngagement() {
             <MoveToDropdown
               current={eng.status}
               onChange={(next) => advanceStatus(next)}
-              disabledKeys={(() => {
-                const blocked = [];
-                if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) blocked.push("IN_REVIEW");
-                if (!eng.t183_signed_at || !eng.filing_confirmation) blocked.push("FILED");
-                return blocked;
-              })()}
+              disabledKeys={
+                eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
+              }
               note={(() => {
                 if (eng.status === "FILED") return "Already filed with CRA. Move back only to apply corrections — filing data is preserved.";
                 if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) return "Upload the T2 draft PDF below before moving to Review.";
-                if (!eng.t183_signed_at && !eng.filing_confirmation) return "Move to Filed is locked until the client signs T183 and you complete 'Update submission info'.";
-                if (!eng.t183_signed_at) return "Move to Filed is locked: client must sign the T183 first.";
-                if (!eng.filing_confirmation) return "Move to Filed is locked: complete 'Update submission info' (CRA confirmation + filed PDF).";
+                if (eng.status === "IN_REVIEW") return "Filing is captured by the 'Update submission info' form below — submitting it moves the engagement to Filed automatically.";
                 return null;
               })()}
               testid="cpa-move-to"

@@ -6,7 +6,9 @@ const STAGES = [
   { key: "INTAKE", label: "Intake", description: "Client uploading documents" },
   { key: "IN_PREP", label: "In Prep", description: "CPA preparing return" },
   { key: "IN_REVIEW", label: "Review", description: "Client reviewing draft" },
-  { key: "FILED", label: "Filed", description: "Submitted to CRA" },
+  // FILED is intentionally NOT a Move-to option. The only path to FILED is the
+  // CPA's "Update submission info" form (POST /engagements/{eid}/file-with-cra),
+  // which atomically captures the CRA confirmation, filing summary, and PDF copy.
 ];
 
 const STAGE_INDEX = STAGES.reduce((acc, s, i) => { acc[s.key] = i; return acc; }, {});
