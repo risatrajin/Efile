@@ -4,6 +4,7 @@ import { api, fmtError, fmtDate, TIME_LABELS, OPP_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
+import EngagementNotes from "../components/shared/EngagementNotes";
 import { ChatThread } from "./Messages";
 import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
@@ -239,6 +240,12 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
 
   const submit = async () => {
     setError("");
+    if (!clientApproved) {
+      setError(clientFlaggedIssue
+        ? "Client flagged an issue with the draft. Address the issue and re-send the draft for review before filing."
+        : "Client must approve the draft (Your Review → Everything looks good) before filing.");
+      return;
+    }
     if (!t183Signed) { setError("Client must sign the T183 before filing."); return; }
     if (!conf.trim()) { setError("CRA confirmation number is required."); return; }
     if (!filingAt) { setError("Filing date and time are required."); return; }
@@ -280,16 +287,16 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
           <div>
             <h2 className="card-title" style={{ margin: 0 }}>Ready to file with CRA</h2>
             <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-              {t183Signed
+              {canFile
                 ? "Submit your CRA confirmation and filed PDF to mark this engagement as filed."
-                : "Waiting on the client to sign T183. Filing is unlocked once the signature is on file."}
+                : gateReason}
             </p>
           </div>
           <button
             className="btn btn-primary"
-            onClick={() => t183Signed && setOpen(true)}
-            disabled={!t183Signed}
-            title={t183Signed ? "" : "Client must sign T183 first"}
+            onClick={() => canFile && setOpen(true)}
+            disabled={!canFile}
+            title={canFile ? "" : gateReason}
             data-testid="file-now-open"
           ><Send size={14} /> Update submission info</button>
         </div>
@@ -833,8 +840,31 @@ export default function CpaEngagement() {
                         <span style={{ fontWeight: 500 }}>{d.name}</span>
                         {d.is_new_request && <span className="badge badge-active" style={{ fontSize: 10 }}>New request</span>}
                         {d.status === "ISSUE" && <span className="badge badge-risk" style={{ fontSize: 10 }}>Issue flagged</span>}
+                        {d.was_reuploaded && d.status !== "ISSUE" && (
+                          <span
+                            data-testid={`doc-reuploaded-${d.id}`}
+                            style={{
+                              fontSize: 10, fontWeight: 600, letterSpacing: 0.4,
+                              color: "#1565c0", background: "#e3f2fd",
+                              padding: "2px 8px", borderRadius: 999,
+                              display: "inline-flex", alignItems: "center", gap: 4,
+                            }}
+                            title={d.prev_issue_note ? `Previously flagged: ${d.prev_issue_note}` : "Client re-uploaded after a flagged issue"}
+                          >
+                            <Upload size={10} /> Re-uploaded
+                          </span>
+                        )}
                       </div>
                       <div className="muted" style={{ fontSize: 12 }}>{d.description}{d.file_name ? ` · ${d.file_name}` : ""}</div>
+                      {d.was_reuploaded && d.status !== "ISSUE" && d.prev_issue_note && (
+                        <div
+                          className="alert mt-2"
+                          style={{ fontSize: 12, background: "#e3f2fd", color: "#0d47a1" }}
+                          data-testid={`doc-reupload-context-${d.id}`}
+                        >
+                          <FileText size={14} /> <div><strong>Re-uploaded after flagged issue: </strong>{d.prev_issue_note}</div>
+                        </div>
+                      )}
                       {d.status === "ISSUE" && d.issue_note && (
                         <div className="alert alert-risk mt-2" style={{ fontSize: 12 }}>
                           <AlertCircle size={14} /> <div><strong>Issue note: </strong>{d.issue_note}</div>
@@ -1081,6 +1111,9 @@ export default function CpaEngagement() {
             </div>
           )}
         </div>
+
+        {/* Tax situation / Notes — shared with WS partner + Admin */}
+        <EngagementNotes eid={eid} />
       </div>
 
       {showOppModal && <AddOppModal onClose={() => setShowOppModal(false)} onCreate={createOpp} />}

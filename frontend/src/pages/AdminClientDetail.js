@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileTex
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import FiledReturnCard from "../components/shared/FiledReturnCard";
+import EngagementNotes from "../components/shared/EngagementNotes";
 import { ChatThread } from "./Messages";
 
 // ----- Tax Situation: parse the legacy "[time] note\n\nnote" string back into rows -----
@@ -414,6 +415,7 @@ export default function AdminClientDetail() {
             </div>
 
             <TaxSituationCard rows={noteRows} onSave={saveNotesFromRows} busy={busy} />
+            <EngagementNotes eid={eid} title="Notes feed (WS partner / CPA / Admin)" />
 
             <DocumentsCard documents={documents} />
           </div>

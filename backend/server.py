@@ -1156,6 +1156,101 @@ async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depe
     return {"ok": True}
 
 
+# ==================== Engagement Notes (shared across roles) ====================
+# Free-form notes feed. WS partners, CPAs, and Admins can each append a note;
+# all three roles see the full history (newest-first). Replaces the old
+# single-textarea ``partner_notes`` field with a timeline so context isn't
+# clobbered when handed off between roles.
+
+class EngagementNoteIn(BaseModel):
+    text: str
+
+
+def _legacy_partner_note(eng: dict) -> Optional[dict]:
+    """Convert a legacy single-string ``partner_notes`` field into a synthetic
+    history entry so old engagements don't show empty when the new endpoint
+    is consulted."""
+    text = (eng.get("partner_notes") or "").strip()
+    if not text:
+        return None
+    when = eng.get("updated_at") or eng.get("created_at") or datetime.now(timezone.utc)
+    if isinstance(when, datetime) and when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return {
+        "id": f"legacy-{eng['id']}",
+        "text": text,
+        "at": when.isoformat() if isinstance(when, datetime) else when,
+        "author_id": eng.get("ws_partner_id"),
+        "author_name": "WS partner (legacy)",
+        "author_role": "WS_PARTNER",
+        "is_legacy": True,
+    }
+
+
+def _serialize_notes(eng: dict) -> list:
+    raw = list(eng.get("notes_history") or [])
+    out = []
+    for n in raw:
+        when = n.get("at")
+        if isinstance(when, datetime):
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            when = when.isoformat()
+        out.append({
+            "id": n.get("id"),
+            "text": n.get("text") or "",
+            "at": when,
+            "author_id": n.get("author_id"),
+            "author_name": n.get("author_name"),
+            "author_role": n.get("author_role"),
+            "is_legacy": False,
+        })
+    legacy = _legacy_partner_note(eng)
+    if legacy and not any(n.get("is_legacy") for n in out):
+        out.append(legacy)
+    # Newest-first ordering. Legacy entries fall to the bottom because their
+    # timestamp is the engagement's last updated_at, which is older than any
+    # newly-pushed note.
+    out.sort(key=lambda n: n.get("at") or "", reverse=True)
+    return out
+
+
+@api.get("/engagements/{eid}/notes")
+async def list_engagement_notes(eid: str, user: dict = Depends(get_current_user)):
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] not in ("WS_PARTNER", "CPA", "ADMIN"):
+        raise HTTPException(403, "Only staff can read engagement notes")
+    return {"items": _serialize_notes(eng)}
+
+
+@api.post("/engagements/{eid}/notes")
+async def append_engagement_note(eid: str, body: EngagementNoteIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] not in ("WS_PARTNER", "CPA", "ADMIN"):
+        raise HTTPException(403, "Only staff can write engagement notes")
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Note text is required")
+    if len(text) > 5000:
+        raise HTTPException(400, "Note is too long (max 5000 chars)")
+    now = datetime.now(timezone.utc)
+    entry = {
+        "id": str(uuid.uuid4()),
+        "text": text,
+        "at": now,
+        "author_id": user["id"],
+        "author_name": user.get("name") or user.get("email"),
+        "author_role": user["role"],
+    }
+    await db.engagements.update_one(
+        {"id": eid},
+        {"$push": {"notes_history": entry}, "$set": {"updated_at": now}},
+    )
+    eng2 = await db.engagements.find_one({"id": eid})
+    return {"ok": True, "items": _serialize_notes(eng2 or eng)}
+
+
 @api.post("/engagements/{eid}/submit")
 async def ws_submit_to_cloudtax(eid: str, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
     """Move ONBOARDING engagement to REFERRED, creating doc + review checklists."""
@@ -1398,7 +1493,11 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
         raise HTTPException(404, "Document not found")
     eng = await get_engagement_or_404(doc["engagement_id"], user)
     now = datetime.now(timezone.utc)
-    await db.documents.update_one({"id": doc_id}, {"$set": {
+    # Re-upload tracking — if the previous state was ISSUE (CPA flagged) the
+    # next upload counts as a "re-upload" and we surface a badge in the CPA's
+    # checklist so they immediately see the client has addressed the issue.
+    was_flagged = doc.get("status") == "ISSUE"
+    set_fields = {
         "status": "UPLOADED",
         "object_key": body.object_key,
         "file_name": body.file_name,
@@ -1407,15 +1506,24 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
         "uploaded_at": now,
         "issue_note": None,
         "deferred_at": None,
-    }})
-    # Notify CPA
+    }
+    if was_flagged:
+        set_fields["was_reuploaded"] = True
+        set_fields["prev_issue_note"] = doc.get("issue_note") or None
+        set_fields["reuploaded_at"] = now
+    await db.documents.update_one({"id": doc_id}, {"$set": set_fields})
+    # Notify CPA — distinguish a re-upload from a first-time upload so the
+    # heads-up message in the bell is accurate.
     if eng.get("assigned_cpa_id"):
-        await notify(eng["assigned_cpa_id"], "Document uploaded", f"{doc['name']} uploaded", "document_uploaded", eng["id"])
+        if was_flagged:
+            await notify(eng["assigned_cpa_id"], "Document re-uploaded", f"{doc['name']} re-uploaded after flagged issue", "document_reuploaded", eng["id"])
+        else:
+            await notify(eng["assigned_cpa_id"], "Document uploaded", f"{doc['name']} uploaded", "document_uploaded", eng["id"])
     # Auto-advance REFERRED -> INTAKE on first upload
     if eng["status"] == "REFERRED":
         await db.engagements.update_one({"id": eng["id"]}, {"$set": {"status": "INTAKE", "updated_at": now}})
         await log_status_change(eng["id"], user["id"], "REFERRED", "INTAKE", "First document uploaded")
-    return {"ok": True}
+    return {"ok": True, "was_reuploaded": was_flagged}
 
 
 @api.delete("/documents/{doc_id}/upload")
@@ -1654,8 +1762,18 @@ async def update_document(doc_id: str, body: dict, user: dict = Depends(require_
     # Clear issue_note when moving away from ISSUE
     if updates.get("status") and updates["status"] != "ISSUE":
         updates["issue_note"] = None
-    if updates:
-        await db.documents.update_one({"id": doc_id}, {"$set": updates})
+    # Clear the re-uploaded badge once the CPA has actively reviewed (REVIEWED
+    # or EXTRACTED). If they re-flag (ISSUE), keep the prior re-upload context.
+    unset = {}
+    if updates.get("status") in ("REVIEWED", "EXTRACTED"):
+        unset = {"was_reuploaded": "", "prev_issue_note": "", "reuploaded_at": ""}
+    if updates or unset:
+        op = {}
+        if updates:
+            op["$set"] = updates
+        if unset:
+            op["$unset"] = unset
+        await db.documents.update_one({"id": doc_id}, op)
     # Notify client when CPA flags an issue
     if updates.get("status") == "ISSUE":
         eng = await db.engagements.find_one({"id": doc["engagement_id"]})
@@ -2782,6 +2900,16 @@ async def file_with_cra(
     # T183 is the legal authorization required by CRA.
     if not eng.get("t183_signed_at"):
         raise HTTPException(400, "Client must sign the T183 authorization before the return can be filed")
+    # Mandatory client approval gate — the CPA cannot file until the client has
+    # explicitly approved the draft (Your Review → "Everything looks good").
+    # If the client has flagged an issue ("I found an issue"), the gate stays
+    # closed even if the T183 was signed earlier; the CPA must address the
+    # issue and re-send a draft, which clears the review_decision.
+    review_decision = (eng.get("review_decision") or {}).get("decision")
+    if review_decision != "approved":
+        if review_decision == "issue":
+            raise HTTPException(400, "Client flagged an issue with the draft. Address the issue and re-send the draft for client review before filing.")
+        raise HTTPException(400, "Client must approve the draft (Your Review → Everything looks good) before the return can be filed")
     if not cra_confirmation.strip():
         raise HTTPException(400, "CRA confirmation number is required")
 

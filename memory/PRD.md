@@ -276,6 +276,19 @@
 
 ## Backlog (prioritized)
 
+### Iter 30 (Feb 2026 — 8-item batch from msg #768, Iteration A)
+**Item 1 — ResizeObserver overlay (truly fixed):** moved the noise-suppressor into an inline `<script>` in `public/index.html` `<head>` so it executes BEFORE webpack runtime / react-error-overlay attach their listeners. Now intercepts via capture-phase `error` + `unhandledrejection`, overrides `window.onerror`, mutes matching `console.error`, and adds a CSS rule hiding `iframe#webpack-dev-server-client-overlay`. Verified live on the Set-Password page that triggered it.
+
+**Item 11 — T183 + approval gate (P0 correctness):** the "Update submission info" button is now disabled in BOTH frontend and backend until: (a) `eng.review_decision.decision === "approved"` (client picked "Everything looks good"), AND (b) `eng.t183_signed_at` exists. If the client picked "I found an issue" (review_decision.decision === "issue"), the gate stays closed even with T183 — CPA must address the issue and re-send a draft. Tooltip + inline copy explain which precondition is missing. Backend `POST /file-with-cra` rejects with the same logic so a malicious or stale UI cannot bypass it.
+
+**Items 2 & 5 — Notes feed (newest-first, shared across portals):** new `notes_history` array on engagement + `GET/POST /engagements/{eid}/notes` endpoints. New shared `<EngagementNotes>` React component (compose at top, list below, newest-first ordering, role-tinted bubbles WS=blue/CPA=green/Admin=amber). Legacy `partner_notes` strings are surfaced as a single `LEGACY` entry at the bottom so historical context is preserved. Wired into WsOnboardingDetail (replacing the old single textarea), AdminClientDetail (alongside the legacy TaxSituationCard), and CpaEngagement (sidebar at the bottom).
+
+**Items 3 & 4 — WS Save changes button:** swapped the custom inline-styled button for `.btn .btn-secondary .btn-sm` (default size, matches the rest of the UI). Wrapped the button + "Saved HH:MM:SS" timestamp into a single flex row so the timestamp now sits BEFORE (to the left of) the button.
+
+**Item 8 — Re-uploaded badge:** when a client re-uploads a previously-flagged document (status: ISSUE → UPLOADED), the backend now stamps `was_reuploaded=true`, `prev_issue_note=…`, `reuploaded_at=now`, and emits a "Document re-uploaded" notification (instead of the generic "Document uploaded"). Frontend CPA checklist shows a blue **Re-uploaded** badge with an Upload icon and an inline alert showing the previous issue note. The badge is automatically cleared once the CPA marks the doc REVIEWED or EXTRACTED (acknowledged).
+
+**Item 12 — Client message icon → page (not modal):** rewrote `<MessagesInboxButton>` — every role now navigates to a dedicated messages page (`/portal/messages` for clients, matching the existing routes for staff). Removed the legacy popover entirely (~170 LOC of dead code). The bottom-of-portal "Message" CPA-card button already navigated to the page, so the experience is now consistent end-to-end.
+
 ### Iter 29 (Feb 2026 — WS Add-Client P0 fix + ResizeObserver overlay suppression)
 **Frontend**:
 - `WsDashboard.AddClientModal.goNext()` — Step 1 → Step 2 transition was POST/PATCHing `/engagements/onboarding` WITHOUT the `corp_name` field, even though the user had filled it in. The backend's mandatory-corp_name guard (iter 18) consequently rejected with 400 "corp_name is required". Fix: include `corp_name: form.corp_name` in both the create-POST and update-PATCH bodies. Verified live: typed "Kristin Medical Corp" → Next button now advances to Step 2 with the invite banner shown and no error.

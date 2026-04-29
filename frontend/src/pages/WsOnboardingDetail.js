@@ -5,6 +5,7 @@ import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
 import ChecklistSettingsModal from "../components/shared/ChecklistSettingsModal";
+import EngagementNotes from "../components/shared/EngagementNotes";
 import { ArrowLeft, ArrowRight, Settings as SettingsIcon, Lock, Check, Mail } from "lucide-react";
 
 const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"];
@@ -156,14 +157,16 @@ export default function WsOnboardingDetail() {
               </div>
             </div>
           </div>
-          <button
-            onClick={saveAll}
-            disabled={busy}
-            data-testid="save-changes"
-            style={{ padding: "10px 18px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, fontWeight: 500, color: "var(--text-primary)", border: "1px solid var(--border-default)" }}
-          >{busy ? "Saving…" : "Save changes"}</button>
+          <div className="flex items-center gap-3">
+            {savedAt && <span className="tertiary" style={{ fontSize: 12 }} data-testid="saved-timestamp">Saved {savedAt.toLocaleTimeString()}</span>}
+            <button
+              onClick={saveAll}
+              disabled={busy}
+              data-testid="save-changes"
+              className="btn btn-secondary btn-sm"
+            >{busy ? "Saving…" : "Save changes"}</button>
+          </div>
         </div>
-        {savedAt && <span className="tertiary" style={{ fontSize: 11 }}>Saved {savedAt.toLocaleTimeString()}</span>}
 
         {/* Two columns */}
         <div className="two-col" style={{ alignItems: "flex-start" }}>
@@ -286,19 +289,8 @@ export default function WsOnboardingDetail() {
           </div>
         </div>
 
-        {/* Tax situation / Notes — full width */}
-        <div className="card" data-testid="form-notes">
-          <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Tax situation / Notes</h2>
-          <textarea className="textarea" rows={5} style={{ marginTop: 12 }} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Background, planning notes, special considerations..." data-testid="f-notes" />
-          <div className="flex" style={{ justifyContent: "flex-end", marginTop: 12 }}>
-            <button
-              onClick={saveAll}
-              disabled={busy}
-              data-testid="save-notes"
-              className="btn btn-primary"
-            >{busy ? "Saving…" : "Save notes"}</button>
-          </div>
-        </div>
+        {/* Tax situation / Notes — shared feed (newest at top) */}
+        <EngagementNotes eid={eid} />
 
         <div style={{ height: 40 }} />
       </div>

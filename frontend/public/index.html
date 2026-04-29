@@ -5,6 +5,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#faf9f7" />
     <title>CloudTax WS Pilot</title>
+    <script>
+      // Suppress the harmless "ResizeObserver loop completed with undelivered notifications"
+      // dev-overlay BEFORE webpack runtime / react-error-overlay attach their listeners.
+      // This must live inline in <head> (not in src/index.js) so it executes first.
+      (function () {
+        var NOISE = [
+          "ResizeObserver loop completed with undelivered notifications",
+          "ResizeObserver loop limit exceeded"
+        ];
+        function isNoise(msg) {
+          if (!msg || typeof msg !== "string") return false;
+          for (var i = 0; i < NOISE.length; i++) {
+            if (msg.indexOf(NOISE[i]) !== -1) return true;
+          }
+          return false;
+        }
+        // Capture-phase error listener — fires before bubble-phase listeners
+        // registered later by webpack-dev-server / react-error-overlay.
+        window.addEventListener("error", function (e) {
+          if (isNoise(e && e.message)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return false;
+          }
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) {
+          var msg = e && e.reason && (e.reason.message || String(e.reason));
+          if (isNoise(msg)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return false;
+          }
+        }, true);
+        // Override the global onerror as a final safety net.
+        var _origOnError = window.onerror;
+        window.onerror = function (msg, src, line, col, err) {
+          if (isNoise(msg)) return true; // swallow
+          if (_origOnError) return _origOnError.apply(this, arguments);
+          return false;
+        };
+        // Mute console.error so the dev overlay's "console listener" doesn't trip.
+        var _origErr = window.console.error;
+        window.console.error = function () {
+          var first = arguments[0];
+          var text = (first && first.message) ? first.message : (typeof first === "string" ? first : "");
+          if (isNoise(text)) return;
+          return _origErr.apply(window.console, arguments);
+        };
+      })();
+    </script>
+    <style>
+      /* CRA 5 / webpack-dev-server 4 dev overlay — final fallback. The overlay
+         injects a fixed-position iframe with z-index 2147483647 and id varies
+         (#webpack-dev-server-client-overlay or similar). Hide any such iframe. */
+      iframe#webpack-dev-server-client-overlay { display: none !important; }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
