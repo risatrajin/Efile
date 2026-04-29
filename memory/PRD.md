@@ -243,6 +243,16 @@
 
 **Tests**: testing_agent_v3_fork iter 18 — Backend pytest **100%** (full 2FA enable→login-OTP→verify→disable cycle + per-doc remind 200/429 cooldown). Frontend Playwright **~97%** with the only outstanding finding being a data-shape observation (FiledReturnCard renders all 5 summary rows unconditionally with `—` placeholders; `filed-download-btn` correctly hides when `filed_return_doc_id` is null). Zero blocking issues. All 2FA flags reset to OFF post-test.
 
+### Iter 26 (Feb 2026 — 2-item batch: FILED only via "Update submission info" + Client portal menu cleanup)
+**Frontend**:
+- `MoveToDropdown.js` — STAGES array no longer contains a `FILED` entry. Comment documents the rationale: the only path to FILED is the CPA's "Update submission info" form (`POST /file-with-cra`), which atomically captures CRA confirmation + filing summary + filed PDF + status flip. Rollback FROM FILED still works because the dropdown renders all targets and FILED is the current status (not a target).
+- `CpaEngagement.js` + `AdminClientDetail.js` — simplified `disabledKeys`/`note` since FILED can't be requested from the dropdown anymore. Note now informs CPAs that "Update submission info" is the path to FILED.
+- `ClientLayout.js` — rewritten to drop the `tabs` prop. Now renders `<AppHeader />` + `<Outlet />` only. The right-side header cluster (Home, Messages, Bell, Accessibility, Avatar) already provides every destination — the duplicate Dashboard/Messages/Account tab strip is gone. Removed the unread-count polling that drove the now-deleted Messages tab badge (the Messages icon in AppHeader still polls and shows its own badge).
+
+**Backend**: unchanged. The PATCH /engagements/{eid} status=FILED gate from iter 24 stays as defense-in-depth — required since direct DB mutations or future automation could still attempt it.
+
+**Tests**: testing_agent_v3_fork iter 19 — Backend pytest **100%** (2 PASS, 1 SKIP — skip is due to seed-data shape post-1b, not a failure). Frontend Playwright **100%** on every assertion (no FILED in cpa-move-to/admin-move-to, file-with-cra form atomically transitions IN_REVIEW → FILED with all data persisted, FiledReturnCard renders all 5 summary rows on reload, admin rollback FILED→IN_REVIEW still works, `/portal` `nav-tabs` count=0, header cluster intact). Zero issues.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
