@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { MessageSquare, X, Search, ArrowLeft } from "lucide-react";
 import { api, fmtError } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
@@ -31,6 +32,13 @@ export default function MessagesInboxButton() {
   const [query, setQuery] = useState("");
   const ref = useRef(null);
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // ADMIN + CPA get a dedicated /admin|cpa/messages page; CLIENT keeps the
+  // lightweight popover. (The popover would feel cramped for staff who reply
+  // to many conversations a day.)
+  const isStaff = user?.role === "ADMIN" || user?.role === "CPA";
+  const staffPath = user?.role === "ADMIN" ? "/admin/messages" : "/cpa/messages";
 
   const load = async () => {
     setLoading(true);
@@ -44,22 +52,29 @@ export default function MessagesInboxButton() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   useEffect(() => {
-    if (!open) return;
+    if (!open && !isStaff) return;
+    if (isStaff) {
+      // Staff: poll every 60s so the badge reflects unread count even without opening anything.
+      const i = setInterval(load, 60000);
+      return () => clearInterval(i);
+    }
     load();
     const i = setInterval(load, 30000);
     return () => clearInterval(i);
     // eslint-disable-next-line
-  }, [open]);
+  }, [open, isStaff]);
 
-  // Close panel on outside-click only when no conversation is open (modal-style otherwise)
+  // Close popover on outside-click only when no conversation is open (modal-style otherwise).
+  // Disabled entirely for staff (popover never opens).
   useEffect(() => {
+    if (isStaff) return;
     const onDoc = (e) => {
       if (active) return;
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [active]);
+  }, [active, isStaff]);
 
   const filtered = items.filter((r) => {
     if (!query.trim()) return true;
@@ -73,10 +88,15 @@ export default function MessagesInboxButton() {
 
   const closeAll = () => { setActive(null); setOpen(false); };
 
+  const onIconClick = () => {
+    if (isStaff) { navigate(staffPath); return; }
+    setOpen((o) => !o);
+  };
+
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={onIconClick}
         data-testid="header-messages-icon"
         title="Messages"
         aria-label="Open messages"
@@ -101,7 +121,7 @@ export default function MessagesInboxButton() {
           >{unreadTotal > 9 ? "9+" : unreadTotal}</span>
         )}
       </button>
-      {open && (
+      {open && !isStaff && (
         <div
           data-testid="messages-inbox"
           style={{

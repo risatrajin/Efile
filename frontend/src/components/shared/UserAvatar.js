@@ -3,17 +3,17 @@ import { initials } from "../../lib/api";
 
 const BASE = process.env.REACT_APP_BACKEND_URL || "";
 
-// Deterministic gradient palette — same name always gets the same colour pair.
+// Subtle flat palette — same name always gets the same colour.
 const PALETTE = [
-  ["#fde2e4", "#f6bdc0"], // peach
-  ["#e3f2fd", "#90caf9"], // sky
-  ["#e8f5e9", "#a5d6a7"], // mint
-  ["#fff3e0", "#ffb74d"], // amber
-  ["#ede7f6", "#b39ddb"], // lavender
-  ["#fce4ec", "#f48fb1"], // rose
-  ["#e0f7fa", "#80deea"], // teal
-  ["#f3e5f5", "#ce93d8"], // orchid
-  ["#fffde7", "#fff176"], // lemon
+  "#fde2e4", // peach
+  "#e3f2fd", // sky
+  "#e8f5e9", // mint
+  "#fff3e0", // amber
+  "#ede7f6", // lavender
+  "#fce4ec", // rose
+  "#e0f7fa", // teal
+  "#f3e5f5", // orchid
+  "#fffde7", // lemon
 ];
 
 function paletteFor(seed = "") {
@@ -40,7 +40,7 @@ export default function UserAvatar({ user, size = 36, testid }) {
   const [errored, setErrored] = useState(false);
   useEffect(() => { setErrored(false); }, [fullSrc]);
 
-  const [c1, c2] = paletteFor(name);
+  const bg = paletteFor(name);
   const fontSize = Math.max(10, Math.round(size * 0.36));
 
   const baseStyle = {
@@ -57,7 +57,7 @@ export default function UserAvatar({ user, size = 36, testid }) {
     color: "#1a1a1a",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    background: `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`,
+    background: bg,
     boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.06)",
   };
 

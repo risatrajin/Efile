@@ -35,7 +35,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
     <header className="app-header" data-testid="app-header">
       <div className="app-header-inner">
         <Link to="/" className="brand-link" data-testid="brand-logo" style={{ display: "inline-flex", alignItems: "center" }}>
-          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 28, width: "auto" }} />
+          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 22, width: "auto" }} />
         </Link>
         {workspaceLabel && user?.role !== "ADMIN" && (
           <span data-testid="workspace-pill" style={{

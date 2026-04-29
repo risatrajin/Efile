@@ -1,0 +1,53 @@
+{
+  "summary": "Iter16 — validated the new 10-item visual + UX cleanup batch end-to-end. ALL 10 items PASS including the carry-over Item 3 avatar live-refresh that failed in iter15. Tested via Playwright across ADMIN, CPA, and CLIENT roles against the public REACT_APP_BACKEND_URL. No backend changes in this batch so backend regression skipped (covered in iter15).",
+  "items_validated": {
+    "item1_avatar_flat_color": "PASS — header avatar inline style uses background: rgb(232,245,233) (flat palette colour, NO linear-gradient). Verified across header pill (admin), inbox rows, AdminClientDetail, MessagesPage list. UserAvatar.js palette is a 9-colour subtle flat array, no gradient string anywhere.",
+    "item2_messages_page_admin_cpa": "PASS — ADMIN clicking header-messages-icon navigates to /admin/messages; CPA navigates to /cpa/messages. messages-page, messages-page-list, messages-page-thread, messages-page-search ALL render. Selecting first row sets ?eid={id} in URL (URL-driven active state). Search field 'zzznotfoundxyz123' filters list rows from 19→0. messages-page-back returns navigation history.",
+    "item2b_no_popover_for_staff": "PASS — when ADMIN/CPA click header-messages-icon, data-testid='messages-inbox' (the popover) is NOT rendered. Confirmed via querySelector returning null.",
+    "item2_client_keeps_popover": "PASS — CLIENT (chen@example.com) clicks header-messages-icon → URL stays /portal, messages-inbox popover OPENS, messages-page does NOT render. Backwards-compatible.",
+    "item3_admin_settings_avatar_card": "PASS — /admin/settings?tab=profile renders avatar-upload-card at top of Profile tab. Uploading a 1x1 PNG via avatar-upload-input → avatar-remove-btn appears AND AppHeader user-avatar SPAN now contains an <img> child (src=/api/users/{uid}/avatar?v={ts}) WITHOUT page reload. Click avatar-remove-btn → header reverts to initials SPAN (no img). The iter15 live-refresh bug is FIXED — AdminSettings/ProfileTab now wraps AvatarUploadCard with onChange={(next)=>setUser(next)} which propagates through AuthContext to AppHeader.",
+    "item4_kanban_hover": "PASS — on /admin/dashboard kanban view, hovering a .kanban-card yields computed background-color = rgb(255,255,255) and box-shadow = 'rgba(15,23,42,0.08) 0px 6px 20px 0px, rgba(15,23,42,0.04) 0px 2px 6px 0px'. CSS adds transform: translateY(-1px) for the lift effect. Background NOT switching to var(--bg-subtle) on hover — confirmed.",
+    "item5_logo_size": "PASS — header img[alt='CloudTax'] inline style is 'height: 22px; width: auto;'. Visually smaller next to header icons.",
+    "item6_file_now_renamed": "PASS — on /cpa/engagement/{Marco-eid} (IN_REVIEW), data-testid='file-now-open' button text reads exactly 'Update submission info' (no 'File Now' substring). Card title 'Ready to file with CRA' unchanged.",
+    "item7_cpa_back_button": "PASS — data-testid='cpa-back-to-files' rendered as a Link above page title with ArrowLeft icon + 'Back to Files' label. Clicking it navigates from /cpa/engagement/{eid} back to /cpa/files.",
+    "item8_layout_left_column": "PASS — on Marco's IN_REVIEW engagement, all of t183-mgmt-card, file-with-cra-card, and client-approved-callout reside inside .two-col > :first-child (left column). DOM check: in_left=true, in_right=false, in_two_col=true for all three. Left column has 9 children (T183, FileWithCRA, callout, UploadDraft + others). Right column still contains Review checklist + Time logged.",
+    "item9_t183_padding_centered": "PASS — t183-mgmt-card inline style padding='16px 18px' (computed). Inner row '.flex.items-center.between' has style.minHeight='48px' and computed alignItems='center'. Row holds heading + status badge + action button vertically centered, no oval-ish over-padded look.",
+    "item10_approved_state_locked": "PASS — Marco engagement has eng.review_decision.decision === 'approved'. Verified: upload-draft-readonly RENDERS (green callout 'Approved by client on Apr 27, 2026 …'), upload-draft-instructions-readonly RENDERS (shows saved instructions). draft-dropzone, draft-instructions, upload-draft-submit, cancel-draft are ALL absent from the DOM (querySelector returns null). The existing-draft Download row is still visible (per spec) but the cancel/Remove X is hidden.",
+    "regression_5_item_batch": "PASS — header-messages-icon, /admin/messages inbox, NotificationBell deep-link to /admin/client/{eid}, FILED card download (chen FILED engagement) all confirmed during admin testing. CLIENT popover still functional. AdminSettings page loads without errors. No React hot-reload errors emitted in console (only standard Router v7 future-flag warnings)."
+  },
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_avatar_inbox.py (from iter15, still passes)",
+    "/app/test_reports/pytest/iter15_avatar_inbox.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "UserAvatar.js — PALETTE is a clean flat-colour array (9 entries, deterministic by name hash). 'background: bg' inline rule contains no gradient. Cleanup is complete and correct.",
+    "MessagesInboxButton.js — onIconClick branches: isStaff → navigate(staffPath), else toggle popover. The 'open && !isStaff' guard on the popover prevents staff from ever seeing the dropdown even if open were toggled by mistake. ✅",
+    "MessagesPage.js — URL-driven active conversation via useSearchParams (?eid=...). Polling load every 30s. Uses ChatThread import from ./Messages so SSE/optimistic-send behaviour is reused. Two-pane grid 'minmax(280px, 360px) 1fr' is responsive-friendly.",
+    "AvatarUploadCard.js — extracted component takes (me, onChange). Calls onChange({ ...me, avatar_url }) on success and ({...me} sans avatar_url) on remove. Self-contained file input with image MIME guard. AdminSettings.ProfileTab wires onChange={setUser} (from useAuth) so header avatar updates live — ROOT CAUSE of iter15 issue is resolved.",
+    "CpaEngagement.js:687-779 — Layout repositioning is correct: Back link → page title → header row, then .two-col grid. Inside left column: T183 card (gated by status), FileWithCRACard (IN_REVIEW only), review_decision callout, then UploadDraftCard, DraftHistoryTable, doc-checklist, etc. Right column unchanged (Review checklist + Time logged).",
+    "CpaEngagement.js T183ManagementCard — padding '16px 18px' applied via inline style overrides .card default. Inner flex row uses minHeight: 48 + alignItems via 'items-center' utility. Visually balanced.",
+    "CpaEngagement.js UploadDraftCard — clientApproved branch hides dropzone+textarea+submit+cancel and renders upload-draft-readonly + upload-draft-instructions-readonly. The existing-draft Download row condition for hiding the Remove button is correct (cancel-draft NOT rendered when clientApproved).",
+    "AppHeader.js — logo height 22 (was 28). All other layout intact.",
+    "index.css .kanban-card:hover — keeps background: #fff, adds elevated box-shadow + transform: translateY(-1px). Transition list updated to include all relevant properties."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_16.json (NEW)"
+  ],
+  "success_rate": {
+    "backend": "N/A (no backend changes this batch; iter15 baseline 100% on relevant endpoints)",
+    "frontend": "100% — all 10 items + regression checks pass. iter15 carry-over avatar live-refresh bug is FIXED."
+  },
+  "test_credentials": "admin@cloudtax.ca / pallavi@cloudtax.ca / chen@example.com — all CloudTax2026!. Admin avatar uploaded then removed during Item 3 verification (cleanup completed).",
+  "seed_data_creation": "None — admin avatar test left clean (uploaded then deleted). No persistent data added.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter16 batch fully validated end-to-end. Marco Watson (eid=166c88c1-243e-48b7-b105-fb178b18598c) is the canonical IN_REVIEW + client_approved engagement and remains so for future regression. The iter15 AppHeader live-refresh issue is resolved by AdminSettings.ProfileTab passing setUser as onChange to AvatarUploadCard. The CLIENT popover path is preserved (data-testid='messages-inbox') while staff get the full-page route. Item 8 layout passes for all 4 callout testids (issue/approved both correctly placed in left column when present). No backend changes; backend regression suite from iter15 still applies. ReactRouter v7 future-flag console warnings are pre-existing and harmless.",
+  "rca_of_the_issue": "Previous iter15 issue: AppHeader avatar didn't live-refresh post-upload because Account.js used a manually-coded uploader without funneling the new avatar_url back through AuthContext.setUser correctly OR the call closed over a stale reference. Fix in this batch: extracted the uploader into shared AvatarUploadCard.js with explicit onChange callback. AdminSettings.ProfileTab and Account.js both pass onChange={setUser} from useAuth(), so the AuthContext user state is replaced atomically and AppHeader (which reads useAuth().user) re-renders with the new avatar_url. Confirmed live: header SPAN now contains <img src=/api/users/{uid}/avatar?v={ts}> the instant the upload returns, no page reload required."
+}

@@ -5,7 +5,7 @@ import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import { ChatThread } from "./Messages";
-import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send } from "lucide-react";
+import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 import T183PlacementModal from "../components/shared/T183PlacementModal";
@@ -29,6 +29,8 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
   const inputRef = React.useRef();
   const confirmTimerRef = React.useRef(null);
   const draftDoc = eng.t2_draft_doc_id ? docs.find((d) => d.id === eng.t2_draft_doc_id) : null;
+  const clientApproved = eng.review_decision?.decision === "approved";
+  const approvedAt = eng.review_decision?.submitted_at;
 
   // Sync instructions when engagement reloads after upload
   React.useEffect(() => { setInstructions(eng.review_instructions || ""); }, [eng.review_instructions]);
@@ -81,59 +83,102 @@ function UploadDraftCard({ eng, docs, onUpload, onCancelDraft, onDownload, busy 
             <div className="muted" style={{ fontSize: 11 }}>Uploaded {fmtDate(draftDoc.uploaded_at)} · {draftDoc.file_size ? `${Math.round(draftDoc.file_size / 1024)} KB` : ""}</div>
           </div>
           <button className="btn btn-secondary btn-sm" onClick={() => onDownload(draftDoc)} data-testid="download-draft"><Download size={12} /> Download</button>
-          <button
-            type="button"
-            onClick={handleCancelClick}
-            disabled={busy}
-            data-testid="cancel-draft"
-            className="btn btn-secondary btn-sm"
-            title={confirmCancel ? "Click again to confirm removal" : "Remove this draft"}
-            style={confirmCancel ? { background: "#fef5f5", color: "#c62828", borderColor: "#f3c0c0" } : undefined}
-          >
-            {confirmCancel ? <><X size={12} /> Confirm?</> : <X size={12} />}
-          </button>
+          {!clientApproved && (
+            <button
+              type="button"
+              onClick={handleCancelClick}
+              disabled={busy}
+              data-testid="cancel-draft"
+              className="btn btn-secondary btn-sm"
+              title={confirmCancel ? "Click again to confirm removal" : "Remove this draft"}
+              style={confirmCancel ? { background: "#fef5f5", color: "#c62828", borderColor: "#f3c0c0" } : undefined}
+            >
+              {confirmCancel ? <><X size={12} /> Confirm?</> : <X size={12} />}
+            </button>
+          )}
         </div>
       )}
 
-      {/* Drop zone */}
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-        onClick={() => inputRef.current?.click()}
-        data-testid="draft-dropzone"
-        style={{
-          border: `2px dashed ${dragOver ? "#1565c0" : "var(--border-default)"}`,
-          background: dragOver ? "#e3f2fd" : "#fafafa",
-          borderRadius: 12, padding: "28px 18px",
-          textAlign: "center", cursor: "pointer", transition: "all 120ms ease",
-        }}
-      >
-        <Upload size={20} style={{ color: dragOver ? "#1565c0" : "var(--text-tertiary)", marginBottom: 8 }} />
-        <div style={{ fontSize: 13, fontWeight: 500 }}>{pickedFile ? pickedFile.name : draftDoc ? "Drop a new PDF to replace" : "Drop the T2 draft PDF here or click to browse"}</div>
-        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>PDF up to 50 MB</div>
-        <input ref={inputRef} type="file" accept="application/pdf,.pdf" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && setPickedFile(e.target.files[0])} data-testid="draft-file-input" />
-      </div>
+      {/* When the client has approved, the draft is locked: hide the dropzone + actions
+          and just show read-only context (instructions, approval date). */}
+      {clientApproved ? (
+        <div data-testid="upload-draft-readonly" style={{ marginTop: 8 }}>
+          <div
+            style={{
+              display: "flex", alignItems: "flex-start", gap: 12,
+              padding: "12px 14px", borderRadius: 10,
+              background: "#e8f5e9", border: "1px solid #bbe1bd",
+            }}
+          >
+            <Check size={18} style={{ color: "#2e7d32", marginTop: 2, flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#2e7d32" }}>
+                Approved by client {approvedAt ? `on ${fmtDate(approvedAt)}` : ""}
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+                The draft is locked while the client&apos;s approval is on file. Re-uploading is disabled — proceed to file with CRA.
+              </div>
+            </div>
+          </div>
+          {(eng.review_instructions || instructions) && (
+            <div style={{ marginTop: 14 }}>
+              <div className="section-label" style={{ marginBottom: 6 }}>YOUR INSTRUCTIONS TO THE CLIENT</div>
+              <div
+                style={{
+                  fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap",
+                  padding: "10px 12px", background: "var(--bg-subtle)",
+                  border: "1px solid var(--border-default)", borderRadius: 8,
+                }}
+                data-testid="upload-draft-instructions-readonly"
+              >
+                {eng.review_instructions || instructions}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Drop zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={() => inputRef.current?.click()}
+            data-testid="draft-dropzone"
+            style={{
+              border: `2px dashed ${dragOver ? "#1565c0" : "var(--border-default)"}`,
+              background: dragOver ? "#e3f2fd" : "#fafafa",
+              borderRadius: 12, padding: "28px 18px",
+              textAlign: "center", cursor: "pointer", transition: "all 120ms ease",
+            }}
+          >
+            <Upload size={20} style={{ color: dragOver ? "#1565c0" : "var(--text-tertiary)", marginBottom: 8 }} />
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{pickedFile ? pickedFile.name : draftDoc ? "Drop a new PDF to replace" : "Drop the T2 draft PDF here or click to browse"}</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>PDF up to 50 MB</div>
+            <input ref={inputRef} type="file" accept="application/pdf,.pdf" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && setPickedFile(e.target.files[0])} data-testid="draft-file-input" />
+          </div>
 
-      {/* Instructions */}
-      <div className="field" style={{ marginTop: 14 }}>
-        <label className="field-label">Instructions for client (optional)</label>
-        <textarea
-          className="textarea" rows={3}
-          value={instructions} onChange={(e) => setInstructions(e.target.value)}
-          placeholder="e.g. 'Please review pages 2-3 carefully — note the new RRSP deduction.'"
-          data-testid="draft-instructions"
-        />
-        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Saved automatically when you upload the draft. Appears in the client&apos;s Tax Summary section.</div>
-      </div>
+          {/* Instructions */}
+          <div className="field" style={{ marginTop: 14 }}>
+            <label className="field-label">Instructions for client (optional)</label>
+            <textarea
+              className="textarea" rows={3}
+              value={instructions} onChange={(e) => setInstructions(e.target.value)}
+              placeholder="e.g. 'Please review pages 2-3 carefully — note the new RRSP deduction.'"
+              data-testid="draft-instructions"
+            />
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Saved automatically when you upload the draft. Appears in the client&apos;s Tax Summary section.</div>
+          </div>
 
-      <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 12 }}>
-        {pickedFile && <button onClick={() => { setPickedFile(null); if (inputRef.current) inputRef.current.value = ""; }} className="btn btn-secondary btn-sm" data-testid="draft-clear"><X size={12} /> Clear</button>}
-        <button onClick={submit} disabled={!pickedFile || busy} className="btn btn-primary btn-sm" data-testid="upload-draft-submit">
-          {busy ? "Uploading…" : "Send and Move to Review"}
-        </button>
-      </div>
-      {savedAt && <span className="tertiary" style={{ fontSize: 11, display: "block", textAlign: "right", marginTop: 6 }}>Saved {savedAt.toLocaleTimeString()}</span>}
+          <div className="flex gap-2" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+            {pickedFile && <button onClick={() => { setPickedFile(null); if (inputRef.current) inputRef.current.value = ""; }} className="btn btn-secondary btn-sm" data-testid="draft-clear"><X size={12} /> Clear</button>}
+            <button onClick={submit} disabled={!pickedFile || busy} className="btn btn-primary btn-sm" data-testid="upload-draft-submit">
+              {busy ? "Uploading…" : "Send and Move to Review"}
+            </button>
+          </div>
+          {savedAt && <span className="tertiary" style={{ fontSize: 11, display: "block", textAlign: "right", marginTop: 6 }}>Saved {savedAt.toLocaleTimeString()}</span>}
+        </>
+      )}
     </div>
   );
 }
@@ -230,7 +275,7 @@ function FileWithCRACard({ eng, onSubmit, busy }) {
             disabled={!t183Signed}
             title={t183Signed ? "" : "Client must sign T183 first"}
             data-testid="file-now-open"
-          ><Send size={14} /> File Now</button>
+          ><Send size={14} /> Update submission info</button>
         </div>
       </div>
     );
@@ -378,16 +423,23 @@ function T183ManagementCard({ eng, t183, onChanged }) {
   };
 
   return (
-    <div className="card" data-testid="t183-mgmt-card" style={{ borderLeft: "3px solid var(--accent-dark)" }}>
-      <div className="flex items-center between" style={{ gap: 14 }}>
-        <div style={{ flex: 1 }}>
-          <div className="flex items-center" style={{ gap: 10 }}>
-            <h2 className="card-title" style={{ margin: 0 }}>T183 — Authorization to E-File</h2>
+    <div
+      className="card"
+      data-testid="t183-mgmt-card"
+      style={{ borderLeft: "3px solid var(--accent-dark)", padding: "16px 18px" }}
+    >
+      <div
+        className="flex items-center between"
+        style={{ gap: 14, minHeight: 48 }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="flex items-center" style={{ gap: 10, flexWrap: "wrap" }}>
+            <h2 className="card-title" style={{ margin: 0, fontSize: 15 }}>T183 — Authorization to E-File</h2>
             <T183StatusBadge status={status} />
           </div>
-          <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>{subText}</p>
+          <p className="muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>{subText}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2" style={{ flexShrink: 0 }}>
           {status === "signed" && t183?.has_signed_pdf && (
             <button className="btn btn-secondary btn-sm" onClick={downloadSigned} data-testid="t183-download-signed">Download signed PDF</button>
           )}
@@ -636,12 +688,13 @@ export default function CpaEngagement() {
     <div className="app-root">
       <AppHeader />
       <div className="page-wide stack-lg">
+        <Link to="/cpa/files" className="btn-link" data-testid="cpa-back-to-files" style={{ width: "fit-content" }}>
+          <ArrowLeft size={12} /> Back to Files
+        </Link>
         <div className="flex between items-center" style={{ flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div className="muted" style={{ fontSize: 11 }}>
-              <Link to="/cpa/files" className="link-underline">Files</Link> · {client.name}
-            </div>
-            <h1 className="page-title" style={{ marginTop: 4 }}>{corp.name}</h1>
+            <h1 className="page-title">{corp.name}</h1>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{client.name}</div>
             <div className="flex items-center gap-3 mt-2" style={{ flexWrap: "wrap" }}>
               <TierBadge tier={eng.tier} />
               <StatusBadge status={eng.status} />
@@ -674,45 +727,45 @@ export default function CpaEngagement() {
 
         {err && <div className="alert alert-risk">{err}</div>}
 
-        {/* T183 e-signature workflow — visible from REVIEW onward */}
-        {(eng.status === "IN_REVIEW" || eng.status === "DELIVERY" || eng.status === "FILED") && (
-          <T183ManagementCard eng={eng} t183={t183} onChanged={() => loadT183().then(load)} />
-        )}
-
-        {/* Ready-to-file-with-CRA appears in REVIEW stage regardless of client approval.
-            CPA may proceed as soon as the client has signed T183 (legal authorization). */}
-        {eng.status === "IN_REVIEW" && (
-          <FileWithCRACard eng={eng} onSubmit={fileWithCRA} busy={busy} />
-        )}
-
-        {/* Client review feedback (Review stage) */}
-        {eng.review_decision && (
-          eng.review_decision.decision === "issue" ? (
-            <div data-testid="client-issue-callout" className="card" style={{ background: "#fef5f5", border: "1px solid #f3c0c0" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                <AlertCircle size={20} style={{ color: "#c62828", marginTop: 2, flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#c62828" }}>Client flagged an issue with the draft</div>
-                  <div style={{ fontSize: 13, marginTop: 8, lineHeight: 1.6, whiteSpace: "pre-wrap", padding: "10px 12px", background: "#fff", borderRadius: 8 }}>{eng.review_decision.issue_note}</div>
-                  <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Submitted {fmtDate(eng.review_decision.submitted_at)} — re-upload an updated draft once resolved.</div>
-                </div>
-              </div>
-            </div>
-          ) : eng.review_decision.decision === "approved" ? (
-            <div data-testid="client-approved-callout" className="card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                <Check size={20} style={{ color: "#2e7d32", marginTop: 2, flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#2e7d32" }}>Client approved the return</div>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Approved {fmtDate(eng.review_decision.submitted_at)} — ready to file with CRA.</div>
-                </div>
-              </div>
-            </div>
-          ) : null
-        )}
-
         <div className="two-col">
           <div className="stack-lg">
+            {/* T183 e-signature workflow — visible from REVIEW onward */}
+            {(eng.status === "IN_REVIEW" || eng.status === "DELIVERY" || eng.status === "FILED") && (
+              <T183ManagementCard eng={eng} t183={t183} onChanged={() => loadT183().then(load)} />
+            )}
+
+            {/* Ready-to-file-with-CRA appears in REVIEW stage regardless of client approval.
+                CPA may proceed as soon as the client has signed T183 (legal authorization). */}
+            {eng.status === "IN_REVIEW" && (
+              <FileWithCRACard eng={eng} onSubmit={fileWithCRA} busy={busy} />
+            )}
+
+            {/* Client review feedback (Review stage) */}
+            {eng.review_decision && (
+              eng.review_decision.decision === "issue" ? (
+                <div data-testid="client-issue-callout" className="card" style={{ background: "#fef5f5", border: "1px solid #f3c0c0" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                    <AlertCircle size={20} style={{ color: "#c62828", marginTop: 2, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#c62828" }}>Client flagged an issue with the draft</div>
+                      <div style={{ fontSize: 13, marginTop: 8, lineHeight: 1.6, whiteSpace: "pre-wrap", padding: "10px 12px", background: "#fff", borderRadius: 8 }}>{eng.review_decision.issue_note}</div>
+                      <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Submitted {fmtDate(eng.review_decision.submitted_at)} — re-upload an updated draft once resolved.</div>
+                    </div>
+                  </div>
+                </div>
+              ) : eng.review_decision.decision === "approved" ? (
+                <div data-testid="client-approved-callout" className="card" style={{ background: "#e8f5e9", border: "1px solid #bbe1bd" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                    <Check size={20} style={{ color: "#2e7d32", marginTop: 2, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#2e7d32" }}>Client approved the return</div>
+                      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Approved {fmtDate(eng.review_decision.submitted_at)} — ready to file with CRA.</div>
+                    </div>
+                  </div>
+                </div>
+              ) : null
+            )}
+
             {/* Upload Tax Return PDF (visible during In Prep / Review) */}
             {(eng.status === "IN_PREP" || eng.status === "IN_REVIEW") && (
               <UploadDraftCard

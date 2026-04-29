@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, fmtError, initials } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import AppHeader from "../components/shared/AppHeader";
+import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import { ArrowLeft, Plus, X, Download, Check } from "lucide-react";
 const PERMISSION_COLUMNS = [
   { key: "view_clients", label: "VIEW CLIENTS", title: "View Clients" },
@@ -57,7 +58,7 @@ function Checkbox({ checked, onChange, disabled, testid }) {
   );
 }
 
-function ProfileTab({ me, refresh }) {
+function ProfileTab({ me, refresh, setUser }) {
   const [form, setForm] = useState({ name: me.name || "", email: me.email });
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -92,6 +93,13 @@ function ProfileTab({ me, refresh }) {
 
   return (
     <div className="stack-lg" data-testid="settings-profile-tab">
+      <AvatarUploadCard
+        me={me}
+        onChange={async (next) => {
+          setUser?.((u) => (u && typeof u === "object" ? { ...u, avatar_url: next.avatar_url } : u));
+          await refresh();
+        }}
+      />
       <div className="stack-md">
         <div className="field">
           <label className="field-label">NAME</label>
@@ -667,7 +675,7 @@ export default function AdminSettings() {
         </div>
 
         <div style={{ paddingTop: 8 }}>
-          {tab === "profile" && <ProfileTab me={me} refresh={refresh} />}
+          {tab === "profile" && <ProfileTab me={me} refresh={refresh} setUser={setUser} />}
           {tab === "notifications" && <NotificationsTab me={me} refresh={refresh} />}
           {tab === "documents" && <DocumentsTab />}
           {tab === "doc-templates" && <DocTemplatesTab />}

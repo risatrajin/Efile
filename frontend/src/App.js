@@ -7,6 +7,7 @@ import ForgotPassword, { ResetPassword } from "./pages/ForgotPassword";
 import ClientLayout from "./pages/ClientLayout";
 import ClientPortal from "./pages/ClientPortal";
 import MessagesPage from "./pages/Messages";
+import StaffMessagesPage from "./pages/MessagesPage";
 import AccountPage from "./pages/Account";
 import WsDashboard from "./pages/WsDashboard";
 import WsFileDetail from "./pages/WsFileDetail";
@@ -68,11 +69,13 @@ export default function App() {
 
           <Route path="/cpa/files" element={<Protected roles={["CPA", "ADMIN"]}><CpaFiles /></Protected>} />
           <Route path="/cpa/engagement/:eid" element={<Protected roles={["CPA", "ADMIN"]}><CpaEngagement /></Protected>} />
+          <Route path="/cpa/messages" element={<Protected roles={["CPA", "ADMIN"]}><StaffMessagesPage /></Protected>} />
 
           <Route path="/admin/dashboard" element={<Protected roles={["ADMIN"]}><AdminDashboard /></Protected>} />
           <Route path="/admin/client/:eid" element={<Protected roles={["ADMIN"]}><AdminClientDetail /></Protected>} />
           <Route path="/admin/users" element={<Protected roles={["ADMIN"]}><AdminUsers /></Protected>} />
           <Route path="/admin/settings" element={<Protected roles={["ADMIN"]}><AdminSettings /></Protected>} />
+          <Route path="/admin/messages" element={<Protected roles={["ADMIN"]}><StaffMessagesPage /></Protected>} />
 
           <Route path="/account" element={<Protected><AccountPage /></Protected>} />
 
