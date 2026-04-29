@@ -55,12 +55,6 @@ function AvatarUploadCard({ me, setMe, setUser }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  // Cache-bust query param so the new image renders immediately after upload
-  const [bust, setBust] = useState(() => Date.now());
-
-  const userForAvatar = me?.avatar_url
-    ? { ...me, avatar_url: `${me.avatar_url}?v=${bust}` }
-    : me;
 
   const onPick = () => { inputRef.current?.click(); };
 
@@ -79,10 +73,11 @@ function AvatarUploadCard({ me, setMe, setUser }) {
       const { data } = await api.post("/users/me/avatar", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+      // Backend returns a versioned avatar_url like /api/users/{uid}/avatar?v=12345
+      // so the URL itself is unique per upload — no extra cache-bust needed here.
       const next = { ...me, avatar_url: data.avatar_url };
       setMe(next);
       setUser((u) => (u && typeof u === "object" ? { ...u, avatar_url: data.avatar_url } : u));
-      setBust(Date.now());
     } catch (x) {
       setErr(fmtError(x));
     } finally {
@@ -115,7 +110,7 @@ function AvatarUploadCard({ me, setMe, setUser }) {
     <div className="card" data-testid="avatar-upload-card">
       <div className="section-label" style={{ marginBottom: 16 }}>PROFILE PICTURE</div>
       <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-        <UserAvatar user={userForAvatar} size={80} testid="avatar-upload-preview" />
+        <UserAvatar user={me} size={80} testid="avatar-upload-preview" />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 500 }}>{me.name}</div>
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>

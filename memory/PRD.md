@@ -175,6 +175,23 @@
 
 **Tests**: testing_agent_v3_fork iter 14 — backend `test_forgot_reset_password.py` **6/6 PASS** (valid email, unknown-email no-leak, case-insensitive lookup, full reset+revert cycle, used-token rejection, short-password rejection). Regression `test_t183_rebuild.py` + `test_admin_overhaul.py` **26/26 PASS**. Frontend Playwright e2e **100% on all listed flows** (forgot link → fallback rendering → reset confirmation → admin dashboard table toggle → AdminClientDetail tax-notes/message-modal/status-history/documents → WS dashboard table toggle). Admin password NOT touched; `kaur@example.com` reset-password test cycle reverted password back to seeded value.
 
+### Iter 22 (Feb 2026 — 5-item batch: Admin messages icon, Accessibility dropdown, Notification deep-links, FILED return view, Profile picture)
+**Backend**:
+- `POST /api/users/me/avatar` (multipart) + `DELETE /api/users/me/avatar` + `GET /api/users/{uid}/avatar` — 4 MB cap, mime allowlist (PNG/JPEG/WebP/GIF), S3 with local-disk fallback (`avatar_object_key` prefixed `local://…`). `avatar_url` is versioned (`?v={timestamp}`) so the URL itself busts client caches on every upload.
+- `GET /api/messages/inbox` — single aggregation pipeline returns one row per engagement with `{client, corporation, assigned_cpa, last_message, unread_count}`. ADMIN sees all non-ONBOARDING engagements (incl. empty conversations so they can pro-actively start chats); CPA sees only assigned engagements; CLIENT sees own; WS_PARTNER → 403.
+
+**Frontend**:
+- `<UserAvatar>` (NEW shared) — image-first with deterministic gradient-initials fallback (9-colour palette by name hash). Resets `errored` state on URL change so re-uploads always re-render fresh.
+- `<MessagesInboxButton>` (NEW shared) — chat-bubble icon in AppHeader (ADMIN/CPA/CLIENT only; WS_PARTNER hidden). Popover with search, 30s auto-poll, conversation rows with unread badge → click opens an embedded `<ChatThread>` with full attachment support, back button returns to the list.
+- `<AccessibilityMenu>` (NEW shared) — replaces full-screen `<AccessibilityPanel>` modal with a compact dropdown anchored to the icon. All 7 controls (text size, page zoom, high contrast, highlight links, underline links, bigger cursor, reduce motion) + Reset.
+- AppHeader rewired: `[Messages] [Settings] [Bell] [A11y] | [Avatar pill]` with `<UserAvatar>` everywhere.
+- `<NotificationBell>` deep-link bug fix — ADMIN now correctly navigates to `/admin/client/{eid}` (was incorrectly `/admin/clients/`, returning 404). WS_PARTNER `new_referral` notifications route to `/ws/onboarding/{eid}`; everything else `/ws/file/{eid}`.
+- `AdminClientDetail` — new `<FiledReturnCard>` rendered when `status==='FILED'` showing CRA confirmation, filing date, filing note, the 5-row Filed Return Summary (with the Balance + Payment due emphasized in amber), and a "Download filed return (PDF)" button that uses authenticated `fetch+blob` (not a plain anchor that would 401).
+- Account page — new `<AvatarUploadCard>` at the top with live preview, Change photo / Remove buttons, mime + size client-side guard. Updates `setUser({...u, avatar_url})` so AppHeader re-renders the new image without reload.
+- `index.css` — extended `.a11y-highlight-links` / `.a11y-underline-links` to also cover `.nav-tab`, `.link-underline`, `[role='link']` so the toggles have visible effect on button-driven nav.
+
+**Tests**: testing_agent_v3_fork iter 15 — backend `test_avatar_inbox.py` **10/10 PASS** (PNG roundtrip, mime/size rejection, WebP accepted, /messages/inbox role matrix incl. WS_PARTNER 403, write-then-list assertion). Frontend e2e: 4/5 fully PASS on first run; the one issue (AppHeader avatar not live-refreshing post-upload) was root-caused to browser caching the prior 404 at the same URL, fixed by versioning `avatar_url` in the backend response. Re-verified live: AppHeader avatar correctly switches to `<img>` after upload and reverts to gradient initials after Remove without page reload.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { initials } from "../../lib/api";
 
 const BASE = process.env.REACT_APP_BACKEND_URL || "";
@@ -31,10 +31,15 @@ function paletteFor(seed = "") {
  *  - testid: optional data-testid
  */
 export default function UserAvatar({ user, size = 36, testid }) {
-  const [errored, setErrored] = useState(false);
   const name = user?.name || user?.email || "?";
   const avatarUrl = user?.avatar_url;
   const fullSrc = avatarUrl ? (avatarUrl.startsWith("http") ? avatarUrl : `${BASE}${avatarUrl}`) : null;
+
+  // Reset error flag any time the source URL changes so a new upload does not
+  // inherit a stale "errored" from a previous render cycle.
+  const [errored, setErrored] = useState(false);
+  useEffect(() => { setErrored(false); }, [fullSrc]);
+
   const [c1, c2] = paletteFor(name);
   const fontSize = Math.max(10, Math.round(size * 0.36));
 

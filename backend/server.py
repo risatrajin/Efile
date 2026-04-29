@@ -495,8 +495,11 @@ async def upload_my_avatar(file: UploadFile = File(...), user: dict = Depends(ge
         object_key = f"local://{local_path}"
         log.warning("S3 avatar upload failed for %s — stored locally at %s", user["id"], local_path)
 
-    # Public-ish URL routed through our backend (always served via /api so RBAC stays consistent)
-    avatar_url = f"/api/users/{user['id']}/avatar"
+    # Public-ish URL routed through our backend (always served via /api so RBAC stays consistent).
+    # Append a version param so client-side caches always see the latest upload as a fresh URL.
+    now_dt = datetime.now(timezone.utc)
+    version = int(now_dt.timestamp())
+    avatar_url = f"/api/users/{user['id']}/avatar?v={version}"
     await db.users.update_one(
         {"id": user["id"]},
         {"$set": {
@@ -504,7 +507,7 @@ async def upload_my_avatar(file: UploadFile = File(...), user: dict = Depends(ge
             "avatar_storage": storage,
             "avatar_mime": content_type,
             "avatar_url": avatar_url,
-            "avatar_updated_at": datetime.now(timezone.utc),
+            "avatar_updated_at": now_dt,
         }},
     )
     return {"avatar_url": avatar_url, "storage": storage}
