@@ -214,6 +214,17 @@ function CurrencyInput({ value, onChange, disabled, testid }) {
 
 function FileWithCRACard({ eng, onSubmit, busy }) {
   const t183Signed = !!eng.t183_signed_at;
+  const reviewDecision = eng.review_decision?.decision;
+  const clientApproved = reviewDecision === "approved";
+  const clientFlaggedIssue = reviewDecision === "issue";
+  const canFile = t183Signed && clientApproved;
+  const gateReason = !clientApproved
+    ? (clientFlaggedIssue
+        ? "Client flagged an issue with the draft. Address the issue and re-send the draft for review."
+        : "Waiting on the client to approve the draft (Your Review → Everything looks good).")
+    : (!t183Signed
+        ? "Waiting on the client to sign T183. Filing is unlocked once the signature is on file."
+        : "");
   const [open, setOpen] = useState(false);
   const [pickedFile, setPickedFile] = useState(null);
   const [conf, setConf] = useState("");
