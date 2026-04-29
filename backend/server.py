@@ -3258,12 +3258,11 @@ async def messages_inbox(user: dict = Depends(get_current_user)):
         last_at = last["created_at"] if last else e.get("updated_at") or e.get("created_at")
         if isinstance(last_at, datetime):
             last_at = last_at.isoformat()
-        if not last and user["role"] == "ADMIN":
-            # For admins: always include the engagement so they can initiate a chat
-            pass
-        elif not last:
-            # Skip empty conversations for non-admins
+        if not last and user["role"] == "CLIENT":
+            # Skip empty conversations for clients (their own empty thread is noise).
             continue
+        # ADMIN + CPA: always include assigned/permitted engagements (with or
+        # without messages) so staff can start new conversations from search.
         out.append({
             "engagement_id": e["id"],
             "engagement_status": e.get("status"),

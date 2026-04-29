@@ -276,6 +276,16 @@
 
 ## Backlog (prioritized)
 
+### Iter 28 (Feb 2026 — Messages page width fix + start-new-conversation search)
+**Backend**:
+- `GET /api/messages/inbox` — CPA + ADMIN now both receive ALL permitted engagements (with or without messages). Previously only ADMIN got empty conversations; CPA was filtered down to assigned engagements with at least one message. CLIENT continues to skip empty rows.
+
+**Frontend**:
+- `MessagesPage.js` — left/right two-pane layout switched from `.page-wide` (max 1280px) to a custom 1600px container so the chat thread can breathe. Default view hides empty conversations to keep the inbox focused. When the search input is non-empty, ALL matching engagements appear (incl. clients with zero messages) so CPA/Admin can pick any client to start a new chat.
+- New "**N client(s) with no messages yet — click any to start a new conversation.**" hint under the search box (testid `messages-page-new-chat-hint`) when search reveals empty rows.
+- New blue **NEW** badge on rows with no messages (testid `messages-page-row-newchat-badge`); preview shows italic "No messages yet — click to start". Clicking opens an empty `<ChatThread>` ready for the first message — sending it persists via the existing `/messages` endpoint and the row promotes to a normal conversation on the next 30s poll.
+- Search now also matches against client `email` (in addition to name / corporation / message content).
+
 ### P0 (ship-blocking for real pilot — user-action required)
 - [ ] User must verify SES sender `noreply@cloudtax.ca` in AWS SES console + request production access
 - [ ] User must configure S3 bucket `cloudtax-ws-pilot` CORS for PUT/GET from preview + prod URLs

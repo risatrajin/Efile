@@ -51,15 +51,26 @@ export default function MessagesPage() {
     // eslint-disable-next-line
   }, []);
 
+  const trimmedQuery = query.trim().toLowerCase();
+  const hasQuery = trimmedQuery.length > 0;
   const filtered = items.filter((r) => {
-    if (!query.trim()) return true;
-    const q = query.trim().toLowerCase();
+    // When searching, show ALL matches including empty conversations so staff
+    // can start a fresh chat with any client. Default view (no search) hides
+    // empty rows to keep the inbox focused.
+    if (!hasQuery && !r.last_message) return false;
+    if (!hasQuery) return true;
     return (
-      (r.client?.name || "").toLowerCase().includes(q) ||
-      (r.corporation?.name || "").toLowerCase().includes(q) ||
-      (r.last_message?.content || "").toLowerCase().includes(q)
+      (r.client?.name || "").toLowerCase().includes(trimmedQuery) ||
+      (r.client?.email || "").toLowerCase().includes(trimmedQuery) ||
+      (r.corporation?.name || "").toLowerCase().includes(trimmedQuery) ||
+      (r.last_message?.content || "").toLowerCase().includes(trimmedQuery)
     );
   });
+
+  // Count empty conversations only surfaced via search — hint to the user.
+  const newChatMatches = hasQuery
+    ? filtered.filter((r) => !r.last_message).length
+    : 0;
 
   const active = activeId ? items.find((r) => r.engagement_id === activeId) : null;
 
@@ -72,15 +83,16 @@ export default function MessagesPage() {
     <div className="app-root" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <AppHeader />
       <div
-        className="page-wide"
         data-testid="messages-page"
         style={{
           flex: 1,
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          paddingTop: 16,
-          paddingBottom: 16,
+          padding: "16px 32px",
+          maxWidth: 1600,
+          width: "100%",
+          margin: "0 auto",
         }}
       >
         <button onClick={() => navigate(-1)} className="btn-link" data-testid="messages-page-back" style={{ width: "fit-content", marginBottom: 8 }}>
@@ -94,9 +106,8 @@ export default function MessagesPage() {
             flex: 1,
             minHeight: 0,
             display: "grid",
-            gridTemplateColumns: "minmax(280px, 320px) minmax(0, 1fr)",
+            gridTemplateColumns: "minmax(300px, 360px) minmax(0, 1fr)",
             gap: 16,
-            maxWidth: 1100,
             width: "100%",
           }}
         >
@@ -125,6 +136,15 @@ export default function MessagesPage() {
                   data-testid="messages-page-search"
                 />
               </div>
+              {hasQuery && newChatMatches > 0 && (
+                <div
+                  className="muted"
+                  style={{ fontSize: 11, marginTop: 8, lineHeight: 1.45 }}
+                  data-testid="messages-page-new-chat-hint"
+                >
+                  {newChatMatches} client{newChatMatches === 1 ? "" : "s"} with no messages yet — click any to start a new conversation.
+                </div>
+              )}
             </div>
             <div style={{ overflowY: "auto", flex: 1 }}>
               {loading && items.length === 0 && (
@@ -132,12 +152,17 @@ export default function MessagesPage() {
               )}
               {!loading && filtered.length === 0 && (
                 <div className="muted" style={{ padding: 24, textAlign: "center", fontSize: 13 }}>
-                  {items.length === 0 ? "No conversations yet" : "No conversations match your search"}
+                  {!hasQuery
+                    ? "No conversations yet. Search by client name to start a new chat."
+                    : "No clients match your search"}
                 </div>
               )}
               {filtered.map((r) => {
                 const last = r.last_message;
-                const preview = last?.content || (last?.attachment_name ? `📎 ${last.attachment_name}` : "No messages yet");
+                const isEmpty = !last;
+                const preview = isEmpty
+                  ? "No messages yet — click to start"
+                  : (last?.content || (last?.attachment_name ? `📎 ${last.attachment_name}` : ""));
                 const isActive = r.engagement_id === activeId;
                 return (
                   <button
@@ -160,13 +185,26 @@ export default function MessagesPage() {
                         <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {r.client?.name || "—"}
                         </span>
-                        <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>{timeAgo(r.last_at)}</span>
+                        {isEmpty ? (
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              fontSize: 9, fontWeight: 600, letterSpacing: 0.4,
+                              color: "#1565c0", background: "#e3f2fd",
+                              padding: "2px 7px", borderRadius: 999,
+                            }}
+                            data-testid="messages-page-row-newchat-badge"
+                          >NEW</span>
+                        ) : (
+                          <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>{timeAgo(r.last_at)}</span>
+                        )}
                       </div>
                       <div className="muted" style={{ fontSize: 11, marginTop: 1, marginBottom: 4 }}>{r.corporation?.name || ""}</div>
                       <div
                         className="muted"
                         style={{
                           fontSize: 12, lineHeight: 1.4,
+                          fontStyle: isEmpty ? "italic" : "normal",
                           display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden",
                         }}
                       >
