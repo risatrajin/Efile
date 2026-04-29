@@ -207,6 +207,22 @@
 
 **Tests**: testing_agent_v3_fork iter 16 — Frontend Playwright e2e **100% PASS on all 10 items + regression**. Avatar live-refresh issue from iter15 is now fully resolved. ReactRouter v7 console warnings are pre-existing/harmless. Backend untouched this batch.
 
+### Iter 24 (Feb 2026 — 11-item batch: hover/spacing polish + FILED gate + a11y fix + header simplify)
+**Backend** (one focused gate):
+- `PATCH /api/engagements/{eid}` with `{status:"FILED"}` now raises `HTTPException(400)` if `t183_signed_at` is missing OR `filing_confirmation` is missing. Two distinct, user-readable detail strings explain which prerequisite to complete next. Applies to ADMIN and CPA equally.
+
+**Frontend (CSS-heavy polish)**:
+- `index.css` — `.kanban-card:hover` keeps default border (no blue-tint); only the elevated box-shadow + 1px translateY remain. `.doc-row .doc-row-hover-actions { opacity: 0; pointer-events: none }` with `:hover` / `:focus-within` flipping to `opacity: 1` so the AI extract / Flag-issue buttons appear only on row hover. Native `.select` got `appearance: none` + custom inline-SVG chevron + `padding-right: 32px` so the chevron never overlaps the value text.
+- `AccessibilityContext.js` — text-size toggle now also applies `document.body.style.zoom` (in addition to setting `--a11y-text-scale` and html font-size) so the px-based typography across the app actually scales. Reset clears it back to `''`.
+- `AppHeader.js` — added `header-home-icon` (Home from lucide-react) as the FIRST child of the right cluster, navigates via `dashboardPathFor(role)` → `/portal | /ws/dashboard | /cpa/files | /admin/dashboard`. Removed the `header-settings-icon` (the avatar dropdown still has Settings).
+- `CpaEngagement.js` — DocIcon pending colour switched from `#b5b0ab` → `#ef6c00` (orange). Doc-checklist row split into a `.doc-row-hover-actions` div for AI-extract/Flag-issue and a separate always-visible Download anchored to the right. `MoveToDropdown` now disables `FILED` whenever t183_signed_at OR filing_confirmation is missing, with a clear explanatory `note` matching the backend gate.
+- `AdminClientDetail.js` — same MoveToDropdown FILED gating wired with a parallel note for admins.
+- `MessagesPage.js` — outer wrapper `height: 100vh; overflow: hidden; display: flex; flexDirection: column`. Inner grid `flex: 1; minHeight: 0`. Right panel passes `height="100%"` to `<ChatThread>` so the chat input form is naturally pinned to the bottom of the panel (verified gap = 2px in 1080-tall viewport). Conversation header has `flexShrink: 0`.
+- `Account.js` — added top-of-page `account-back` Back link; removed the entire "Two-factor authentication" row + ShieldCheck import (item 9: 2FA was always mocked, removed entirely).
+- `AdminSettings.js` — back link upgraded to a styled btn-link reading "Back to dashboard" with the ArrowLeft icon.
+
+**Tests**: testing_agent_v3_fork iter 17 — Frontend Playwright + backend pytest **100% PASS on all 11 items + regression**. New `test_iter17_filed_gate.py` 6/6 (single-field block, dual-field block, ADMIN role, CPA role, sanity + GET-after-block confirmation). Zero issues. Visual gap admins/CPAs see between explanatory note and disabled FILED option matches spec.
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
