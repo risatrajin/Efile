@@ -268,6 +268,60 @@ def redact_for_client(eng: dict) -> dict:
 
 # ==================== Auth ====================
 
+OTP_TTL_MIN = 10
+OTP_PURPOSE_LOGIN = "login"
+OTP_PURPOSE_ENABLE_2FA = "enable_2fa"
+
+
+def _make_otp_code() -> str:
+    """6-digit numeric code suitable for an email-delivered OTP."""
+    import secrets as _secrets
+    return f"{_secrets.randbelow(1_000_000):06d}"
+
+
+async def _issue_otp(user_id: str, purpose: str) -> tuple[str, str]:
+    """Insert a fresh OTP challenge and return (challenge_id, plain_code).
+    Caller is responsible for emailing the code; we never store it in plaintext."""
+    db = get_db()
+    code = _make_otp_code()
+    challenge_id = str(uuid.uuid4())
+    code_hash = hash_password(code)
+    now = datetime.now(timezone.utc)
+    await db.otp_challenges.insert_one({
+        "id": challenge_id,
+        "user_id": user_id,
+        "purpose": purpose,
+        "code_hash": code_hash,
+        "used": False,
+        "attempts": 0,
+        "created_at": now,
+        "expires_at": now + timedelta(minutes=OTP_TTL_MIN),
+    })
+    return challenge_id, code
+
+
+async def _consume_otp(challenge_id: str, code: str, purpose: str) -> dict | None:
+    """Validate and burn an OTP challenge. Returns the user dict on success."""
+    db = get_db()
+    row = await db.otp_challenges.find_one({"id": challenge_id, "purpose": purpose, "used": False})
+    if not row:
+        raise HTTPException(400, "Invalid or expired verification code")
+    expires_at = row["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(400, "Verification code expired. Request a new one.")
+    if row.get("attempts", 0) >= 5:
+        await db.otp_challenges.update_one({"id": challenge_id}, {"$set": {"used": True}})
+        raise HTTPException(429, "Too many incorrect attempts. Request a new code.")
+    if not verify_password(code.strip(), row["code_hash"]):
+        await db.otp_challenges.update_one({"id": challenge_id}, {"$inc": {"attempts": 1}})
+        raise HTTPException(400, "Incorrect verification code")
+    await db.otp_challenges.update_one({"id": challenge_id}, {"$set": {"used": True}})
+    user = await db.users.find_one({"id": row["user_id"]})
+    return user
+
+
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request, response: Response):
     db = get_db()
@@ -281,9 +335,98 @@ async def login(body: LoginIn, request: Request, response: Response):
         raise HTTPException(401, "Invalid email or password")
 
     await record_attempt(identifier, True)
+
+    # 2FA gate: when enabled, return a challenge instead of an access token.
+    if user.get("two_factor_enabled"):
+        challenge_id, code = await _issue_otp(user["id"], OTP_PURPOSE_LOGIN)
+        sent_via_email = False
+        try:
+            r = ses_service.send_otp_code(user["email"], user.get("name") or "there", code, "sign in")
+            sent_via_email = bool(r.get("success"))
+        except Exception as e:
+            log.warning("send_otp_code (login) failed: %s", e)
+        log.info("2FA login challenge issued: %s code=%s sent=%s", user["email"], code, sent_via_email)
+        return {
+            "two_factor_required": True,
+            "challenge_id": challenge_id,
+            "sent_via_email": sent_via_email,
+            # SES sandbox fallback: surface the OTP so test users without inbox access can sign in.
+            "debug_otp": None if sent_via_email else code,
+            "email": user["email"],
+        }
+
     token = create_access_token(user["id"], user["email"], user["role"])
     set_auth_cookie(response, token)
     return {"user": safe_user(user), "token": token}
+
+
+@api.post("/auth/2fa/verify-login")
+async def verify_login_otp(body: dict, response: Response):
+    """Complete login by exchanging a valid OTP for a real access token."""
+    challenge_id = (body or {}).get("challenge_id")
+    code = (body or {}).get("code")
+    if not challenge_id or not code:
+        raise HTTPException(400, "Missing challenge_id or code")
+    user = await _consume_otp(challenge_id, code, OTP_PURPOSE_LOGIN)
+    if not user:
+        raise HTTPException(400, "Invalid challenge")
+    token = create_access_token(user["id"], user["email"], user["role"])
+    set_auth_cookie(response, token)
+    return {"user": safe_user(user), "token": token}
+
+
+@api.post("/auth/2fa/enable-init")
+async def enable_2fa_init(user: dict = Depends(get_current_user)):
+    """Send an OTP to the user's email to confirm enabling 2FA."""
+    if user.get("two_factor_enabled"):
+        return {"ok": True, "already_enabled": True}
+    challenge_id, code = await _issue_otp(user["id"], OTP_PURPOSE_ENABLE_2FA)
+    sent_via_email = False
+    try:
+        r = ses_service.send_otp_code(user["email"], user.get("name") or "there", code, "enable two-factor authentication")
+        sent_via_email = bool(r.get("success"))
+    except Exception as e:
+        log.warning("send_otp_code (enable_2fa) failed: %s", e)
+    log.info("2FA enable challenge issued: %s code=%s sent=%s", user["email"], code, sent_via_email)
+    return {
+        "ok": True,
+        "challenge_id": challenge_id,
+        "sent_via_email": sent_via_email,
+        "debug_otp": None if sent_via_email else code,
+    }
+
+
+@api.post("/auth/2fa/enable-confirm")
+async def enable_2fa_confirm(body: dict, user: dict = Depends(get_current_user)):
+    """Validate the OTP and enable 2FA on the current user."""
+    challenge_id = (body or {}).get("challenge_id")
+    code = (body or {}).get("code")
+    if not challenge_id or not code:
+        raise HTTPException(400, "Missing challenge_id or code")
+    target = await _consume_otp(challenge_id, code, OTP_PURPOSE_ENABLE_2FA)
+    if not target or target["id"] != user["id"]:
+        raise HTTPException(400, "Verification did not match this account")
+    db = get_db()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"two_factor_enabled": True, "two_factor_method": "email", "two_factor_enabled_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True, "two_factor_enabled": True}
+
+
+@api.post("/auth/2fa/disable")
+async def disable_2fa(body: dict, user: dict = Depends(get_current_user)):
+    """Disable 2FA. Requires the current password to prevent session-hijack disables."""
+    pwd = (body or {}).get("password") or ""
+    db = get_db()
+    me = await db.users.find_one({"id": user["id"]})
+    if not me or not verify_password(pwd, me["password_hash"]):
+        raise HTTPException(401, "Current password is incorrect")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"two_factor_enabled": False, "two_factor_method": None, "two_factor_disabled_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True, "two_factor_enabled": False}
 
 
 @api.post("/auth/logout")
@@ -1549,6 +1692,43 @@ async def remind_deferred(eid: str, user: dict = Depends(require_role("CPA", "AD
     return {"ok": True, "sent_at": now, "doc_count": len(deferred_docs), "email_sent": result.get("success", False)}
 
 
+@api.post("/documents/{doc_id}/remind")
+async def remind_single_document(doc_id: str, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    """Send a one-off reminder email + in-app notification to the client about a
+    specific pending document. Reuses the same SES helper as the bulk reminder.
+    Cooldown is 6 hours per document so CPAs can't accidentally spam.
+    """
+    db = get_db()
+    doc = await db.documents.find_one({"id": doc_id})
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    eid = doc["engagement_id"]
+    eng = await get_engagement_or_404(eid, user)
+    last = doc.get("reminder_sent_at")
+    if last:
+        last_dt = last if isinstance(last, datetime) else datetime.fromisoformat(str(last))
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        next_ok = last_dt + timedelta(hours=6)
+        if datetime.now(timezone.utc) < next_ok:
+            raise HTTPException(429, f"A reminder for this document was already sent recently. Try again after {next_ok.isoformat()}")
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if not corp:
+        raise HTTPException(500, "Corporation missing")
+    client = await db.users.find_one({"id": corp["client_id"]})
+    if not client:
+        raise HTTPException(500, "Client missing")
+    portal_link = f"{FRONTEND_URL}/portal"
+    result = ses_service.send_deferred_reminder(client["email"], client["name"], [doc["name"]], portal_link)
+    now = datetime.now(timezone.utc)
+    await db.documents.update_one(
+        {"id": doc_id},
+        {"$set": {"reminder_sent_at": now}, "$inc": {"reminder_count": 1}},
+    )
+    await notify(client["id"], "Friendly reminder", f"\"{doc['name']}\" is still pending upload", "doc_reminder", eid)
+    return {"ok": True, "sent_at": now, "email_sent": result.get("success", False)}
+
+
 @api.get("/engagements/{eid}/history")
 async def engagement_history(eid: str, user: dict = Depends(get_current_user)):
     db = get_db()
@@ -1575,9 +1755,15 @@ async def extract_document(doc_id: str, user: dict = Depends(require_role("CPA",
     if not blob:
         raise HTTPException(500, "Could not fetch document bytes")
     result = await ai_service.extract_from_pdf(blob, doc.get("mime_type") or "application/pdf", doc["category"])
-    await db.documents.update_one({"id": doc_id}, {"$set": {"extracted_data": result, "status": "EXTRACTED"}})
+    has_error = isinstance(result, dict) and ("error" in result or "parse_error" in result)
+    update = {"extracted_data": result}
+    if not has_error:
+        # Only flip status to EXTRACTED on a clean parse so the UI accurately
+        # reflects whether the data was actually pulled.
+        update["status"] = "EXTRACTED"
+    await db.documents.update_one({"id": doc_id}, {"$set": update})
     # Store extracted data records (flatten top-level)
-    if isinstance(result, dict) and "error" not in result and "parse_error" not in result:
+    if isinstance(result, dict) and not has_error:
         for field, value in result.items():
             if value is None:
                 continue

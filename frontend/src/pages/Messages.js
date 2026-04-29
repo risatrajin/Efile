@@ -48,7 +48,7 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
     } catch { /* ignore */ }
   }, [engagementId, onUnreadChange]);
 
-  useEffect(() => { if (!engagementId) return; load().then(markRead); }, [engagementId, load, markRead]);
+  useEffect(() => { if (!engagementId) return; setErr(""); load().then(markRead); }, [engagementId, load, markRead]);
 
   // SSE
   useEffect(() => {

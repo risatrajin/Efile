@@ -23,6 +23,31 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     try {
       const { data } = await api.post("/auth/login", { email, password });
+      // 2FA gate: backend returned a challenge instead of a token
+      if (data && data.two_factor_required) {
+        return {
+          ok: false,
+          twoFactorRequired: true,
+          challengeId: data.challenge_id,
+          sentViaEmail: !!data.sent_via_email,
+          debugOtp: data.debug_otp || null,
+          email: data.email || email,
+        };
+      }
+      if (data.token) localStorage.setItem("ct_token", data.token);
+      setUser(data.user);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: fmtError(e) };
+    }
+  };
+
+  const verifyLoginOtp = async (challengeId, code) => {
+    try {
+      const { data } = await api.post("/auth/2fa/verify-login", {
+        challenge_id: challengeId,
+        code,
+      });
       if (data.token) localStorage.setItem("ct_token", data.token);
       setUser(data.user);
       return { ok: true };
@@ -38,7 +63,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthCtx.Provider value={{ user, booting, login, logout, setUser }}>
+    <AuthCtx.Provider value={{ user, booting, login, verifyLoginOtp, logout, setUser }}>
       {children}
     </AuthCtx.Provider>
   );

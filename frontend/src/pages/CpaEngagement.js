@@ -8,6 +8,7 @@ import { ChatThread } from "./Messages";
 import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
+import FiledReturnCard from "../components/shared/FiledReturnCard";
 import T183PlacementModal from "../components/shared/T183PlacementModal";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
@@ -630,7 +631,21 @@ export default function CpaEngagement() {
 
   const runExtract = async (doc) => {
     setBusy(true); setErr("");
-    try { await api.post(`/documents/${doc.id}/extract`); await load(); } catch (x) { setErr(fmtError(x)); }
+    try {
+      const { data } = await api.post(`/documents/${doc.id}/extract`);
+      if (data && (data.error || data.parse_error)) {
+        // Backend returned 200 but the LLM extraction failed; surface the reason.
+        setErr(`AI extraction failed for "${doc.name}": ${data.error || "Could not parse model output as JSON. Try re-uploading a cleaner PDF."}`);
+      }
+      await load();
+    } catch (x) { setErr(fmtError(x)); }
+    setBusy(false);
+  };
+
+  const remindDoc = async (doc) => {
+    setBusy(true); setErr("");
+    try { await api.post(`/documents/${doc.id}/remind`); await load(); }
+    catch (x) { setErr(fmtError(x)); }
     setBusy(false);
   };
 
@@ -732,6 +747,9 @@ export default function CpaEngagement() {
 
         <div className="two-col">
           <div className="stack-lg">
+            {/* Filed return summary — visible to CPA after the engagement is filed */}
+            {eng.status === "FILED" && <FiledReturnCard eng={eng} />}
+
             {/* T183 e-signature workflow — visible from REVIEW onward */}
             {(eng.status === "IN_REVIEW" || eng.status === "DELIVERY" || eng.status === "FILED") && (
               <T183ManagementCard eng={eng} t183={t183} onChanged={() => loadT183().then(load)} />
@@ -821,6 +839,17 @@ export default function CpaEngagement() {
                     <div className="doc-row-actions flex gap-2 items-center">
                       {/* Hover-only actions */}
                       <div className="doc-row-hover-actions flex gap-2">
+                        {!d.object_key && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => remindDoc(d)}
+                            disabled={busy}
+                            data-testid={`remind-${d.id}`}
+                            title={d.reminder_sent_at ? `Last reminder: ${new Date(d.reminder_sent_at).toLocaleString()}` : "Send a reminder email to the client"}
+                          >
+                            <Bell size={12} /> {d.reminder_sent_at ? "Re-send reminder" : "Send reminder"}
+                          </button>
+                        )}
                         {d.object_key && d.status !== "EXTRACTED" && (
                           <button className="btn btn-secondary btn-sm" onClick={() => runExtract(d)} disabled={busy} data-testid={`extract-${d.id}`}>
                             <Sparkles size={12} /> AI extract

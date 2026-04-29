@@ -4,6 +4,7 @@ import { api, fmtError, initials } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
+import TwoFactorCard from "../components/shared/TwoFactorCard";
 import { ArrowLeft, Plus, X, Download, Check } from "lucide-react";
 const PERMISSION_COLUMNS = [
   { key: "view_clients", label: "VIEW CLIENTS", title: "View Clients" },
@@ -97,6 +98,14 @@ function ProfileTab({ me, refresh, setUser }) {
         me={me}
         onChange={async (next) => {
           setUser?.((u) => (u && typeof u === "object" ? { ...u, avatar_url: next.avatar_url } : u));
+          await refresh();
+        }}
+      />
+
+      <TwoFactorCard
+        me={me}
+        onChange={async (next) => {
+          setUser?.((u) => (u && typeof u === "object" ? { ...u, two_factor_enabled: !!next.two_factor_enabled } : u));
           await refresh();
         }}
       />

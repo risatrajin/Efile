@@ -83,12 +83,10 @@ export default function MessagesPage() {
           paddingBottom: 16,
         }}
       >
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
-          <h1 className="page-title" style={{ margin: 0 }}>Messages</h1>
-          <button onClick={() => navigate(-1)} className="btn-link" data-testid="messages-page-back">
-            <ArrowLeft size={12} /> Back
-          </button>
-        </div>
+        <button onClick={() => navigate(-1)} className="btn-link" data-testid="messages-page-back" style={{ width: "fit-content", marginBottom: 8 }}>
+          <ArrowLeft size={12} /> Back
+        </button>
+        <h1 className="page-title" style={{ margin: 0, marginBottom: 12 }}>Messages</h1>
         {err && <div className="alert alert-risk" style={{ marginBottom: 12 }}>{err}</div>}
 
         <div
@@ -96,8 +94,10 @@ export default function MessagesPage() {
             flex: 1,
             minHeight: 0,
             display: "grid",
-            gridTemplateColumns: "minmax(280px, 360px) 1fr",
+            gridTemplateColumns: "minmax(280px, 320px) minmax(0, 1fr)",
             gap: 16,
+            maxWidth: 1100,
+            width: "100%",
           }}
         >
           {/* List */}

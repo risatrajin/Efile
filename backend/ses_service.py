@@ -86,6 +86,20 @@ def send_password_reset(to_email: str, name: str, reset_link: str) -> dict:
     )
 
 
+def send_otp_code(to_email: str, name: str, code: str, purpose: str = "sign-in") -> dict:
+    inner = f"""<h1>Your CloudTax verification code</h1>
+    <p>Hi {name},</p>
+    <p>Use the code below to {purpose}. It expires in 10 minutes.</p>
+    <p style='font-size:32px;font-weight:700;letter-spacing:6px;margin:24px 0;color:#1565c0;'>{code}</p>
+    <p class="muted">If you didn't request this, ignore this email and consider changing your password.</p>"""
+    return send(
+        to_email,
+        f"Your CloudTax verification code: {code}",
+        _wrap(inner),
+        f"Hi {name}, your CloudTax verification code is {code}. It expires in 10 minutes.",
+    )
+
+
 
 
 def send_filing_complete(to_email: str, name: str, corp_name: str, portal_link: str) -> dict:

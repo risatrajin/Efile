@@ -399,6 +399,15 @@ export default function WsDashboard() {
               role="WS_PARTNER"
               onRowClick={(e) => (e.status === "ONBOARDING" ? openOnboarding(e.id) : openFile(e.id))}
               testid="ws-engagement-table"
+              stageOptions={[
+                { key: "all", label: "All stages" },
+                { key: "ONBOARDING", label: "Onboarding" },
+                { key: "INTAKE", label: "Intake" },
+                { key: "IN_PREP", label: "In Prep" },
+                { key: "IN_REVIEW", label: "In Review" },
+                { key: "DELIVERY", label: "Delivery" },
+                { key: "FILED", label: "Filed" },
+              ]}
             />
           </>
         )}

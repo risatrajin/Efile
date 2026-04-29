@@ -5,6 +5,7 @@ import { api, fmtError } from "../lib/api";
 import { LogOut, KeyRound, BookOpen, Download, Phone, ArrowLeft } from "lucide-react";
 import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
+import TwoFactorCard from "../components/shared/TwoFactorCard";
 
 function Toggle({ checked, onChange, testid }) {
   return (
@@ -136,6 +137,14 @@ export default function AccountPage() {
         }}
       />
 
+      <TwoFactorCard
+        me={me}
+        onChange={(next) => {
+          setMe(next);
+          setUser((u) => (u && typeof u === "object" ? { ...u, two_factor_enabled: !!next.two_factor_enabled } : u));
+        }}
+      />
+
       {/* Account information */}
       <div className="card" data-testid="account-info-card">
         <div className="section-label" style={{ marginBottom: 16 }}>ACCOUNT INFORMATION</div>
@@ -217,7 +226,7 @@ export default function AccountPage() {
       <div className="card" data-testid="help-card">
         <div className="section-label" style={{ marginBottom: 16 }}>HELP & SUPPORT</div>
         <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-          Have questions? Contact us at <a className="link-underline" style={{ color: "#1565c0" }} href="mailto:support@cloudtax.ca">support@cloudtax.ca</a> or call <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={12} /> 1-888-CloudTax</span>.
+          Have questions? Contact us at <a className="link-underline" style={{ color: "#1565c0" }} href="mailto:support@cloudtax.ca">support@cloudtax.ca</a> or call <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={12} /> +1 888-953-2112</span>.
         </p>
         <div className="flex gap-2 mt-4">
           <button className="btn btn-secondary btn-sm" data-testid="view-faq"><BookOpen size={12} /> View FAQ ›</button>
