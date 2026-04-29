@@ -253,6 +253,27 @@
 
 **Tests**: testing_agent_v3_fork iter 19 — Backend pytest **100%** (2 PASS, 1 SKIP — skip is due to seed-data shape post-1b, not a failure). Frontend Playwright **100%** on every assertion (no FILED in cpa-move-to/admin-move-to, file-with-cra form atomically transitions IN_REVIEW → FILED with all data persisted, FiledReturnCard renders all 5 summary rows on reload, admin rollback FILED→IN_REVIEW still works, `/portal` `nav-tabs` count=0, header cluster intact). Zero issues.
 
+### Iter 27 (Feb 2026 — 5-item Message-664 batch: Resend OTP, password eye toggle, FILED dropdown banner, mandatory filing summary, SECURITY & PRIVACY consolidation)
+**Backend**:
+- `email_service.py` (NEW) — Resend SDK wrapper used for transactional emails. `send_otp_code()` mirrors the prior SES helper's signature so callers swap cleanly. Resend trial-mode key currently delivers only to the verified account email; the inline `debug_otp` fallback continues to work for arbitrary recipients.
+- `_issue_otp()` extended with a 30-second resend cooldown enforced against the most recent challenge for (user_id, purpose) regardless of `used` flag. `enforce_cooldown=False` on `/auth/login` and `/auth/2fa/enable-init` (entry points), `True` on the new `/auth/2fa/resend` endpoint.
+- `OTP_TTL_MIN` reduced from 10 → 5 minutes. Both enable-init and login-2FA challenge responses now include `expires_in_sec=300` and `resend_after_sec=30` so the frontend can render an accurate countdown.
+- `POST /api/auth/2fa/resend` (NEW) — burns the prior challenge, issues a fresh one with the cooldown check, returns the same shape as enable-init. Used by both the login OTP step and the 2FA enrolment flow.
+- `POST /api/engagements/{eid}/file-with-cra` — `filing_summary` is now MANDATORY. Whitelist parses the JSON, treats empty/whitespace-only strings as missing, and rejects with 400 if any of `net_income / total_tax_assessed / instalments_paid / balance_owing` are missing. `payment_due_date` remains optional. Error messages are user-readable and tell the CPA exactly which fields are missing.
+- All OTP `ses_service.send_otp_code` callsites swapped to `email_service.send_otp_code`. Other transactional emails (invites, password reset, filing-complete) still use SES — that migration is out of scope for this batch.
+
+**Frontend**:
+- `<PasswordField>` (NEW shared) — wraps an input with an Eye/EyeOff toggle. Auto-emits `{testid}-toggle` suffixes for the toggle button. Used by Login, ForgotPassword/ResetPassword, SetPassword, Account.js change-password, and AdminSettings change-password.
+- `Login.js` — replaced the inline password input with `<PasswordField>`. OTP step now has a "Resend code" link with a 30-second countdown driven by `resend_after_sec` from the backend; clicks call `/auth/2fa/resend` and reset the cooldown. Description updated to "expires in 5 minutes" to match the new TTL.
+- `AuthContext.login()` forwards `expires_in_sec` and `resend_after_sec` from the 2FA challenge response so consumers can hydrate the UI.
+- `Account.js` — `<TwoFactorCard>` consolidated INSIDE the existing SECURITY & PRIVACY card (uses new `embedded` prop to skip the wrapper card+label). Standalone TwoFactorCard above the security-card removed. Change-password sub-form upgraded to `<PasswordField>` × 3 with eye toggles.
+- `AdminSettings.js` (ProfileTab) — `<TwoFactorCard>` retained as its own card with its label updated from "SECURITY" → "SECURITY & PRIVACY". Change-password form upgraded to `<PasswordField>` × 3.
+- `<TwoFactorCard>` — added `embedded` prop, label updated to "SECURITY & PRIVACY".
+- `<MoveToDropdown>` — when `current === "FILED"`: trigger renders a blue `CheckCircle2` icon (replacing the dot) and label "Step: Filed"; opening the menu shows a blue banner (`testid='{prefix}-filed-banner'`) reading "**Already filed with CRA.** Move back only to apply corrections — filing data is preserved." and the section label flips to "ROLL BACK TO". The four legacy stage rows (REFERRED..IN_REVIEW) remain clickable for rollback. Non-FILED behaviour unchanged.
+- `CpaEngagement.js` `<FileWithCRACard>` — Filed Return Summary fields (Net income / Total tax assessed / Instalments paid / Balance owing) now marked with `*` and validated client-side before submission with a clear "Please complete the Filed Return Summary. Missing: ..." error.
+
+**Tests**: testing_agent_v3_fork iter 20 → backend pytest **11/11 PASS** (`test_iter27_resend_otp_filing_summary.py`: enable-init shape, enable-confirm + login-2FA + verify-login + disable round-trip, disable rejects wrong password, resend immediate=429 cooldown, resend after 31s issues new challenge + burns prior, 5 wrong codes burns the challenge, file-with-cra missing/incomplete/empty filing_summary all return 400 with exact messages, payment_due_date-optional success path returns 200 + filing_summary persisted). Frontend Playwright 100% PASS (login-password-toggle flips type, security-card contains the only TwoFactorCard, password-change form eye toggles ×3 functional on Account + AdminSettings, MoveToDropdown FILED trigger shows CheckCircle2 + "Step: Filed", FiledReturnCard renders payment_due_date='—' when omitted).
+
 ## Backlog (prioritized)
 
 ### P0 (ship-blocking for real pilot — user-action required)
