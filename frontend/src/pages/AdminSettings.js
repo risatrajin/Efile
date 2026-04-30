@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, fmtError, initials } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
+import UserAvatar from "../components/shared/UserAvatar";
 import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import TwoFactorCard from "../components/shared/TwoFactorCard";
@@ -268,6 +269,7 @@ function AddMemberModal({ onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [link, setLink] = useState(null);
+  const [emailSent, setEmailSent] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
   const togglePerm = (k) => setForm((f) => ({ ...f, permissions: { ...f.permissions, [k]: !f.permissions[k] } }));
@@ -436,6 +438,8 @@ function RolesTab() {
   // When the menu is rendered as a fixed-position overlay we need to know
   // where to anchor it. Stored as {top, right} relative to the viewport.
   const [menuAnchor, setMenuAnchor] = useState(null);
+  const [resendResult, setResendResult] = useState(null);
+  const [resendBusy, setResendBusy] = useState(null);     // uid being resent
 
   const load = async () => {
     try { const { data } = await api.get("/users/team"); setTeam(data); } catch (x) { setErr(fmtError(x)); }
@@ -499,6 +503,20 @@ function RolesTab() {
     }
   };
 
+  const doResendInvite = async (u) => {
+    setOpenMenu(null);
+    setErr("");
+    setResendBusy(u.id);
+    try {
+      const { data } = await api.post(`/users/${u.id}/resend-invite`);
+      setResendResult({ user: u, link: data.invite_link, emailSent: !!data.email_sent });
+    } catch (x) {
+      setErr(fmtError(x));
+    } finally {
+      setResendBusy(null);
+    }
+  };
+
   return (
     <div data-testid="settings-roles-tab">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
@@ -535,7 +553,7 @@ function RolesTab() {
                 <tr key={u.id} style={{ borderTop: "1px solid var(--border-default)" }} data-testid={`role-row-${u.id}`}>
                   <td style={{ padding: "14px 16px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div className="avatar avatar-sm" style={{ flexShrink: 0 }}>{initials(u.name)}</div>
+                      <UserAvatar user={u} size={32} testid={`role-avatar-${u.id}`} />
                       <span style={{ fontSize: 13 }}>{u.name}</span>
                     </div>
                   </td>
@@ -618,6 +636,21 @@ function RolesTab() {
                         ><Pencil size={14} /> Edit member</button>
                         <button
                           type="button"
+                          onClick={() => doResendInvite(u)}
+                          disabled={resendBusy === u.id}
+                          data-testid={`role-actions-resend-${u.id}`}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            width: "100%", padding: "9px 12px", borderRadius: 6,
+                            background: "transparent", border: "none",
+                            cursor: resendBusy === u.id ? "wait" : "pointer", fontSize: 13,
+                            color: "var(--text-primary)",
+                          }}
+                          onMouseEnter={(e) => { if (resendBusy !== u.id) e.currentTarget.style.background = "var(--bg-subtle)"; }}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                        ><Mail size={14} /> {resendBusy === u.id ? "Sending…" : "Resend invitation"}</button>
+                        <button
+                          type="button"
                           onClick={() => { setConfirmRemove(u); setOpenMenu(null); }}
                           data-testid={`role-actions-remove-${u.id}`}
                           style={{
@@ -640,6 +673,12 @@ function RolesTab() {
       </div>
       {showAdd && <AddMemberModal onClose={() => setShowAdd(false)} onDone={load} />}
       {editing && <EditMemberModal user={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />}
+      {resendResult && (
+        <ResendResultModal
+          result={resendResult}
+          onClose={() => setResendResult(null)}
+        />
+      )}
       {confirmRemove && (
         <div className="modal-overlay" onClick={() => setConfirmRemove(null)} data-testid="remove-member-modal">
           <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
@@ -659,6 +698,72 @@ function RolesTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Resend-invitation result modal — shown after the admin clicks the
+ * "Resend invitation" menu item. Surfaces the fresh link + copy button +
+ * email-delivery status, mirroring the Add-Member success view.
+ */
+function ResendResultModal({ result, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!result.link) return;
+    try {
+      await navigator.clipboard.writeText(result.link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = result.link; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); setCopied(true); setTimeout(() => setCopied(false), 2000); } finally { document.body.removeChild(ta); }
+    }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose} data-testid="resend-result-modal">
+      <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 600 }}>Invitation resent</h2>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="stack-md">
+          {result.emailSent ? (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", background: "#e8f5e9", border: "1px solid #c8e6c9", borderRadius: 10 }}>
+              <Check size={16} style={{ color: "#1b5e20", flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "#0d2914" }}>
+                <strong>New invitation email sent</strong> to <code style={{ background: "transparent" }}>{result.user.email}</code>. Their previous link has been revoked.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", background: "#fff3e0", border: "1px solid #ffcc80", borderRadius: 10 }}>
+              <Mail size={16} style={{ color: "#e65100", flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "#2c1810" }}>
+                <strong>Email not delivered.</strong> Share the fresh link below manually — the previous link has been revoked either way.
+              </div>
+            </div>
+          )}
+          <div className="muted" style={{ fontSize: 12 }}>Fresh invitation link (also included in the email):</div>
+          <div style={{ position: "relative" }}>
+            <code style={{ display: "block", padding: "12px 72px 12px 12px", background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all", border: "1px solid var(--border-default)" }} data-testid="resend-link">{result.link}</code>
+            <button
+              onClick={copy}
+              data-testid="resend-link-copy"
+              style={{
+                position: "absolute", top: 6, right: 6,
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "6px 12px", borderRadius: 6,
+                background: copied ? "#e8f5e9" : "#fff",
+                border: `1px solid ${copied ? "#a5d6a7" : "var(--border-default)"}`,
+                color: copied ? "#1b5e20" : "var(--text-primary)",
+                fontSize: 12, fontWeight: 500, cursor: "pointer",
+              }}
+            >{copied ? <><Check size={12} /> Copied</> : <><Download size={12} /> Copy</>}</button>
+          </div>
+          <button onClick={onClose} className="btn btn-primary" style={{ width: "100%", padding: "12px" }} data-testid="resend-result-close">Done</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -816,6 +816,55 @@ async def update_user(uid: str, body: dict, user: dict = Depends(require_role("A
     return u
 
 
+@api.post("/users/{uid}/resend-invite")
+async def resend_invite(uid: str, user: dict = Depends(require_role("ADMIN"))):
+    """Reissue the set-password invitation link for a team member who hasn't
+    activated yet (or who wants a fresh link). Invalidates the user's prior
+    tokens so the old email's link stops working.
+
+    Works for any non-client staff account. If the user is already active
+    (has a password set), this still issues a fresh link — useful as a
+    password-reset for team members who can't use the Forgot Password flow.
+    """
+    db = get_db()
+    target = await db.users.find_one({"id": uid})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("role") == "CLIENT":
+        raise HTTPException(400, "Client invites are managed from the client record")
+    if (target.get("email") or "").endswith("@cloudtax.invalid"):
+        raise HTTPException(400, "Cannot resend an invite to a removed member")
+    now = datetime.now(timezone.utc)
+    # Burn all unused tokens for this user so only the newest link works.
+    await db.password_reset_tokens.update_many(
+        {"user_id": uid, "used": False},
+        {"$set": {"used": True, "revoked_at": now, "revoked_by_id": user["id"]}},
+    )
+    token = new_invite_token()
+    await db.password_reset_tokens.insert_one({
+        "id": str(uuid.uuid4()),
+        "token": token,
+        "user_id": uid,
+        "used": False,
+        "expires_at": now + timedelta(days=7),
+        "created_at": now,
+    })
+    invite_link = f"{FRONTEND_URL}/set-password?token={token}"
+    email_result = ses_service.send_invite(
+        target["email"],
+        target.get("name") or target["email"],
+        invite_link,
+        target.get("role", "CPA"),
+    )
+    log.info("Invite resent: %s -> %s (by %s)", target.get("email"), invite_link, user.get("email"))
+    return {
+        "ok": True,
+        "invite_link": invite_link,
+        "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
+        "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+    }
+
+
 @api.delete("/users/{uid}")
 async def delete_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
     """Remove a member. Protects against self-delete and last-admin-delete.
