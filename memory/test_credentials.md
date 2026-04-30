@@ -4,7 +4,7 @@
 > All demo clients, WS partners, and engagements were cleared.
 
 ## Admin
-- `nim@cloudtax.ca` / `CloudTax2026!` (Nim Balachandran)
+- `admin@cloudtax.ca` / `CloudTax2026!` (Nim Balachandran)
 - Home: `/admin/dashboard`
 
 ## CPAs
