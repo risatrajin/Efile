@@ -24,11 +24,15 @@ api.interceptors.response.use(
   (err) => {
     const status = err?.response?.status;
     if (status === 401) {
+      // Only show "session expired" when the user *had* a token that became
+      // invalid (explicit log-out-prompt UX). A 401 with no local token
+      // simply means "you're not logged in" — don't bully them with a
+      // banner saying their session expired when it never existed.
+      const hadToken = !!localStorage.getItem("ct_token");
       try { localStorage.removeItem("ct_token"); } catch (_) {}
-      // Avoid redirect loops on the login / password-reset pages themselves.
       const p = window.location.pathname || "";
       const isAuthPage = p === "/login" || p.startsWith("/set-password") || p.startsWith("/forgot-password") || p.startsWith("/reset-password");
-      if (!isAuthPage) {
+      if (!isAuthPage && hadToken) {
         window.location.href = "/login?session=expired";
       }
     }

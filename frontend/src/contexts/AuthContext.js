@@ -9,6 +9,15 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     (async () => {
+      // Skip the /auth/me round-trip entirely when there's no token — avoids
+      // producing a loud 401 in the network tab + Playwright/Sentry noise
+      // for every unauthenticated first-paint.
+      const token = (() => { try { return localStorage.getItem("ct_token"); } catch { return null; } })();
+      if (!token) {
+        setUser(false);
+        setBooting(false);
+        return;
+      }
       try {
         const { data } = await api.get("/auth/me");
         setUser(data);
