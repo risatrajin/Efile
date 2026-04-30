@@ -624,9 +624,17 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
         "created_at": datetime.now(timezone.utc),
     })
     invite_link = f"{FRONTEND_URL}/set-password?token={token}"
-    ses_service.send_invite(body.email, body.name, invite_link, body.role)
-    log.info("Invite issued: %s -> %s", body.email, invite_link)
-    return {"user_id": uid, "invite_link": invite_link}
+    # Dispatch the welcome email via Resend (welcome_cpa / welcome_ws / welcome_client).
+    # ``ses_service.send_invite`` is now a Resend proxy (iter 33); it schedules an
+    # async task so the HTTP response isn't blocked by network.
+    email_result = ses_service.send_invite(body.email, body.name, invite_link, body.role)
+    log.info("Invite issued: %s -> %s (email scheduled=%s)", body.email, invite_link, bool(email_result.get("success") or email_result.get("scheduled")))
+    return {
+        "user_id": uid,
+        "invite_link": invite_link,
+        "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
+        "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+    }
 
 
 class UpdateProfileIn(BaseModel):

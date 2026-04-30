@@ -288,6 +288,7 @@ function AddMemberModal({ onClose, onDone }) {
         permissions: form.permissions,
       });
       setLink(data.invite_link);
+      setEmailSent(!!data.email_sent);
       await onDone();
     } catch (e) { setErr(fmtError(e)); }
     setBusy(false);
@@ -316,7 +317,36 @@ function AddMemberModal({ onClose, onDone }) {
         </div>
         {link ? (
           <div className="stack-md">
-            <div className="muted" style={{ fontSize: 13 }}>Invitation created. Share this link with the new member so they can set their password:</div>
+            {emailSent ? (
+              <div
+                data-testid="invite-email-sent"
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  padding: "12px 14px", background: "#e8f5e9",
+                  border: "1px solid #c8e6c9", borderRadius: 10,
+                }}
+              >
+                <Check size={16} style={{ color: "#1b5e20", flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: 13, lineHeight: 1.5, color: "#0d2914" }}>
+                  <strong>Invitation email sent</strong> to <code style={{ background: "transparent" }}>{form.email}</code>. They&rsquo;ll receive a CloudTax welcome email with a secure link to set their password.
+                </div>
+              </div>
+            ) : (
+              <div
+                data-testid="invite-email-fallback"
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  padding: "12px 14px", background: "#fff3e0",
+                  border: "1px solid #ffcc80", borderRadius: 10,
+                }}
+              >
+                <Mail size={16} style={{ color: "#e65100", flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: 13, lineHeight: 1.5, color: "#2c1810" }}>
+                  <strong>Email not delivered.</strong> Share the link below manually with the new member so they can set their password.
+                </div>
+              </div>
+            )}
+            <div className="muted" style={{ fontSize: 12 }}>Invitation link (also included in the email):</div>
             <div style={{ position: "relative" }}>
               <code style={{ display: "block", padding: "12px 72px 12px 12px", background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all", border: "1px solid var(--border-default)" }} data-testid="invite-link">{link}</code>
               <button
