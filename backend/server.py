@@ -1036,11 +1036,30 @@ async def delete_user(uid: str, permanent: bool = False, user: dict = Depends(re
             if active_admins <= 1:
                 raise HTTPException(400, "Cannot permanently delete the last active admin")
         if target.get("role") == "CLIENT":
-            # Guard: block if the client still has engagements — data integrity
-            # trumps cleanup. The admin must unlink/delete engagements first.
-            linked = await db.engagements.count_documents({"client_id": uid})
-            if linked > 0:
-                raise HTTPException(400, f"This client has {linked} engagement(s). Delete those first before permanently removing the account.")
+            # Cascade: a hard-deleted client must also delete their linked
+            # corporations + engagements + documents/checklist/etc. Leaving
+            # orphans behind makes the pipeline show "phantom" rows against
+            # no actual client user.
+            corps = [c async for c in db.corporations.find({"client_id": uid}, {"_id": 0})]
+            corp_ids = [c["id"] for c in corps]
+            eng_ids: list[str] = []
+            if corp_ids:
+                eng_ids = [e["id"] async for e in db.engagements.find({"corporation_id": {"$in": corp_ids}}, {"_id": 0, "id": 1})]
+            if eng_ids:
+                await db.documents.delete_many({"engagement_id": {"$in": eng_ids}})
+                await db.checklist.delete_many({"engagement_id": {"$in": eng_ids}})
+                await db.extracted_data.delete_many({"engagement_id": {"$in": eng_ids}})
+                await db.opportunities.delete_many({"engagement_id": {"$in": eng_ids}})
+                await db.time_entries.delete_many({"engagement_id": {"$in": eng_ids}})
+                await db.engagement_notes.delete_many({"engagement_id": {"$in": eng_ids}})
+                await db.status_history.delete_many({"engagement_id": {"$in": eng_ids}})
+                await db.engagements.delete_many({"id": {"$in": eng_ids}})
+            if corp_ids:
+                await db.corporations.delete_many({"id": {"$in": corp_ids}})
+            log.info(
+                "Cascade-deleted %d corps, %d engagements alongside client %s",
+                len(corp_ids), len(eng_ids), uid,
+            )
         await db.users.delete_one({"id": uid})
         # Burn any outstanding invite/reset tokens for tidy book-keeping.
         await db.password_reset_tokens.delete_many({"user_id": uid})
@@ -1079,6 +1098,18 @@ async def delete_user(uid: str, permanent: bool = False, user: dict = Depends(re
             "session_invalidated_at": datetime.now(timezone.utc),
         }},
     )
+    # Lifecycle side-effects to keep the pipeline/table in sync:
+    # - CPA soft-delete → unassign their engagements so the pipeline no longer
+    #   attributes work to a removed member.
+    # - CLIENT soft-delete → the orphan filter in list_engagements already
+    #   hides their engagements (because ``client.is_active=False``). We
+    #   explicitly leave the corporation+engagement rows intact so an admin
+    #   can reactivate the client later and resume where they left off.
+    if target.get("role") == "CPA":
+        await db.engagements.update_many(
+            {"assigned_cpa_id": uid},
+            {"$set": {"assigned_cpa_id": None, "updated_at": datetime.now(timezone.utc)}},
+        )
     log.info("Admin %s removed user %s (%s)", user.get("email"), uid, target.get("email"))
     return {"ok": True, "id": uid}
 
@@ -1263,6 +1294,14 @@ async def deactivate_user(uid: str, user: dict = Depends(require_role("ADMIN")))
             "session_invalidated_at": datetime.now(timezone.utc),
         }},
     )
+    # CPA safeguard: unassign any engagements that pointed to this CPA so
+    # their client list stops surfacing them as "assigned". Admin can later
+    # reassign via the Clients pipeline.
+    if target.get("role") == "CPA":
+        await db.engagements.update_many(
+            {"assigned_cpa_id": uid},
+            {"$set": {"assigned_cpa_id": None, "updated_at": datetime.now(timezone.utc)}},
+        )
     log.info("Admin %s deactivated user %s", user.get("email"), uid)
     return {"ok": True, "id": uid}
 
@@ -1393,6 +1432,22 @@ async def list_engagements(user: dict = Depends(get_current_user)):
         q = {"corporation_id": corp["id"]}
     engs = [e async for e in db.engagements.find(q).sort("referral_date", -1)]
     out = await _enrich_engagements(engs)
+    # Orphan filter — drop engagements whose client user record has been
+    # permanently deleted OR deactivated. This keeps the pipeline/table in
+    # lock-step with the Users tab even if pre-iter-40 rows left dangling
+    # corporation.client_id pointers. CLIENT's own view is already scoped by
+    # their own user id so this filter is a no-op for them.
+    def _is_valid(e: dict) -> bool:
+        client = e.get("client")
+        if not client:
+            return False
+        if client.get("is_active") is False:
+            return False
+        corp = e.get("corporation") or {}
+        if not corp.get("id"):
+            return False
+        return True
+    out = [e for e in out if _is_valid(e)]
     if role == "WS_PARTNER":
         out = [redact_for_ws(e) for e in out]
     if role == "CLIENT":

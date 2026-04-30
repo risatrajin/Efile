@@ -276,6 +276,29 @@
 
 ## Backlog (prioritized)
 
+### Iter 40 (Apr 30, 2026 — Client data consistency across Admin/Partner/CPA views)
+
+**Bug**: Admin, WS Partner, and CPA views all showed "phantom clients" even when the DB had no active clients. The pipeline kept rendering rows for previously-deleted test users because corporation + engagement rows were left behind after `DELETE /users/{id}?permanent=true` (iter 37) — the permanent delete didn't cascade, and `list_engagements` had no orphan guard.
+
+**Root cause**:
+- Iter-37 permanent-delete for CLIENT either blocked on engagements or left the corporation/engagement rows untouched, which left dangling `client_id` pointers to non-existent users.
+- `GET /api/engagements` didn't defensively filter out engagements whose client user had been soft-deleted or hard-deleted.
+- Deactivating a CPA didn't unassign their engagements, so the Clients pipeline kept attributing rows to removed members.
+
+**Fixes (backend)**:
+- `GET /api/engagements` now applies an **orphan filter**: drops any engagement whose `client` is missing OR has `is_active=False` OR whose corporation row is missing. ADMIN / WS_PARTNER / CPA all share this filter, so every view is locked to the same source of truth.
+- `DELETE /api/users/{id}?permanent=true` for a CLIENT role now **cascades**: purges corporations → engagements → documents → checklist → extracted_data → opportunities → time_entries → engagement_notes → status_history in one atomic sweep. No orphans left behind.
+- `POST /api/users/{id}/deactivate` AND the soft-delete `DELETE /api/users/{id}` now, for a CPA target, null out `assigned_cpa_id` on every engagement the CPA owned. Pipeline stops attributing work to removed members automatically.
+- One-off cleanup purged 2 orphaned corporations + 2 engagements + 45 child records (documents/checklist/etc.) inherited from prior test cycles.
+
+**Tests**: `test_client_data_consistency.py` — **4/4 PASS**:
+- deactivated-client engagement no longer visible to admin,
+- cascade permanent-delete wipes corp + engagement + 404s `/engagements/{id}`,
+- ADMIN/WS/CPA pipelines all return `[]` when DB is clean (no phantoms),
+- CPA deactivate unassigns their engagements.
+
+Combined regression: **34/34 PASS** across iters 35/36/37/38/40.
+
 ### Iter 39 (Apr 30, 2026 — CPA tab consistency + unified stat cards + centered header logo + login copy)
 
 **Bug**: CPA tab was showing REMOVED users as active experts (e.g. "Iter35 New", "Search SoftDel", "Toggle Test") because `GET /api/users` returned every row regardless of `is_active`. The Users tab (iter 36) correctly reflected their REMOVED status, creating a confusing mismatch.
