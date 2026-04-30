@@ -595,16 +595,44 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
     db = get_db()
     if body.role not in ("CLIENT", "CPA", "WS_PARTNER", "ADMIN"):
         raise HTTPException(400, "Invalid role")
-    existing = await db.users.find_one({"email": body.email.lower()})
+    email_lc = (body.email or "").strip().lower()
+    if not email_lc or "@" not in email_lc:
+        raise HTTPException(400, "Please enter a valid email address")
+    existing = await db.users.find_one({"email": email_lc})
     if existing:
-        raise HTTPException(409, "User already exists")
+        # Build a descriptive message so the admin understands WHY the email is
+        # taken — the Roles table hides CLIENTs and soft-deleted members, so a
+        # bare "already exists" is misleading.
+        ex_role = existing.get("role")
+        ex_active = existing.get("is_active", True)
+        ex_name = existing.get("name") or "someone"
+        if ex_role == "CLIENT":
+            detail = (
+                f"This email is already registered as a client account ({ex_name}). "
+                "Client accounts are managed from the client record — please use a different email for staff."
+            )
+        elif not ex_active:
+            # This branch is effectively unreachable because delete_user rotates
+            # the email to `deleted+<id8>@cloudtax.invalid`, but we keep it as
+            # defensive copy for any legacy soft-deleted rows.
+            detail = (
+                "This email belongs to a previously removed member. "
+                "Please use a different address or contact support to reactivate."
+            )
+        else:
+            role_label = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "WS Partner"}.get(ex_role, ex_role or "member")
+            detail = (
+                f"This email is already in use by an active {role_label} ({ex_name}). "
+                "Check the Roles & Permissions table above or use a different address."
+            )
+        raise HTTPException(409, detail)
     uid = str(uuid.uuid4())
     temp_pass = uuid.uuid4().hex  # random placeholder
     # Default display_role from canonical role
     default_display = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner", "CLIENT": "Client"}.get(body.role, body.role)
     await db.users.insert_one({
         "id": uid,
-        "email": body.email.lower(),
+        "email": email_lc,
         "password_hash": hash_password(temp_pass),
         "name": body.name,
         "role": body.role,
@@ -784,6 +812,15 @@ async def update_user(uid: str, body: dict, user: dict = Depends(require_role("A
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields")
+    # Guard: admins cannot demote themselves or deactivate themselves via this
+    # endpoint. Doing so would brick their session on the very next request
+    # (getting a 403 from require_role("ADMIN")). Protect the Roles &
+    # Permissions UX from this foot-gun.
+    if uid == user["id"]:
+        if "role" in updates and updates["role"] != "ADMIN":
+            raise HTTPException(400, "You cannot change your own role — ask another admin to do it")
+        if "is_active" in updates and not updates["is_active"]:
+            raise HTTPException(400, "You cannot deactivate your own account")
     # Email change path: enforce uniqueness + notify the affected user (in-app).
     email_changed = False
     old_email = target.get("email")

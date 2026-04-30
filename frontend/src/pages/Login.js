@@ -15,6 +15,8 @@ function roleToHome(role) {
 export default function Login() {
   const { login, verifyLoginOtp, user } = useAuth();
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
+  const sessionExpired = sp.get("session") === "expired";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -106,6 +108,23 @@ export default function Login() {
         {!otpState ? (
           <>
             <h2 className="section-title">Sign in</h2>
+            {sessionExpired && (
+              <div
+                className="alert"
+                data-testid="login-session-expired"
+                style={{
+                  background: "#fff3e0",
+                  border: "1px solid #ffcc80",
+                  color: "#6b3f10",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  marginTop: 12,
+                }}
+              >
+                Your session expired. Please sign in again to continue.
+              </div>
+            )}
             <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
               <div className="field">
                 <label className="field-label">Email</label>

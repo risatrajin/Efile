@@ -14,6 +14,28 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Global 401 handler — if the server says our token is invalid/expired, clear
+// local auth and bounce to login. 403 is NOT treated globally because some
+// routes (e.g. admin-only endpoints) can legitimately return 403 and we want
+// the calling component to show a contextual error instead of force-logging
+// out. Callers that want to handle 403 can inspect `e.response.status`.
+api.interceptors.response.use(
+  (r) => r,
+  (err) => {
+    const status = err?.response?.status;
+    if (status === 401) {
+      try { localStorage.removeItem("ct_token"); } catch (_) {}
+      // Avoid redirect loops on the login / password-reset pages themselves.
+      const p = window.location.pathname || "";
+      const isAuthPage = p === "/login" || p.startsWith("/set-password") || p.startsWith("/forgot-password") || p.startsWith("/reset-password");
+      if (!isAuthPage) {
+        window.location.href = "/login?session=expired";
+      }
+    }
+    return Promise.reject(err);
+  },
+);
+
 export function fmtError(e) {
   const d = e?.response?.data?.detail;
   if (!d) return e?.message || "Something went wrong";

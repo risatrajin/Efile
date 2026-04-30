@@ -276,6 +276,29 @@
 
 ## Backlog (prioritized)
 
+### Iter 35 (Apr 30, 2026 — Admin Add Member: descriptive duplicate errors + self-role guard + 401 redirect)
+
+**Bug report**: "Sometimes the system shows 'email already in the list,' but the member is not visible in the table, and occasionally it returns a 'Request failed with status code 403' error."
+
+**Root cause 1 (duplicate confusion)**: The Roles & Permissions table hides CLIENT rows and soft-deleted users; a generic 409 `"User already exists"` left admins unable to tell *where* the collision was. Leftover CLIENT records (e.g. `john@mail.com`, `test@mail.com`) in the DB would block a staff invite on that email without the admin ever seeing why.
+
+**Root cause 2 (403)**: `require_role("ADMIN")` returns 403 whenever `user.role != "ADMIN"`. The foot-gun: an admin could PATCH their own role to `CPA` or `is_active=false` via the Edit Member modal, bricking their own session — the very next POST to `/users/invite` would then 403.
+
+**Backend** (`server.py`):
+- `POST /api/users/invite` now returns a contextual 409:
+  - CLIENT match → "This email is already registered as a client account (<Name>). Client accounts are managed from the client record — please use a different email for staff."
+  - Active staff match → "This email is already in use by an active <Role> (<Name>). Check the Roles & Permissions table above or use a different address."
+  - Soft-deleted match → defensive copy (normally unreachable since `delete_user` rotates the email).
+  - Also normalizes email to lowercase once at the top + adds a basic `@` sanity check returning 400.
+- `PATCH /api/users/{uid}` now rejects `uid == current_user.id` attempts to (a) change own role to anything other than ADMIN, or (b) set `is_active=false`. Returns 400 with a human message explaining to ask another admin.
+
+**Frontend** (`lib/api.js`, `pages/Login.js`, `pages/AdminSettings.js`):
+- Axios global response interceptor on 401 clears the local token and redirects to `/login?session=expired` (skipping the auth pages themselves to avoid loops). 403 is intentionally NOT globalised so legitimate admin-only endpoint responses can surface contextually.
+- Login page renders a `login-session-expired` amber banner when the `?session=expired` query param is present.
+- `AddMemberModal.submit()` catches 403 specifically and shows "Your admin session has expired or your permissions have changed. Please sign out and sign back in to continue." instead of the bare backend message.
+
+**Tests**: `test_invite_duplicate_and_self_role.py` — **7/7 PASS** (active CPA collision returns descriptive 409 + names the role + names the member, case-insensitive lookup, invalid email rejected, new email success, self-role-demote 400, self-deactivate 400, self name-change still 200 = guard doesn't over-block).
+
 ### Iter 34 (Feb 2026 — Roles & Permissions polish: dedupe, role-based presets, invite-info, copy-link, modal overlays)
 
 **Item 1 — Email uniqueness, dedupe, and hiding soft-deleted users:**

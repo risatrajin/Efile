@@ -292,7 +292,14 @@ function AddMemberModal({ onClose, onDone }) {
       setLink(data.invite_link);
       setEmailSent(!!data.email_sent);
       await onDone();
-    } catch (e) { setErr(fmtError(e)); }
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 403) {
+        setErr("Your admin session has expired or your permissions have changed. Please sign out and sign back in to continue.");
+      } else {
+        setErr(fmtError(e));
+      }
+    }
     setBusy(false);
   };
 
