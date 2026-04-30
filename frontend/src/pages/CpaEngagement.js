@@ -6,11 +6,12 @@ import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import EngagementNotes from "../components/shared/EngagementNotes";
 import { ChatThread } from "./Messages";
-import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft } from "lucide-react";
+import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft, Settings } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 import FiledReturnCard from "../components/shared/FiledReturnCard";
 import T183PlacementModal from "../components/shared/T183PlacementModal";
+import ChecklistSettingsModal from "../components/shared/ChecklistSettingsModal";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
 
@@ -649,6 +650,7 @@ export default function CpaEngagement() {
   const [newTime, setNewTime] = useState({ category: "T2_PREPARATION", hours: "", description: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [showChecklistSettings, setShowChecklistSettings] = useState(false);
 
   const load = async () => {
     try {
@@ -1111,7 +1113,18 @@ export default function CpaEngagement() {
           {/* Sidebar */}
           <div className="stack-lg">
             <div className="card" data-testid="review-checklist">
-              <h2 className="card-title">Review checklist</h2>
+              <div className="flex items-center between">
+                <h2 className="card-title">Review checklist</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowChecklistSettings(true)}
+                  data-testid="review-checklist-settings-trigger"
+                  title="Checklist settings"
+                  style={{ padding: 4, color: "var(--text-secondary)" }}
+                >
+                  <Settings size={14} />
+                </button>
+              </div>
               <div className="mt-3">
                 {cl.map((c) => (
                   <label key={c.id} className="list-row" style={{ cursor: "pointer" }}>
@@ -1121,6 +1134,11 @@ export default function CpaEngagement() {
                     </div>
                   </label>
                 ))}
+                {cl.length === 0 && (
+                  <div className="muted" style={{ fontSize: 12, padding: "8px 0" }} data-testid="review-checklist-empty">
+                    No items yet — click the gear icon to add them.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1213,6 +1231,13 @@ export default function CpaEngagement() {
       {showOppModal && <AddOppModal onClose={() => setShowOppModal(false)} onCreate={createOpp} />}
       {flagDoc && <FlagIssueModal doc={flagDoc} onClose={() => setFlagDoc(null)} onSave={flagIssue} />}
       {showNewReq && <NewDocRequestModal onClose={() => setShowNewReq(false)} onCreate={requestNewDoc} />}
+      {showChecklistSettings && (
+        <ChecklistSettingsModal
+          mode="cpa"
+          onClose={() => setShowChecklistSettings(false)}
+          onSaved={load}
+        />
+      )}
     </div>
   );
 }

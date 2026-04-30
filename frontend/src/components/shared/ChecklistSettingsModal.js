@@ -1,22 +1,42 @@
-import React, { useEffect, useState } from "react";
-import { X, Plus, GripVertical } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+import { X, Plus, GripVertical, Check } from "lucide-react";
 import { api, fmtError } from "../../lib/api";
 
-export default function ChecklistSettingsModal({ onClose, onSaved }) {
+/**
+ * Shared checklist-settings dialog used by:
+ *   • Partner / Admin — manages the pre-filing checklist
+ *     (endpoint: ``/partner/checklist-template``).
+ *   • CPA / Admin — manages the review checklist
+ *     (endpoint: ``/cpa/review-checklist-template``).
+ *
+ * Both endpoints return/accept ``{items: [{label, optional}]}`` and propagate
+ * saves globally to every engagement so the template stays in sync with the
+ * render on every client's page.
+ */
+export default function ChecklistSettingsModal({ onClose, onSaved, mode = "partner" }) {
+  const endpoint = mode === "cpa" ? "/cpa/review-checklist-template" : "/partner/checklist-template";
+  const title = mode === "cpa" ? "Review checklist settings" : "Checklist settings";
   const [items, setItems] = useState([]);
+  const [initial, setInitial] = useState([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [saved, setSaved] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
+  const savedTimerRef = useRef(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get("/partner/checklist-template");
-        setItems(data.items || []);
+        const { data } = await api.get(endpoint);
+        const loaded = data.items || [];
+        setItems(loaded);
+        setInitial(JSON.parse(JSON.stringify(loaded)));
       } catch (e) { setErr(fmtError(e)); }
     })();
-  }, []);
+  }, [endpoint]);
+
+  useEffect(() => () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current); }, []);
 
   const updateItem = (i, label) => setItems(items.map((it, idx) => idx === i ? { ...it, label } : it));
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
@@ -38,12 +58,25 @@ export default function ChecklistSettingsModal({ onClose, onSaved }) {
     setDragIdx(null);
   };
 
+  // Dirty-state check — disables Save until the admin actually changes something.
+  const dirty = JSON.stringify(items) !== JSON.stringify(initial);
+  // All labels must be non-empty to permit save.
+  const hasEmpty = items.some((it) => !String(it.label || "").trim());
+  const canSave = dirty && !hasEmpty && items.length > 0 && !busy;
+
   const save = async () => {
-    setBusy(true); setErr("");
+    if (!canSave) return;
+    setBusy(true); setErr(""); setSaved(false);
     try {
-      await api.put("/partner/checklist-template", { items });
+      const { data } = await api.put(endpoint, { items });
+      const fresh = data.items || items;
+      setInitial(JSON.parse(JSON.stringify(fresh)));
+      setItems(fresh);
+      setSaved(true);
       await onSaved?.();
-      onClose();
+      // Auto-dismiss the saved indicator after a moment so the admin can
+      // continue editing or close; brief delay on close to let them read it.
+      savedTimerRef.current = setTimeout(() => onClose(), 900);
     } catch (e) { setErr(fmtError(e)); }
     setBusy(false);
   };
@@ -52,7 +85,7 @@ export default function ChecklistSettingsModal({ onClose, onSaved }) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} data-testid="checklist-settings-modal">
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: 460, maxHeight: "90vh", overflowY: "auto", padding: 28 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 600 }}>Checklist settings</h2>
+          <h2 style={{ fontSize: 20, fontWeight: 600 }}>{title}</h2>
           <button onClick={onClose} data-testid="checklist-settings-close"><X size={18} /></button>
         </div>
         <p className="muted" style={{ fontSize: 13, marginBottom: 20 }}>Changes apply to all clients globally</p>
@@ -100,13 +133,41 @@ export default function ChecklistSettingsModal({ onClose, onSaved }) {
           </div>
         </div>
 
-        {err && <div className="alert alert-risk" style={{ marginTop: 12 }}>{err}</div>}
+        {err && <div className="alert alert-risk" style={{ marginTop: 12 }} data-testid="checklist-settings-err">{err}</div>}
+        {saved && (
+          <div
+            data-testid="checklist-settings-saved"
+            style={{
+              marginTop: 12, display: "flex", alignItems: "center", gap: 8,
+              padding: "10px 12px", borderRadius: 10,
+              background: "#e8f5e9", border: "1px solid #a5d6a7", color: "#1b5e20",
+              fontSize: 13,
+            }}
+          >
+            <Check size={14} /> Saved. Applied to all clients.
+          </div>
+        )}
+        {hasEmpty && !err && (
+          <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+            Remove or fill in the empty items before saving.
+          </div>
+        )}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
           <span className="muted" style={{ fontSize: 12 }} data-testid="checklist-settings-count">{items.length} items</span>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13 }}>Cancel</button>
-            <button onClick={save} disabled={busy} style={{ padding: "8px 16px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontSize: 13, fontWeight: 500 }} data-testid="checklist-settings-save">{busy ? "Saving…" : "Save changes"}</button>
+            <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13 }} data-testid="checklist-settings-cancel">Cancel</button>
+            <button
+              onClick={save}
+              disabled={!canSave}
+              style={{
+                padding: "8px 16px", borderRadius: 8,
+                background: canSave ? "#1e88e5" : "#bdbdbd",
+                color: "#fff", fontSize: 13, fontWeight: 500,
+                cursor: canSave ? "pointer" : "not-allowed",
+              }}
+              data-testid="checklist-settings-save"
+            >{busy ? "Saving…" : "Save changes"}</button>
           </div>
         </div>
       </div>

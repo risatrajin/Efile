@@ -276,6 +276,35 @@
 
 ## Backlog (prioritized)
 
+### Iter 41 (Apr 30, 2026 — Checklist templates: global propagation + CPA review-checklist settings)
+
+**Bugs**:
+1. Partner Portal's "Checklist settings" modal saved to `db.settings.checklist_template` but never propagated — existing engagements kept their baked-in `pre_filing_checklist` from creation time, making it look like Save Changes did nothing.
+2. CPA Portal's Review Checklist had no settings modal at all — CPAs couldn't add/edit/remove review items.
+
+**Fixes (backend)**:
+- `PUT /api/partner/checklist-template` now **globally propagates** after save: walks every engagement, rebuilds `pre_filing_checklist` from the new template, and preserves `is_completed` for items whose labels still exist (new items start unchecked, dropped items disappear). Response returns `{items, propagated_to: <eng_count>}`.
+- New `GET /api/cpa/review-checklist-template` + `PUT /api/cpa/review-checklist-template` endpoints (CPA + ADMIN roles) mirror the partner pattern for the review checklist. Saves cascade into the per-engagement `db.checklist` collection: upserts by label to preserve completion state, deletes dropped items, inserts new ones unchecked, updates `sort_order`. Default template seeded with 11 items (T2 return complete, NTR prepared, T4/T5 slips, CDA schedule, SBD calculation, prior-year cross-check, QA sign-off, 4 optional extras).
+- Both endpoints reject empty item arrays with 400.
+
+**Fixes (frontend)**:
+- `ChecklistSettingsModal` reworked as a generic shared component driven by a `mode` prop (`"partner"` | `"cpa"`). Title + endpoint derived from mode. Added:
+  - **Dirty-state detection** — Save button disabled (grey) until something actually changes.
+  - **Empty-item guard** — Save disabled if any item has an empty label, with inline "Remove or fill in the empty items before saving" hint.
+  - **Success banner** — green "Saved. Applied to all clients." with a 900ms auto-dismiss.
+  - **Loading state** — Saving… label during the PUT.
+- `CpaEngagement`: gear icon (`Settings` from lucide) now anchored to the Review checklist card header → opens `<ChecklistSettingsModal mode="cpa" />`. Empty-state message "No items yet — click the gear icon to add them." shows when the engagement has zero review items.
+
+**Tests**: `test_checklist_templates.py` — **6/6 PASS**:
+- Partner save propagates to existing engagements (new items appear in `/onboarding-progress`).
+- Partner save preserves per-label completion state across reorder.
+- CPA review template default GET.
+- CPA PUT with empty items → 400.
+- CPA save propagates to per-engagement `db.checklist` collection.
+- CPA endpoint RBAC blocks WS_PARTNER.
+
+Combined regression: **39/39 PASS** across iters 35/36/37/38/40/41. Live-verified via curl: partner PUT → `propagated_to: 1`, CPA GET returns 11 items, CPA PUT → `propagated_to: 1` with new labels appearing in `/engagements/{id}/checklist`.
+
 ### Iter 40 (Apr 30, 2026 — Client data consistency across Admin/Partner/CPA views)
 
 **Bug**: Admin, WS Partner, and CPA views all showed "phantom clients" even when the DB had no active clients. The pipeline kept rendering rows for previously-deleted test users because corporation + engagement rows were left behind after `DELETE /users/{id}?permanent=true` (iter 37) — the permanent delete didn't cascade, and `list_engagements` had no orphan guard.

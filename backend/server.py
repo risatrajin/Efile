@@ -2762,7 +2762,103 @@ async def update_checklist_template(body: ChecklistTemplateIn, user: dict = Depe
         {"$set": {"items": items, "updated_by": user["id"], "updated_at": datetime.now(timezone.utc)}},
         upsert=True,
     )
-    return {"items": items}
+    # Global propagation — the user expects "Changes apply to all clients".
+    # Walk every engagement and rebuild its ``pre_filing_checklist`` from the
+    # new template, preserving ``is_completed`` for any item whose label
+    # still exists (so CPAs/partners don't lose in-flight progress). New
+    # items start unchecked; deleted items are dropped outright.
+    updated = 0
+    async for eng in db.engagements.find({}, {"_id": 0, "id": 1, "pre_filing_checklist": 1}):
+        prev = {c.get("item"): bool(c.get("is_completed")) for c in (eng.get("pre_filing_checklist") or [])}
+        rebuilt = [{
+            "id": str(uuid.uuid4()),
+            "item": it["label"],
+            "is_completed": prev.get(it["label"], False),
+            "sort_order": i,
+        } for i, it in enumerate(items)]
+        await db.engagements.update_one(
+            {"id": eng["id"]},
+            {"$set": {"pre_filing_checklist": rebuilt, "updated_at": datetime.now(timezone.utc)}},
+        )
+        updated += 1
+    log.info("Partner checklist template saved; propagated to %d engagements", updated)
+    return {"items": items, "propagated_to": updated}
+
+
+# ==================== CPA-managed global REVIEW checklist template ====================
+# This mirrors the partner pre-filing template but drives the CPA-only review
+# checklist that lives in the ``db.checklist`` collection (one row per item
+# per engagement). Same UX contract: save → propagate across engagements,
+# preserve per-item completion state on rename-free edits, remove dropped
+# items, add new ones unchecked.
+
+DEFAULT_REVIEW_CHECKLIST_TEMPLATE = [
+    {"label": "T2 return complete", "optional": False},
+    {"label": "Financial statements (NTR) prepared", "optional": False},
+    {"label": "T4/T5 slips generated", "optional": False},
+    {"label": "CDA schedule verified against prior year NOA", "optional": False},
+    {"label": "SBD calculation with passive income check", "optional": False},
+    {"label": "Prior year cross-check", "optional": False},
+    {"label": "QA sign-off", "optional": False},
+    {"label": "Investment reconciliation complete", "optional": True},
+    {"label": "ACB tracking verified", "optional": True},
+    {"label": "Passive income threshold assessed", "optional": True},
+    {"label": "Compensation summary prepared", "optional": True},
+]
+
+
+@api.get("/cpa/review-checklist-template")
+async def get_review_checklist_template(user: dict = Depends(require_role("CPA", "ADMIN"))):
+    db = get_db()
+    doc = await db.settings.find_one({"key": "review_checklist_template"}, {"_id": 0})
+    if not doc:
+        return {"items": DEFAULT_REVIEW_CHECKLIST_TEMPLATE}
+    return {"items": doc.get("items", DEFAULT_REVIEW_CHECKLIST_TEMPLATE)}
+
+
+@api.put("/cpa/review-checklist-template")
+async def update_review_checklist_template(body: ChecklistTemplateIn, user: dict = Depends(require_role("CPA", "ADMIN"))):
+    db = get_db()
+    items = [{"label": str(it.get("label", "")).strip(), "optional": bool(it.get("optional", False))} for it in body.items if str(it.get("label", "")).strip()]
+    if not items:
+        raise HTTPException(400, "Template must have at least one item")
+    await db.settings.update_one(
+        {"key": "review_checklist_template"},
+        {"$set": {"items": items, "updated_by": user["id"], "updated_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    # Global propagation to the per-engagement ``checklist`` collection.
+    eng_ids = [e["id"] async for e in db.engagements.find({}, {"_id": 0, "id": 1})]
+    updated = 0
+    for eid in eng_ids:
+        existing = {r["item"]: r async for r in db.checklist.find({"engagement_id": eid}, {"_id": 0})}
+        # Drop rows that are no longer in the template.
+        labels = {it["label"] for it in items}
+        to_delete = [r["id"] for label, r in existing.items() if label not in labels]
+        if to_delete:
+            await db.checklist.delete_many({"id": {"$in": to_delete}})
+        # Upsert each item by label so completion state is preserved on
+        # non-label changes (e.g. sort_order reshuffles or optional flag).
+        for i, it in enumerate(items):
+            prev = existing.get(it["label"])
+            if prev:
+                await db.checklist.update_one(
+                    {"id": prev["id"]},
+                    {"$set": {"item": it["label"], "sort_order": i}},
+                )
+            else:
+                await db.checklist.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "engagement_id": eid,
+                    "item": it["label"],
+                    "sort_order": i,
+                    "is_completed": False,
+                    "completed_at": None,
+                    "completed_by_id": None,
+                })
+        updated += 1
+    log.info("CPA review checklist template saved; propagated to %d engagements", updated)
+    return {"items": items, "propagated_to": updated}
 
 
 # ==================== Per-tier document templates (admin-managed) ====================
