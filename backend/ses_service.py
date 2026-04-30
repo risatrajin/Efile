@@ -1,139 +1,98 @@
-"""AWS SES transactional email. Fails gracefully (logs only) if SES not configured."""
-import os
+"""Legacy ``ses_service`` surface — now a thin compatibility shim that routes
+every public helper to the Resend-backed template dispatcher in
+``email_templates.send_email``. AWS SES is not used anymore (sandbox-locked);
+this file is kept so existing call-sites in server.py continue to work without
+a mass rename.
+
+Each helper is kept synchronous + fire-and-forget to match the old API. The
+underlying dispatcher runs the Resend SDK in a worker thread, and any
+failure is logged non-fatally.
+"""
+from __future__ import annotations
+
+import asyncio
 import logging
-import boto3
-from botocore.exceptions import ClientError, EndpointConnectionError
+import os
+import re
+from typing import Optional
+
+from email_service import send_otp_code as _resend_send_otp
 
 log = logging.getLogger(__name__)
 
-_client = None
 
-
-def _get_client():
-    global _client
-    if _client is None:
-        _client = boto3.client(
-            "ses",
-            region_name=os.environ["AWS_REGION"],
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-            aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-        )
-    return _client
-
-
-def send(to_email: str, subject: str, html: str, text: str) -> dict:
-    sender = os.environ.get("SES_FROM_EMAIL")
-    if not sender:
-        log.warning("SES_FROM_EMAIL not set; skipping email to %s", to_email)
-        return {"success": False, "error": "sender_not_configured"}
+def _fire_and_forget(template: str, to_email: str, data: dict) -> dict:
+    """Schedule a send on the running event loop. Falls back to a short-lived
+    loop when called from a sync context outside the FastAPI app (tests, CLI).
+    """
+    from email_templates import send_email
     try:
-        resp = _get_client().send_email(
-            Source=sender,
-            Destination={"ToAddresses": [to_email]},
-            Message={
-                "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {
-                    "Text": {"Data": text, "Charset": "UTF-8"},
-                    "Html": {"Data": html, "Charset": "UTF-8"},
-                },
-            },
-        )
-        return {"success": True, "message_id": resp["MessageId"]}
-    except (ClientError, EndpointConnectionError) as e:
-        log.warning("SES send failed (non-fatal): %s", e)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Inside FastAPI — schedule without awaiting.
+            loop.create_task(send_email(to_email, template, data))
+            return {"success": True, "scheduled": True}
+        return loop.run_until_complete(send_email(to_email, template, data))
+    except RuntimeError:
+        return asyncio.run(send_email(to_email, template, data))
+    except Exception as e:
+        log.warning("Email send failed (%s -> %s): %s", template, to_email, e)
         return {"success": False, "error": str(e)}
 
 
-# ---- Templates (minimal warm, on-brand) ----
-
-_STYLE = """
-<style>
-  body { font-family: Georgia, serif; background: #faf9f7; padding: 40px; color: #1a1a1a; }
-  .card { background: #fff; border: 1px solid #ebe7e0; border-radius: 16px; padding: 32px; max-width: 560px; margin: 0 auto; }
-  h1 { font-family: Georgia, serif; font-weight: 400; font-size: 22px; margin: 0 0 16px; letter-spacing: -0.3px; }
-  p { font-family: -apple-system, sans-serif; font-size: 13px; line-height: 1.6; color: #1a1a1a; margin: 8px 0; }
-  .muted { color: #8b8685; font-size: 11px; }
-  .btn { display: inline-block; background: #1a1a1a; color: #faf9f7 !important; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-family: -apple-system, sans-serif; font-size: 12px; font-weight: 500; }
-  .footer { text-align: center; font-size: 11px; color: #b5b0ab; padding-top: 24px; }
-</style>
-"""
-
-
-def _wrap(inner: str) -> str:
-    return f"""<html><head>{_STYLE}</head><body><div class="card">{inner}</div><div class="footer">Powered by CloudTax, in partnership with Wealthsimple</div></body></html>"""
-
+# ---- Public helpers kept for backward compatibility -----------------------
 
 def send_invite(to_email: str, name: str, invite_link: str, role: str) -> dict:
-    inner = f"""<h1>Welcome to CloudTax</h1>
-    <p>Hi {name},</p>
-    <p>You have been invited to the CloudTax and Wealthsimple T2 pilot as a <strong>{role}</strong>. Set your password to get started.</p>
-    <p><a class="btn" href="{invite_link}">Set your password</a></p>
-    <p class="muted">This link expires in 7 days.</p>"""
-    return send(to_email, "Your CloudTax invitation", _wrap(inner), f"Welcome to CloudTax. Set your password: {invite_link}")
+    role_l = (role or "").lower()
+    template = (
+        "welcome_cpa" if role_l == "cpa"
+        else ("welcome_ws" if role_l in ("ws_partner", "partner", "ws") else "welcome_client")
+    )
+    return _fire_and_forget(template, to_email, {"name": name, "link": invite_link})
 
 
 def send_password_reset(to_email: str, name: str, reset_link: str) -> dict:
-    inner = f"""<h1>Reset your CloudTax password</h1>
-    <p>Hi {name},</p>
-    <p>We received a request to reset the password for your CloudTax account. Use the button below to set a new one.</p>
-    <p><a class="btn" href="{reset_link}">Reset password</a></p>
-    <p class="muted">This link expires in 30 minutes. If you didn't request this, you can ignore this email.</p>"""
-    return send(
-        to_email,
-        "Reset your CloudTax password",
-        _wrap(inner),
-        f"Hi {name}, reset your CloudTax password here (expires in 30 min): {reset_link}",
+    # Render a minimal inline email — we don't have a template for this (it's
+    # its own flow) — so we send a plain Resend message via the low-level path.
+    from email_service import _send
+    subject = "Reset your CloudTax password"
+    html = (
+        f"<p style='font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;'>Hi {name},</p>"
+        f"<p style='font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;'>You (or someone on your behalf) requested a password reset. Follow the link below to choose a new password. This link expires in 30 minutes.</p>"
+        f"<p style='margin:22px 0;'><a href='{reset_link}' style='background:#1a1a1a;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-size:13px;font-weight:500;'>Reset password</a></p>"
+        f"<p style='font-family:system-ui,sans-serif;font-size:11px;color:#8b8685;'>If you didn't request this, you can safely ignore this message.</p>"
     )
+    text = f"Reset your CloudTax password: {reset_link}"
+    try:
+        return _send(to_email, subject, html, text)
+    except Exception as e:
+        log.warning("Password reset email failed for %s: %s", to_email, e)
+        return {"success": False, "error": str(e)}
 
 
 def send_otp_code(to_email: str, name: str, code: str, purpose: str = "sign-in") -> dict:
-    inner = f"""<h1>Your CloudTax verification code</h1>
-    <p>Hi {name},</p>
-    <p>Use the code below to {purpose}. It expires in 10 minutes.</p>
-    <p style='font-size:32px;font-weight:700;letter-spacing:6px;margin:24px 0;color:#1565c0;'>{code}</p>
-    <p class="muted">If you didn't request this, ignore this email and consider changing your password.</p>"""
-    return send(
-        to_email,
-        f"Your CloudTax verification code: {code}",
-        _wrap(inner),
-        f"Hi {name}, your CloudTax verification code is {code}. It expires in 10 minutes.",
-    )
-
-
+    return _resend_send_otp(to_email, name, code, purpose)
 
 
 def send_filing_complete(to_email: str, name: str, corp_name: str, portal_link: str) -> dict:
-    inner = f"""<h1>Your return is filed</h1>
-    <p>Hi {name},</p>
-    <p>Your T2 return for <strong>{corp_name}</strong> has been filed with CRA. You can download the filed package from your portal.</p>
-    <p><a class="btn" href="{portal_link}">Open your portal</a></p>"""
-    return send(to_email, f"{corp_name}: T2 filed with CRA", _wrap(inner), f"Your T2 for {corp_name} has been filed. {portal_link}")
+    return _fire_and_forget("t2_filed", to_email, {"link": portal_link})
 
 
 def send_missing_doc(to_email: str, name: str, doc_name: str, portal_link: str) -> dict:
-    inner = f"""<h1>One document still needed</h1>
-    <p>Hi {name},</p>
-    <p>We are ready to move your return forward. We still need <strong>{doc_name}</strong>.</p>
-    <p><a class="btn" href="{portal_link}">Upload document</a></p>"""
-    return send(to_email, "One document still needed for your filing", _wrap(inner), f"We need: {doc_name}. Upload here: {portal_link}")
+    return _fire_and_forget("document_reminder", to_email, {"documents": [doc_name], "link": portal_link})
 
 
 def send_opportunity(to_email: str, client_name: str, opp_title: str, app_link: str) -> dict:
-    inner = f"""<h1>Advisory opportunity</h1>
-    <p>A new opportunity has been shared for <strong>{client_name}</strong>:</p>
-    <p><em>{opp_title}</em></p>
-    <p><a class="btn" href="{app_link}">View in dashboard</a></p>"""
-    return send(to_email, f"Advisory opportunity: {client_name}", _wrap(inner), f"{opp_title} — {app_link}")
+    return _fire_and_forget(
+        "ws_opportunity",
+        to_email,
+        {"client_name": client_name, "opportunity_title": opp_title, "link": app_link},
+    )
 
 
 def send_deferred_reminder(to_email: str, name: str, doc_names: list, portal_link: str) -> dict:
-    items_html = "".join(f"<li style='margin: 4px 0;'>{n}</li>" for n in doc_names)
-    items_text = "\n".join(f"- {n}" for n in doc_names)
-    inner = f"""<h1>A friendly reminder</h1>
-    <p>Hi {name},</p>
-    <p>You set these documents aside to upload later. Whenever you have a moment, please share them so we can keep your filing moving:</p>
-    <ul style="font-family: -apple-system, sans-serif; font-size: 13px; color: #1a1a1a; padding-left: 20px;">{items_html}</ul>
-    <p><a class="btn" href="{portal_link}">Open your portal</a></p>
-    <p class="muted">No rush, just wanted to keep these on your radar.</p>"""
-    text = f"Hi {name},\n\nYou set these documents aside to upload later:\n{items_text}\n\nUpload here when ready: {portal_link}"
-    return send(to_email, "A friendly reminder about your tax documents", _wrap(inner), text)
+    return _fire_and_forget(
+        "document_reminder",
+        to_email,
+        {"documents": list(doc_names or []), "link": portal_link},
+    )

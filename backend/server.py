@@ -23,6 +23,7 @@ from auth import (
 import s3_service
 import ses_service
 import email_service
+from email_templates import send_email as _email_templates_send
 import ai_service
 from config import (
     docs_for_tier, review_checklist_for_tier, TIER_PRICING,
@@ -3165,6 +3166,102 @@ async def pilot_metrics(user: dict = Depends(require_role("ADMIN", "WS_PARTNER")
     }
 
 
+@api.post("/admin/reset-database")
+async def admin_reset_database(
+    confirm: str,
+    user: dict = Depends(require_role("ADMIN")),
+):
+    """Nuke all demo/seed data to prepare the app for production launch.
+
+    Preserves:
+      - The 3 staff accounts kept for the pilot (see PROD_PRESERVE_EMAILS)
+      - Global settings (doc templates, tier pricing, etc.)
+
+    Deletes everything else: users, corporations, engagements, documents,
+    messages, opportunities, time entries, notifications, OTP challenges,
+    status history, password-reset tokens, checklist items, CPA questions,
+    and extracted data. Also wipes uploaded files on local disk.
+
+    ``confirm`` MUST be the literal string "RESET" — prevents accidental
+    invocation via an open admin session.
+    """
+    if confirm != "RESET":
+        raise HTTPException(400, "Missing or invalid confirmation. Pass confirm=RESET to proceed.")
+    db = get_db()
+    PROD_PRESERVE_EMAILS = [
+        "nim@cloudtax.ca",
+        "pallavi@cloudtax.ca",
+        "terryann@cloudtax.ca",
+    ]
+    report: dict = {"preserved_users": [], "deleted": {}, "uploads_cleared": False}
+
+    # Preserve the 3 staff accounts
+    preserved_ids: list[str] = []
+    async for u in db.users.find({"email": {"$in": PROD_PRESERVE_EMAILS}}, {"_id": 0, "password_hash": 0}):
+        preserved_ids.append(u["id"])
+        report["preserved_users"].append({"id": u["id"], "email": u.get("email"), "name": u.get("name"), "role": u.get("role")})
+
+    # Collections that get FULLY cleared
+    full_wipe = [
+        "corporations",
+        "engagements",
+        "documents",
+        "messages",
+        "opportunities",
+        "time_entries",
+        "checklist",
+        "notifications",
+        "otp_challenges",
+        "password_reset_tokens",
+        "status_history",
+        "cpa_questions",
+        "extracted_data",
+    ]
+    for coll in full_wipe:
+        try:
+            res = await db[coll].delete_many({})
+            report["deleted"][coll] = res.deleted_count
+        except Exception as e:
+            log.warning("Reset failed for collection %s: %s", coll, e)
+            report["deleted"][coll] = f"error: {e}"
+
+    # Users: keep only preserved ids
+    try:
+        res = await db.users.delete_many({"id": {"$nin": preserved_ids}})
+        report["deleted"]["users"] = res.deleted_count
+    except Exception as e:
+        report["deleted"]["users"] = f"error: {e}"
+
+    # Wipe local upload directory (files saved via the S3 fallback)
+    try:
+        import shutil
+        uploads_root = os.path.join(os.path.dirname(__file__), "uploads")
+        if os.path.isdir(uploads_root):
+            for entry in os.listdir(uploads_root):
+                p = os.path.join(uploads_root, entry)
+                if os.path.isdir(p):
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+        report["uploads_cleared"] = True
+    except Exception as e:
+        log.warning("Reset: upload wipe failed: %s", e)
+        report["uploads_cleared"] = f"error: {e}"
+
+    # Best-effort S3 cleanup — prefix-delete under engagements/
+    try:
+        cleared = s3_service.delete_prefix("engagements/")
+        report["s3_cleared"] = cleared
+    except Exception as e:
+        report["s3_cleared"] = f"error: {e}"
+
+    log.warning("DB reset invoked by %s. Preserved %d users. Report: %s", user.get("email"), len(preserved_ids), report["deleted"])
+    return {"ok": True, **report}
+
+
 @api.get("/metrics/economics")
 async def economics(user: dict = Depends(require_role("ADMIN"))):
     db = get_db()
@@ -3339,17 +3436,37 @@ import json as _json
 
 # Per-engagement subscribers for SSE
 _subs: dict[str, list[asyncio.Queue]] = {}
+# Parallel map: engagement_id -> {user_id: count}. Used by the email
+# notification layer to suppress transactional "new message" emails when the
+# recipient is actively watching the conversation.
+_subs_users: dict[str, dict[str, int]] = {}
 
 
-def _sub(eid: str) -> asyncio.Queue:
+def _sub(eid: str, user_id: str | None = None) -> asyncio.Queue:
     q = asyncio.Queue()
     _subs.setdefault(eid, []).append(q)
+    if user_id:
+        bucket = _subs_users.setdefault(eid, {})
+        bucket[user_id] = bucket.get(user_id, 0) + 1
     return q
 
 
-def _unsub(eid: str, q: asyncio.Queue):
+def _unsub(eid: str, q: asyncio.Queue, user_id: str | None = None):
     if eid in _subs and q in _subs[eid]:
         _subs[eid].remove(q)
+    if user_id and eid in _subs_users:
+        bucket = _subs_users[eid]
+        if user_id in bucket:
+            bucket[user_id] -= 1
+            if bucket[user_id] <= 0:
+                del bucket[user_id]
+        if not bucket:
+            del _subs_users[eid]
+
+
+def has_live_subscriber(eid: str, user_id: str) -> bool:
+    """True when the given user currently has the engagement's SSE open."""
+    return bool(_subs_users.get(eid, {}).get(user_id, 0))
 
 
 async def _publish(eid: str, event: str, payload: dict):
@@ -3562,13 +3679,30 @@ async def send_message(eid: str, body: MessageIn, user: dict = Depends(get_curre
     await db.messages.insert_one(row)
     sender = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
     serialized = _serialize_msg(row, sender)
-    # Notify the other party via in-app
+    # Notify the other party via in-app + email (email suppressed when the
+    # recipient is actively watching the conversation over SSE).
+    recipient_id: Optional[str] = None
     if user["role"] == "CLIENT" and eng.get("assigned_cpa_id"):
-        await notify(eng["assigned_cpa_id"], "New client message", body.content[:80], "cpa_message", eid)
+        recipient_id = eng["assigned_cpa_id"]
+        await notify(recipient_id, "New client message", body.content[:80], "cpa_message", eid)
     elif user["role"] in ("CPA", "ADMIN"):
         corp = await db.corporations.find_one({"id": eng["corporation_id"]})
         if corp:
-            await notify(corp["client_id"], "New message from your CPA", body.content[:80], "client_message", eid)
+            recipient_id = corp["client_id"]
+            await notify(recipient_id, "New message from your CPA", body.content[:80], "client_message", eid)
+    if recipient_id and not has_live_subscriber(eid, recipient_id):
+        try:
+            recipient = await db.users.find_one({"id": recipient_id}, {"_id": 0, "password_hash": 0})
+            if recipient and recipient.get("email"):
+                sender_name = (sender or {}).get("name") or (sender or {}).get("email") or "your contact"
+                link_base = f"{FRONTEND_URL}/portal/messages" if user["role"] in ("CPA", "ADMIN") else f"{FRONTEND_URL}/cpa/engagement/{eid}"
+                await _email_templates_send(recipient["email"], "new_message", {
+                    "sender_name": sender_name,
+                    "preview": body.content.strip(),
+                    "link": link_base,
+                })
+        except Exception as e:
+            log.warning("new_message email failed: %s", e)
     # Publish over SSE
     await _publish(eid, "message", serialized)
     return serialized
@@ -3614,7 +3748,7 @@ async def stream_messages(eid: str, request: Request, token: Optional[str] = Non
     from fastapi.responses import StreamingResponse
 
     async def gen():
-        q = _sub(eid)
+        q = _sub(eid, user["id"])
         try:
             # Initial heartbeat
             yield ": connected\n\n"
@@ -3627,7 +3761,7 @@ async def stream_messages(eid: str, request: Request, token: Optional[str] = Non
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
         finally:
-            _unsub(eid, q)
+            _unsub(eid, q, user["id"])
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache, no-transform",

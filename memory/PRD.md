@@ -276,6 +276,23 @@
 
 ## Backlog (prioritized)
 
+### Iter 33 (Feb 2026 — Production launch prep: DB reset + 20-template Resend email system)
+
+**Task 1 — Database reset (EXECUTED in preview):**
+- New endpoint `POST /api/admin/reset-database?confirm=RESET` (admin-only) clears every demo collection and the local `uploads/` directory while preserving **3 staff accounts** (Nim Balachandran, Pallavi Sharma, Terry-Ann Mitchell) and global settings (doc templates, tier pricing). Attempts an S3 prefix delete but continues cleanly if the IAM policy lacks `s3:ListBucket` / `s3:DeleteObject`.
+- Standalone CLI script at `/app/backend/migrations/reset_for_production.py` mirrors the endpoint for break-glass use (`python -m migrations.reset_for_production --confirm RESET`).
+- New `s3_service.delete_prefix(prefix)` helper — paginated `list_objects_v2` + batched `delete_objects`.
+- Verified live: curl to `/admin/dashboard` metrics returns 0 clients, engagements array empty, team list shows only the 3 preserved users, admin dashboard body reads `Referred 0 / Intake 0 / In prep 0 / Review 0 / Filed 0 — No clients` across every column.
+
+**Task 2 — Email templates (20 templates, Resend):**
+- New module `/app/backend/email_templates.py`:
+  - One shared HTML shell (`_wrap`) with cream background, inline CloudTax logo SVG, 560px card, footer "Powered by CloudTax, in partnership with Wealthsimple"
+  - 20 template builders returning `(subject, html, text)`: `welcome_client`, `welcome_cpa`, `welcome_ws`, `engagement_started`, `document_reminder`, `new_document_requested`, `document_issue`, `t183_ready`, `return_ready_review`, `t2_filed`, `new_message`, `cpa_client_assigned`, `cpa_doc_uploaded`, `cpa_t183_signed`, `ws_intake_complete`, `ws_filing_complete`, `ws_opportunity`, `admin_new_referral`, `admin_tier_changed`
+  - Single async dispatcher `send_email(to, template, data)` — never raises; logs failures non-fatally.
+- **Compatibility:** `ses_service.py` rewritten as a proxy — every legacy `send_invite / send_filing_complete / send_missing_doc / send_opportunity / send_deferred_reminder` call at existing call-sites now routes through the Resend-backed templates. Zero mass edits needed; existing triggers auto-upgrade.
+- **New trigger — "New message from your CPA / client" (with SSE suppression):** `send_message` endpoint now checks the new `has_live_subscriber(eid, recipient_id)` helper against a `_subs_users` map populated when a user connects to `/messages/stream`. If the recipient is actively watching the thread, the email is skipped (in-app notification still fires). Otherwise a clean transactional email is sent with a 100-char preview + CTA to the messages page. Ref-counted per user so multiple open tabs don't short-circuit each other.
+- Resend domain reminder: sender still `onboarding@resend.dev` (trial-mode, delivers to the verified `rajin@cloudtax.ca` only). To unlock all recipients, verify `cloudtax.ca` at https://resend.com/domains and update `RESEND_FROM_EMAIL` in `/app/backend/.env` — zero code change needed.
+
 ### Iter 32 (Feb 2026 — targeted email updates + Roles & Permissions member management)
 
 **Operational (DB updates applied):**

@@ -101,3 +101,32 @@ def put_object_bytes(object_key: str, body: bytes, content_type: str = "applicat
     except (ClientError, EndpointConnectionError) as e:
         log.error("S3 put_object failed: %s", e)
         return False
+
+
+def delete_prefix(prefix: str) -> dict:
+    """Delete every object under ``prefix``. Returns a summary dict.
+
+    Used by the admin DB-reset flow to clear demo artifacts before launch.
+    Non-fatal: individual S3 failures (e.g. current IAM policy missing
+    ``s3:DeleteObject``) are logged and reported without aborting.
+    """
+    deleted = 0
+    errors = 0
+    try:
+        cli = get_client()
+        paginator = cli.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket_name(), Prefix=prefix):
+            keys = [{"Key": obj["Key"]} for obj in (page.get("Contents") or [])]
+            if not keys:
+                continue
+            try:
+                resp = cli.delete_objects(Bucket=bucket_name(), Delete={"Objects": keys, "Quiet": True})
+                deleted += len(keys) - len(resp.get("Errors") or [])
+                errors += len(resp.get("Errors") or [])
+            except (ClientError, EndpointConnectionError) as e:
+                log.warning("S3 delete_objects batch failed: %s", e)
+                errors += len(keys)
+    except (ClientError, EndpointConnectionError) as e:
+        log.warning("S3 delete_prefix failed for %s: %s", prefix, e)
+        return {"deleted": 0, "errors": 0, "error": str(e)}
+    return {"deleted": deleted, "errors": errors}
