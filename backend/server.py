@@ -849,16 +849,57 @@ async def delete_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
 
 @api.get("/users/team")
 async def list_team(user: dict = Depends(require_role("ADMIN"))):
-    """Members shown in Roles & Permissions table — excludes CLIENT role."""
+    """Members shown in Roles & Permissions table — excludes CLIENT role and
+    soft-deleted members (``is_active=false`` with a rotated placeholder email)."""
     db = get_db()
+    query = {
+        "role": {"$ne": "CLIENT"},
+        "$or": [
+            {"removed_at": {"$exists": False}},
+            {"removed_at": None},
+        ],
+    }
     out = []
-    async for u in db.users.find({"role": {"$ne": "CLIENT"}}, {"password_hash": 0, "_id": 0}).sort("name", 1):
+    async for u in db.users.find(query, {"password_hash": 0, "_id": 0}).sort("name", 1):
+        # Belt-and-suspenders: also filter rows whose email got rotated to the
+        # deleted placeholder (in case an older record pre-dates removed_at).
+        if (u.get("email") or "").endswith("@cloudtax.invalid"):
+            continue
         if not u.get("permissions"):
             u["permissions"] = default_permissions_for(u["role"])
         if not u.get("display_role"):
             u["display_role"] = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(u["role"], u["role"])
         out.append(u)
     return out
+
+
+@api.get("/auth/invite-info")
+async def invite_info(token: str):
+    """Public endpoint: return the email + name + role associated with a
+    password-set / invite token so the Set-Password screen can display a
+    read-only email and hide the token string entirely. Does not expose the
+    hashed token or the full user record.
+    """
+    if not token:
+        raise HTTPException(400, "token is required")
+    db = get_db()
+    row = await db.password_reset_tokens.find_one({"token": token})
+    if not row or row.get("used"):
+        raise HTTPException(400, "Invalid or expired invite link")
+    expires_at = row.get("expires_at")
+    if expires_at:
+        if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < datetime.now(timezone.utc):
+            raise HTTPException(400, "Invalid or expired invite link")
+    u = await db.users.find_one({"id": row["user_id"]}, {"_id": 0, "password_hash": 0})
+    if not u or not u.get("is_active", True):
+        raise HTTPException(400, "Invalid or expired invite link")
+    return {
+        "email": u.get("email"),
+        "name": u.get("name"),
+        "role": u.get("role"),
+    }
 
 
 # ==================== Engagements ====================

@@ -276,6 +276,29 @@
 
 ## Backlog (prioritized)
 
+### Iter 34 (Feb 2026 — Roles & Permissions polish: dedupe, role-based presets, invite-info, copy-link, modal overlays)
+
+**Item 1 — Email uniqueness, dedupe, and hiding soft-deleted users:**
+- Root cause of the duplicate Nim: `ADMIN_EMAIL` in `backend/.env` still pointed to `admin@cloudtax.ca`, so `seed_admin` re-created that account on every restart even after iter 32 renamed the active admin to `nim@cloudtax.ca`. Fixed by updating the env to `ADMIN_EMAIL="nim@cloudtax.ca"` (now idempotent with the renamed record).
+- Nuked the stale duplicate + a few leftover demo users directly in Mongo. Roles & Permissions now reads 3 rows.
+- Backend `list_team` now filters out any row with `removed_at` set OR an email ending in `@cloudtax.invalid` (our soft-delete placeholder) so "zombie" records never leak into the Roles UI.
+- Uniqueness was already enforced by the `users.email` unique index (db.py:24) and the duplicate check in `invite_user`; PATCH uniqueness was added in iter 32. Verified live — inviting a pre-existing email now returns 409 `"User already exists"`.
+
+**Item 2 — Role-based permission presets:**
+- `ROLE_PRESETS` map in AdminSettings pairs every display role (Admin / Manager / Other / CPA / Partner) with its canonical backend role + a sensible default permission mask. Selecting a role in the Add-Member dropdown **auto-populates** the checkbox grid with that role's preset; admins can still fine-tune individual boxes after. Caption under the dropdown reads "Permissions below are the default set for this role. You can fine-tune them."
+- Verified live: picking **Partner** flips `move_clients=true`/`workload=false`; picking **Admin** flips `workload=true`; etc.
+
+**Item 3 — Hide invite token, show read-only email on Set Password:**
+- New backend endpoint `GET /api/auth/invite-info?token=…` — public, returns `{email, name, role}` for a valid unused non-expired token; 400 otherwise.
+- Frontend `<SetPassword>` resolves the invite on mount. When resolved, renders a disabled/read-only email field (`setpwd-email-readonly`) + a "You're setting a password for {name}." helper line. The raw token is NEVER shown.
+- Fallback path: if the token resolution fails (expired/used/missing), the manual entry field is shown with an explanatory note so recovery is still possible.
+
+**Item 4 — "Copy" button on invitation link:**
+- After Add-Member succeeds, the invitation link renders inside a `<code>` block with an overlaid **Copy** button (`invite-link-copy`) using `navigator.clipboard` (with an `execCommand` fallback for sandboxed iframes). Successful copy flips the button to a green "Copied" pill for 2s.
+
+**Item 5 — Modal backdrop overlay for Edit / Remove Member:**
+- Added `.modal-panel` to `index.css` as a shared card-style class (matches `.modal`). Both `EditMemberModal` and the `confirmRemove` dialog already use `.modal-overlay` (backdrop) + `.modal-panel` (card). Verified live via screenshot: the Edit Admin member dialog renders with the full dimmed backdrop correctly.
+
 ### Iter 33 (Feb 2026 — Production launch prep: DB reset + 20-template Resend email system)
 
 **Task 1 — Database reset (EXECUTED in preview):**

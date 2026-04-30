@@ -247,27 +247,35 @@ function DisplayTab() {
   );
 }
 
+// Role -> canonical role + default permission preset. Picking a role in the
+// dropdown auto-populates the checkbox grid with a sensible starting point
+// (matches backend `default_permissions_for`). Admins can still toggle
+// individual checkboxes after the preset is applied.
+const ROLE_PRESETS = {
+  Admin:   { canonical: "ADMIN",      perms: { view_clients: true, onboard_clients: true, assign_cpa: true, reassign_cpa: true, send_reminders: true, send_messages: true, view_docs: true, move_clients: true, workload: true, view_cpa_hours: true, export_data: true, settings: true, audit_logs: true, manage_roles: true } },
+  Manager: { canonical: "ADMIN",      perms: { view_clients: true, onboard_clients: true, assign_cpa: true, reassign_cpa: true, send_reminders: true, send_messages: true, view_docs: true, move_clients: true, workload: true, view_cpa_hours: true, export_data: true, settings: false, audit_logs: true, manage_roles: false } },
+  Other:   { canonical: "ADMIN",      perms: { view_clients: true, onboard_clients: false, assign_cpa: false, reassign_cpa: false, send_reminders: false, send_messages: false, view_docs: true, move_clients: false, workload: false, view_cpa_hours: false, export_data: false, settings: false, audit_logs: false, manage_roles: false } },
+  CPA:     { canonical: "CPA",        perms: { view_clients: true, onboard_clients: false, assign_cpa: false, reassign_cpa: false, send_reminders: true, send_messages: true, view_docs: true, move_clients: false, workload: false, view_cpa_hours: true, export_data: false, settings: false, audit_logs: false, manage_roles: false } },
+  Partner: { canonical: "WS_PARTNER", perms: { view_clients: true, onboard_clients: true, assign_cpa: true, reassign_cpa: false, send_reminders: false, send_messages: true, view_docs: true, move_clients: true, workload: false, view_cpa_hours: false, export_data: true, settings: true, audit_logs: false, manage_roles: false } },
+};
+
 function AddMemberModal({ onClose, onDone }) {
   const [form, setForm] = useState({
     first_name: "", last_name: "", email: "",
     role: "CPA",
-    permissions: {
-      view_clients: true, onboard_clients: false, assign_cpa: false, reassign_cpa: false,
-      send_reminders: true, send_messages: true, view_docs: true, move_clients: false,
-      workload: false, view_cpa_hours: false, export_data: false, settings: false,
-      audit_logs: false, manage_roles: false,
-    },
+    permissions: { ...ROLE_PRESETS.CPA.perms },
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [link, setLink] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const togglePerm = (k) => setForm((f) => ({ ...f, permissions: { ...f.permissions, [k]: !f.permissions[k] } }));
-  const canonicalRole = useMemo(() => {
-    if (form.role === "CPA") return "CPA";
-    if (form.role === "Partner") return "WS_PARTNER";
-    return "ADMIN"; // Admin / Manager / Other -> ADMIN canonical
-  }, [form.role]);
+  const changeRole = (r) => {
+    const preset = ROLE_PRESETS[r] || ROLE_PRESETS.CPA;
+    setForm((f) => ({ ...f, role: r, permissions: { ...preset.perms } }));
+  };
+  const canonicalRole = useMemo(() => (ROLE_PRESETS[form.role]?.canonical) || "ADMIN", [form.role]);
 
   const submit = async () => {
     setErr(""); setBusy(true);
@@ -285,18 +293,49 @@ function AddMemberModal({ onClose, onDone }) {
     setBusy(false);
   };
 
+  const copyLink = async () => {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // Fallback — some sandboxed iframes block the API.
+      const ta = document.createElement("textarea");
+      ta.value = link; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); } finally { document.body.removeChild(ta); }
+    }
+  };
+
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} data-testid="add-member-modal">
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: 460, maxHeight: "90vh", overflowY: "auto", padding: 28 }}>
+    <div className="modal-overlay" onClick={onClose} data-testid="add-member-modal">
+      <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <h2 style={{ fontSize: 20, fontWeight: 600 }}>Add member</h2>
           <button onClick={onClose} data-testid="add-member-close"><X size={18} /></button>
         </div>
         {link ? (
           <div className="stack-md">
-            <div className="muted" style={{ fontSize: 13 }}>Invitation created. Share this link if SES is in sandbox:</div>
-            <code style={{ display: "block", padding: 12, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all" }} data-testid="invite-link">{link}</code>
-            <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500 }} data-testid="add-member-done">Done</button>
+            <div className="muted" style={{ fontSize: 13 }}>Invitation created. Share this link with the new member so they can set their password:</div>
+            <div style={{ position: "relative" }}>
+              <code style={{ display: "block", padding: "12px 72px 12px 12px", background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all", border: "1px solid var(--border-default)" }} data-testid="invite-link">{link}</code>
+              <button
+                onClick={copyLink}
+                data-testid="invite-link-copy"
+                style={{
+                  position: "absolute", top: 6, right: 6,
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "6px 12px", borderRadius: 6,
+                  background: linkCopied ? "#e8f5e9" : "#fff",
+                  border: `1px solid ${linkCopied ? "#a5d6a7" : "var(--border-default)"}`,
+                  color: linkCopied ? "#1b5e20" : "var(--text-primary)",
+                  fontSize: 12, fontWeight: 500, cursor: "pointer",
+                }}
+              >
+                {linkCopied ? <><Check size={12} /> Copied</> : <><Download size={12} style={{ transform: "rotate(0deg)" }} /> Copy</>}
+              </button>
+            </div>
+            <button onClick={onClose} className="btn btn-primary" style={{ width: "100%", padding: "12px" }} data-testid="add-member-done">Done</button>
           </div>
         ) : (
           <>
@@ -317,9 +356,10 @@ function AddMemberModal({ onClose, onDone }) {
             </div>
 
             <div style={{ fontSize: 14, fontWeight: 600, margin: "20px 0 8px" }}>Choose role</div>
-            <select className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} data-testid="add-role">
+            <select className="select" value={form.role} onChange={(e) => changeRole(e.target.value)} data-testid="add-role">
               {DISPLAY_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Permissions below are the <strong>default set</strong> for this role. You can fine-tune them.</div>
 
             <div style={{ fontSize: 14, fontWeight: 600, margin: "20px 0 8px" }}>Permissions</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px" }}>
@@ -340,15 +380,15 @@ function AddMemberModal({ onClose, onDone }) {
               </ol>
             </div>
 
-            {err && <div className="alert alert-risk" style={{ marginTop: 12 }}>{err}</div>}
+            {err && <div className="alert alert-risk" style={{ marginTop: 12 }} data-testid="add-member-err">{err}</div>}
 
             <button
               onClick={submit}
               disabled={busy || !form.email || !form.first_name}
-              style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500, fontSize: 14, marginTop: 20 }}
+              style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500, fontSize: 14, marginTop: 20, border: "none", cursor: busy ? "not-allowed" : "pointer" }}
               data-testid="add-member-submit"
             >{busy ? "Adding…" : "Add member"}</button>
-            <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, marginTop: 8 }}>Cancel</button>
+            <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, marginTop: 8, border: "1px solid var(--border-default)", cursor: "pointer" }}>Cancel</button>
           </>
         )}
       </div>

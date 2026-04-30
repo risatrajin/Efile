@@ -222,6 +222,31 @@ export function SetPassword() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
+  // Invite-info resolution: if the token is valid, fetch the associated email
+  // + name so we can hide the raw token and show a friendly read-only summary.
+  // ``resolved`` flips once we know the result (either {email,name} or null).
+  const [invite, setInvite] = useState(null);
+  const [resolved, setResolved] = useState(!initialToken);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!token) { setResolved(true); return; }
+    (async () => {
+      try {
+        const { data } = await api.get("/auth/invite-info", { params: { token } });
+        if (!cancelled) { setInvite(data); setResolved(true); }
+      } catch (x) {
+        if (!cancelled) {
+          // Token is missing / expired / used — show the manual entry fallback
+          // so someone with a recovery email can still paste a fresh token.
+          setInvite(null);
+          setResolved(true);
+          setErr(fmtError(x));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -252,16 +277,51 @@ export function SetPassword() {
     );
   }
 
+  if (!resolved) {
+    return (
+      <div className="login-shell">
+        <div className="login-card card">
+          <div className="brand-xl">CloudTax</div>
+          <div className="muted" style={{ marginTop: 20, fontSize: 13 }}>Validating invitation…</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="login-shell">
       <div className="login-card card animate-in">
         <div className="brand-xl">CloudTax</div>
         <h2 className="section-title" style={{ marginTop: 20 }}>Set your password</h2>
         <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
-          <div className="field">
-            <label className="field-label">Invitation token</label>
-            <input className="input" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="Paste the token from your invite email" data-testid="setpwd-token" />
-          </div>
+          {invite ? (
+            <div className="field">
+              <label className="field-label">Account</label>
+              <input
+                className="input"
+                value={invite.email || ""}
+                readOnly
+                disabled
+                data-testid="setpwd-email-readonly"
+                style={{ background: "var(--bg-subtle)", cursor: "not-allowed", color: "var(--text-primary)" }}
+              />
+              {invite.name && (
+                <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+                  You&rsquo;re setting a password for <strong>{invite.name}</strong>.
+                </div>
+              )}
+            </div>
+          ) : (
+            // Fallback: invite info couldn't be resolved. Keep manual entry but
+            // clearly label it "Invitation token" — power-user recovery path.
+            <div className="field">
+              <label className="field-label">Invitation token</label>
+              <input className="input" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="Paste the token from your invite email" data-testid="setpwd-token" />
+              <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+                Your invite link is either expired or already used. Paste a fresh token to continue, or contact your admin for a new invite.
+              </div>
+            </div>
+          )}
           <div className="field">
             <label className="field-label">New password (min 8 chars)</label>
             <PasswordField value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" testid="setpwd-new" autoComplete="new-password" />
@@ -270,8 +330,8 @@ export function SetPassword() {
             <label className="field-label">Confirm password</label>
             <PasswordField value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter password" testid="setpwd-confirm" autoComplete="new-password" />
           </div>
-          {err && <div className="alert alert-risk">{err}</div>}
-          <button className="btn btn-primary w-full" disabled={busy} type="submit" data-testid="setpwd-submit">
+          {err && <div className="alert alert-risk" data-testid="setpwd-error">{err}</div>}
+          <button className="btn btn-primary w-full" disabled={busy || !token} type="submit" data-testid="setpwd-submit">
             {busy ? <span className="spinner" /> : "Set password"}
           </button>
         </form>
