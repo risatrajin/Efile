@@ -31,14 +31,21 @@ const DISPLAY_ROLES = ["Admin", "Manager", "Other", "CPA", "Partner"];
 // Inline hint that appears under the email input when the admin picks an
 // existing user from the typeahead. Describes what will happen next so the
 // invite flow doesn't surprise them.
-function ExistingUserHint({ row, onResend, busy }) {
+function ExistingUserHint({ row, targetRole, onResend, busy }) {
   if (!row) return null;
   const status = row.status || "active";
+  const role = row.role;
   const label = row.name || row.email;
   let bg, border, fg, Icon, msg;
-  if (status === "active") {
+  // CLIENT → staff upgrade path (works regardless of lifecycle state, as
+  // long as the admin picked a non-CLIENT target role). This is the
+  // Admin-only "promote a client to staff" flow.
+  if (role === "CLIENT" && status !== "removed" && targetRole && targetRole !== "CLIENT") {
+    bg = "#e8f5e9"; border = "#a5d6a7"; fg = "#1b5e20"; Icon = Check;
+    msg = `${label} is an existing client. Submit to upgrade this account to a team member — engagement history is preserved.`;
+  } else if (status === "active") {
     bg = "#fdecea"; border = "#f9bdb9"; fg = "#b71c1c"; Icon = AlertCircle;
-    msg = `${label} is already an active member (${row.display_role || row.role}).`;
+    msg = `${label} is already an active ${row.display_role || role || "member"}.`;
   } else if (status === "invited") {
     bg = "#fff8e1"; border = "#ffe082"; fg = "#8a6d1a"; Icon = Mail;
     msg = `${label} already has a pending invitation. You can resend it, or submit to issue a fresh one.`;
@@ -46,9 +53,11 @@ function ExistingUserHint({ row, onResend, busy }) {
     bg = "#e3f2fd"; border = "#90caf9"; fg = "#0d47a1"; Icon = Check;
     msg = `${label} was previously removed. Submit to reactivate with the selected role & permissions.`;
   }
+  // "Blocking" = active non-CLIENT match; every other case allows submit.
+  const isBlocking = status === "active" && role !== "CLIENT";
   return (
     <div
-      data-testid={`existing-user-hint-${status}`}
+      data-testid={`existing-user-hint-${status}${role === "CLIENT" && status !== "removed" ? "-client" : ""}`}
       style={{
         display: "flex", alignItems: "flex-start", gap: 8,
         marginTop: 8, padding: "10px 12px",
@@ -58,7 +67,7 @@ function ExistingUserHint({ row, onResend, busy }) {
     >
       <Icon size={14} style={{ flexShrink: 0, marginTop: 1 }} />
       <div style={{ flex: 1 }}>{msg}</div>
-      {status !== "active" && (
+      {!isBlocking && status !== "active" && role !== "CLIENT" && (
         <button
           type="button"
           onClick={onResend}
@@ -325,6 +334,7 @@ function AddMemberModal({ onClose, onDone }) {
   // for active members and (b) offer a Resend for invited/removed ones.
   const [existing, setExisting] = useState(null);
   const [resendBusy, setResendBusy] = useState(false);
+  const [upgraded, setUpgraded] = useState(false);
 
   const togglePerm = (k) => setForm((f) => ({ ...f, permissions: { ...f.permissions, [k]: !f.permissions[k] } }));
   const changeRole = (r) => {
@@ -346,6 +356,7 @@ function AddMemberModal({ onClose, onDone }) {
       setLink(data.invite_link);
       setEmailSent(!!data.email_sent);
       setReactivated(!!data.reactivated);
+      setUpgraded(!!data.upgraded);
       await onDone();
     } catch (e) {
       const status = e?.response?.status;
@@ -381,6 +392,21 @@ function AddMemberModal({ onClose, onDone }) {
         </div>
         {link ? (
           <div className="stack-md">
+            {upgraded && (
+              <div
+                data-testid="invite-upgraded"
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  padding: "12px 14px", background: "#e8f5e9",
+                  border: "1px solid #a5d6a7", borderRadius: 10,
+                }}
+              >
+                <Check size={16} style={{ color: "#1b5e20", flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: 13, lineHeight: 1.5, color: "#0d2914" }}>
+                  <strong>Client upgraded to team member.</strong> Their engagement history is preserved and the new role &amp; permissions are active immediately.
+                </div>
+              </div>
+            )}
             {reactivated && (
               <div
                 data-testid="invite-reactivated"
@@ -484,7 +510,7 @@ function AddMemberModal({ onClose, onDone }) {
                   }}
                   testid="add-email"
                 />
-                {existing && <ExistingUserHint row={existing} onResend={async () => {
+                {existing && <ExistingUserHint row={existing} targetRole={canonicalRole} onResend={async () => {
                   setErr(""); setResendBusy(true);
                   try {
                     const { data } = await api.post(`/users/${existing.id}/resend-invite`);
@@ -531,10 +557,16 @@ function AddMemberModal({ onClose, onDone }) {
 
             <button
               onClick={submit}
-              disabled={busy || !form.email || !form.first_name || (existing?.status === "active")}
+              disabled={busy || !form.email || !form.first_name || (existing?.status === "active" && existing?.role !== "CLIENT")}
               style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500, fontSize: 14, marginTop: 20, border: "none", cursor: busy ? "not-allowed" : "pointer" }}
               data-testid="add-member-submit"
-            >{busy ? "Adding…" : (existing?.status === "active" ? "Already a member" : "Add member")}</button>
+            >{
+              busy ? "Adding…"
+              : (existing?.status === "active" && existing?.role === "CLIENT") ? "Upgrade to team member"
+              : (existing?.status === "active") ? "Already a member"
+              : (existing?.status === "removed") ? "Reactivate & invite"
+              : "Add member"
+            }</button>
             <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, marginTop: 8, border: "1px solid var(--border-default)", cursor: "pointer" }}>Cancel</button>
           </>
         )}

@@ -614,6 +614,47 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
     if existing:
         ex_role = existing.get("role")
         ex_name = existing.get("name") or "someone"
+        # CLIENT → staff upgrade path. If the admin is adding a non-CLIENT
+        # role for an existing client account, upgrade the record instead of
+        # rejecting. This supports the real-world case where a referred
+        # physician later becomes a CPA / WS partner / admin. We preserve
+        # their id + engagement history and simply flip role + permissions.
+        if ex_role == "CLIENT" and body.role != "CLIENT":
+            default_display = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(body.role, body.role)
+            await db.users.update_one(
+                {"id": existing["id"]},
+                {"$set": {
+                    "name": body.name or ex_name,
+                    "role": body.role,
+                    "display_role": body.display_role or default_display,
+                    "permissions": body.permissions or default_permissions_for(body.role),
+                    "upgraded_from": "CLIENT",
+                    "upgraded_at": datetime.now(timezone.utc),
+                    "upgraded_by_id": user["id"],
+                }},
+            )
+            # Issue a fresh invite link so they can set a staff password —
+            # existing client portal credentials stay valid but this lets the
+            # admin share the set-password flow for the new role.
+            token = new_invite_token()
+            await db.password_reset_tokens.insert_one({
+                "id": str(uuid.uuid4()),
+                "token": token,
+                "user_id": existing["id"],
+                "used": False,
+                "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+                "created_at": datetime.now(timezone.utc),
+            })
+            invite_link = f"{FRONTEND_URL}/set-password?token={token}"
+            email_result = ses_service.send_invite(email_lc, body.name or ex_name, invite_link, body.role)
+            log.info("Upgraded CLIENT %s to %s (%s)", email_lc, body.role, existing["id"])
+            return {
+                "user_id": existing["id"],
+                "invite_link": invite_link,
+                "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
+                "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+                "upgraded": True,
+            }
         if ex_role == "CLIENT":
             detail = (
                 f"This email is already registered as a client account ({ex_name}). "
@@ -967,12 +1008,16 @@ async def resend_invite(uid: str, user: dict = Depends(require_role("ADMIN"))):
 
 
 @api.delete("/users/{uid}")
-async def delete_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
+async def delete_user(uid: str, permanent: bool = False, user: dict = Depends(require_role("ADMIN"))):
     """Remove a member. Protects against self-delete and last-admin-delete.
-    CLIENT accounts are NOT deleted via this endpoint — client data is bound
-    to engagements and requires a separate lifecycle. For staff (CPA, WS,
-    ADMIN, or any non-CLIENT role) this flips `is_active=False` and rewrites
-    the email so the address is free to be re-invited later.
+
+    Default behaviour is a soft-delete: flips ``is_active=False`` and rewrites
+    the email to a placeholder so the address can be re-invited. Pass
+    ``permanent=true`` to HARD-DELETE the user record from the database —
+    irreversible, used for permanently purging clients who requested data
+    removal or scrubbing test data. Hard-delete safeguards: last admin
+    protection still applies; CLIENT records with linked engagements are
+    blocked unless those engagements are deleted first.
     """
     if uid == user["id"]:
         raise HTTPException(400, "You cannot remove your own account")
@@ -980,8 +1025,27 @@ async def delete_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
     target = await db.users.find_one({"id": uid})
     if not target:
         raise HTTPException(404, "User not found")
-    if target.get("role") == "CLIENT":
-        raise HTTPException(400, "Client accounts are managed from the client record, not from Roles & Permissions")
+    # Permanent delete path — no soft-delete artefacts left behind.
+    if permanent:
+        if target.get("role") == "ADMIN" and target.get("is_active", True):
+            active_admins = await db.users.count_documents({"role": "ADMIN", "is_active": {"$ne": False}})
+            if active_admins <= 1:
+                raise HTTPException(400, "Cannot permanently delete the last active admin")
+        if target.get("role") == "CLIENT":
+            # Guard: block if the client still has engagements — data integrity
+            # trumps cleanup. The admin must unlink/delete engagements first.
+            linked = await db.engagements.count_documents({"client_id": uid})
+            if linked > 0:
+                raise HTTPException(400, f"This client has {linked} engagement(s). Delete those first before permanently removing the account.")
+        await db.users.delete_one({"id": uid})
+        # Burn any outstanding invite/reset tokens for tidy book-keeping.
+        await db.password_reset_tokens.delete_many({"user_id": uid})
+        log.info("Admin %s PERMANENTLY deleted user %s (%s)", user.get("email"), uid, target.get("email"))
+        return {"ok": True, "id": uid, "permanent": True}
+    # CLIENT soft-delete is now ALLOWED (was previously blocked to force use of
+    # the engagement record). The Users tab needs full lifecycle control over
+    # client accounts. Engagements remain untouched — only the user row is
+    # deactivated and the email freed.
     # Prevent removing the last active admin.
     if target.get("role") == "ADMIN":
         active_admins = await db.users.count_documents({"role": "ADMIN", "is_active": {"$ne": False}})

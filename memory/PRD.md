@@ -276,6 +276,31 @@
 
 ## Backlog (prioritized)
 
+### Iter 37 (Apr 30, 2026 — Admin Add Member smart logic + client lifecycle + permanent delete)
+
+**Feature 1 — Existing CLIENT → staff upgrade in Add Member**
+- `POST /api/users/invite`: when the admin invites an email that matches an existing active/invited CLIENT AND the target role is non-CLIENT, the endpoint **upgrades** the existing record (preserves id + engagement history, stamps `upgraded_from=CLIENT` + `upgraded_at/by`, flips `role/display_role/permissions` to the new selection, issues a fresh invite link). Response returns `upgraded: true`. No more 409 for this common "referred physician becomes CPA" scenario.
+- Active non-CLIENT collisions still return the descriptive 409 from iter 35.
+- CLIENT target role for an existing CLIENT email keeps the 409 ("already registered as client") to prevent accidental duplicate client creation.
+
+**Feature 2 — CLIENT lifecycle in Users tab**
+- Previously `DELETE /users/{uid}` hard-blocked CLIENT deletion with "managed from engagement record". Dropped that block — Admin can now Deactivate / Reactivate / Soft-delete clients directly from the Users tab, giving the lifecycle parity with staff rows.
+- New `?permanent=true` query param on `DELETE /users/{uid}`: performs a HARD delete (removes the user document + burns all password_reset_tokens). Safeguards:
+  - Self-delete → 400.
+  - Last active admin → 400 ("Cannot permanently delete the last active admin").
+  - CLIENT with any linked engagements → 400 with count ("This client has N engagement(s). Delete those first…") to keep data integrity.
+
+**Frontend**
+- `AddMemberModal`:
+  - `<ExistingUserHint>` now takes `targetRole` and shows a **green "Submit to upgrade this account to a team member — engagement history is preserved"** hint whenever an active/invited CLIENT is selected and the admin's chosen role is non-CLIENT. Submit button label flips to "Upgrade to team member" in that state.
+  - New **blue `invite-upgraded`** banner in the success view (parallel to the iter-35 `invite-reactivated` banner).
+  - Only active non-CLIENT matches still disable submit.
+- `UsersTable`:
+  - Kebab menu for CLIENT rows now exposes Deactivate / Reactivate / Remove (soft) / **Delete permanently** (only visible on removed rows) instead of the old "managed from engagement" fallback.
+  - New `doDelete(u, permanent)` helper calls `/users/{uid}?permanent=true` when chosen. `users-confirm-permanent` dialog spells out the irreversibility.
+
+**Tests**: `test_client_upgrade_and_permanent_delete.py` — **8/8 PASS** (upgrade-client-to-CPA preserves id + stamps upgraded_from, active-staff still 409, client-target-role still 409, permanent-delete removes from /users/all, cannot self-permanent-delete 400, cannot last-admin-permanent-delete 400, client can be deactivated/reactivated/soft-deleted). Combined regression: **28/28 PASS** across iter 35/36/37 suites. End-to-end verified live: `existing-user-hint-invited-client` testid renders on a fresh CLIENT seed, submit button stays enabled, backend upgrades the row with `upgraded_from=CLIENT`.
+
 ### Iter 36.1 (Apr 30, 2026 — Users tab filter bar: single-row 70/15/15 layout)
 
 - `<UsersTable>` filter toolbar refactored from a wrapping flex row to a CSS Grid (`grid-template-columns: 70fr 15fr 15fr`) so search / role / status inputs always render on one horizontal line on desktop, with a responsive `@media (max-width: 720px)` breakpoint that stacks the three controls vertically on mobile.

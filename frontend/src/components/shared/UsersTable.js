@@ -129,11 +129,16 @@ export default function UsersTable({ navigate }) {
     setBusy(false);
   };
 
-  const doDelete = async (u) => {
+  const doDelete = async (u, permanent = false) => {
     setBusy(true);
     try {
-      await api.delete(`/users/${u.id}`);
-      await afterAction(`${u.name || u.email} was removed.`);
+      const url = permanent
+        ? `/users/${u.id}?permanent=true`
+        : `/users/${u.id}`;
+      await api.delete(url);
+      await afterAction(permanent
+        ? `${u.name || u.email} was permanently deleted.`
+        : `${u.name || u.email} was removed.`);
     } catch (x) { setErr(fmtError(x)); setConfirm(null); }
     setBusy(false);
   };
@@ -269,7 +274,7 @@ export default function UsersTable({ navigate }) {
                             style={{
                               position: "fixed", top: menuAnchor.top, right: menuAnchor.right,
                               background: "#fff", border: "1px solid var(--border-default)",
-                              borderRadius: 8, minWidth: 200, padding: 6,
+                              borderRadius: 8, minWidth: 210, padding: 6,
                               boxShadow: "0 8px 24px rgba(15,23,42,0.12)", zIndex: 3000,
                             }}
                           >
@@ -278,7 +283,7 @@ export default function UsersTable({ navigate }) {
                                 <Mail size={13} /> {u.status === "invited" ? "Send invitation" : "Resend invitation"}
                               </button>
                             )}
-                            {u.status === "active" && u.role !== "CLIENT" && (
+                            {u.status === "active" && (
                               <button type="button" className="menu-item" onClick={() => { setOpenMenu(null); setConfirm({ action: "deactivate", row: u }); }} data-testid={`user-actions-deactivate-${u.id}`}>
                                 <PowerOff size={13} /> Deactivate
                               </button>
@@ -288,15 +293,15 @@ export default function UsersTable({ navigate }) {
                                 <Power size={13} /> Reactivate
                               </button>
                             )}
-                            {u.role !== "CLIENT" && u.status !== "removed" && (
+                            {u.status !== "removed" && (
                               <button type="button" className="menu-item menu-item-danger" onClick={() => { setOpenMenu(null); setConfirm({ action: "delete", row: u }); }} data-testid={`user-actions-delete-${u.id}`}>
-                                <Trash2 size={13} /> Delete
+                                <Trash2 size={13} /> Remove
                               </button>
                             )}
-                            {u.role === "CLIENT" && (
-                              <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-secondary)" }}>
-                                Client actions are managed from their engagement record.
-                              </div>
+                            {u.status === "removed" && (
+                              <button type="button" className="menu-item menu-item-danger" onClick={() => { setOpenMenu(null); setConfirm({ action: "permanent", row: u }); }} data-testid={`user-actions-permanent-delete-${u.id}`}>
+                                <Trash2 size={13} /> Delete permanently
+                              </button>
                             )}
                           </div>
                         )}
@@ -313,13 +318,24 @@ export default function UsersTable({ navigate }) {
       {/* Confirmation dialogs */}
       {confirm?.action === "delete" && (
         <ConfirmDialog
-          title="Remove this member?"
-          body={`${confirm.row.name || confirm.row.email} will be soft-deleted. Their engagement history stays intact and the email address is freed so they can be re-invited later.`}
+          title="Remove this user?"
+          body={`${confirm.row.name || confirm.row.email} will be soft-deleted. Engagement history stays intact and the email is freed so they can be re-invited later.`}
           confirmLabel="Remove"
           testid="users-confirm-delete"
           busy={busy}
           onCancel={() => setConfirm(null)}
-          onConfirm={() => doDelete(confirm.row)}
+          onConfirm={() => doDelete(confirm.row, false)}
+        />
+      )}
+      {confirm?.action === "permanent" && (
+        <ConfirmDialog
+          title="Permanently delete this user?"
+          body={`${confirm.row.name || confirm.row.email} will be erased from the database. This action is IRREVERSIBLE — the email can never be linked back to this account's activity log. Consider keeping them soft-deleted unless you need a hard purge.`}
+          confirmLabel="Permanently delete"
+          testid="users-confirm-permanent"
+          busy={busy}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => doDelete(confirm.row, true)}
         />
       )}
       {confirm?.action === "deactivate" && (
