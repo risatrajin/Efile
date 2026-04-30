@@ -329,18 +329,8 @@ h2.section-title, .section-title {
   padding: 20px 48px;
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-primary);
-  position: relative;
 }
 .app-header-inner { display: flex; align-items: center; gap: 24px; }
-.app-header-logo-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  display: inline-flex;
-  align-items: center;
-  pointer-events: auto;
-}
 .brand { font-family: var(--font-serif); font-weight: 400; font-size: 18px; letter-spacing: -0.2px; }
 .brand-badge { font-size: 11px; color: var(--text-secondary); padding: 2px 8px; border: 1px solid var(--border-default); border-radius: 6px; }
 
@@ -352,16 +342,6 @@ h2.section-title, .section-title {
 @media (max-width: 720px) {
   .app-header { padding: 16px 20px; flex-wrap: wrap; gap: 12px; }
   .app-header-inner { gap: 12px; }
-  /* On mobile, flow the logo back into the header inline so it doesn't
-     overlap controls. */
-  .app-header-logo-center {
-    position: static;
-    transform: none;
-    order: -1;
-    width: 100%;
-    justify-content: center;
-    margin-bottom: 4px;
-  }
 }
 
 /* ===== Kanban ===== */
