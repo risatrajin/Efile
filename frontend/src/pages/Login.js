@@ -102,8 +102,14 @@ export default function Login() {
   return (
     <div className="login-shell">
       <div className="login-card card animate-in">
-        <div className="brand-xl">CloudTax</div>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 24 }}>Wealthsimple T2 pilot</div>
+        <img
+          src="/cloud-tax-logo.svg"
+          alt="CloudTax"
+          data-testid="login-logo"
+          style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }}
+        />
+        <h1 className="brand-xl" style={{ fontSize: 40 }}>Welcome back</h1>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 24 }}>Corporate Tax Filing Platform</div>
 
         {!otpState ? (
           <>
@@ -287,7 +293,7 @@ export function SetPassword() {
     return (
       <div className="login-shell">
         <div className="login-card card">
-          <div className="brand-xl">CloudTax</div>
+          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
           <h2 className="section-title" style={{ marginTop: 20 }}>Password set</h2>
           <p className="muted" style={{ fontSize: 13 }}>You can now sign in with your email and new password.</p>
           <Link className="btn btn-primary" to="/login" style={{ marginTop: 16 }} data-testid="goto-login">Sign in</Link>
@@ -300,7 +306,7 @@ export function SetPassword() {
     return (
       <div className="login-shell">
         <div className="login-card card">
-          <div className="brand-xl">CloudTax</div>
+          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
           <div className="muted" style={{ marginTop: 20, fontSize: 13 }}>Validating invitation…</div>
         </div>
       </div>
@@ -310,7 +316,7 @@ export function SetPassword() {
   return (
     <div className="login-shell">
       <div className="login-card card animate-in">
-        <div className="brand-xl">CloudTax</div>
+        <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
         <h2 className="section-title" style={{ marginTop: 20 }}>Set your password</h2>
         <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
           {invite ? (

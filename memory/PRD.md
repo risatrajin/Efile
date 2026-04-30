@@ -276,6 +276,23 @@
 
 ## Backlog (prioritized)
 
+### Iter 39 (Apr 30, 2026 — CPA tab consistency + unified stat cards + centered header logo + login copy)
+
+**Bug**: CPA tab was showing REMOVED users as active experts (e.g. "Iter35 New", "Search SoftDel", "Toggle Test") because `GET /api/users` returned every row regardless of `is_active`. The Users tab (iter 36) correctly reflected their REMOVED status, creating a confusing mismatch.
+
+**Fixes**:
+- Backend `GET /api/users` now filters with `{"is_active": {"$ne": False}}` at the query level. Soft-deleted and deactivated users are excluded. The Users tab's `GET /api/users/all` still returns everyone since its purpose is lifecycle management.
+- Frontend `CpasTab.load()` double-guards with a client-side `u.is_active !== false` filter so stale cached payloads don't re-introduce the bug. Real-time sync after delete / deactivate / reactivate now works because both tabs rehydrate from the same canonical `is_active` flag.
+
+**UI unification — stat cards**:
+- CPA tab's "Team capacity" cards rewritten to match the Users tab design: `.card` class, 16px padding, 11px uppercase label, 28px numeric body (was 48px in heavy-handed cards with 32/28 padding). Same grid gap + margin-bottom. Now the two tabs feel like one system.
+
+**UI polish — header + login**:
+- `AppHeader`: CloudTax logo moved from left-aligned to **absolutely centered** at 24px height (max per brand spec). 3-column flex-with-absolute layout keeps tabs/workspace pill on the left and user controls on the right. Responsive breakpoint at 720px flows the logo back into document order above the row.
+- Login page: replaced serif "CloudTax" text with the SVG logo (24px). New **"Welcome back"** headline (40px) replaces the Sign-in-adjacent brand text. Subtext changed from *"Wealthsimple T2 pilot"* → *"Corporate Tax Filing Platform"*. Applied identically to the set-password, reset-password, forgot-password, and OTP screens so the whole auth funnel is consistent.
+
+**Tests**: All 33 backend regression tests still PASS. Live-verified via Playwright: `Expert rows: 3`, `Stat cards: 3`, `Header logo: height=24px centered`.
+
 ### Iter 38 (Apr 30, 2026 — P1: Fix AI Extract + Document Download "Could not fetch document bytes")
 
 **Bug**: CPA dashboard's AI Extract and Document Download both failed with a 500 "Could not fetch document bytes" error. Blocked the whole parsing workflow.

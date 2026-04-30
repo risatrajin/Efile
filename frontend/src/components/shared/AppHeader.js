@@ -41,15 +41,22 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
 
   return (
     <header className="app-header" data-testid="app-header">
+      {/* Centered CloudTax logo — sits absolutely in the middle of the header
+          on desktop (wraps back into the flow on <720px mobile). Max height
+          24px per brand spec. */}
+      <Link
+        to="/"
+        className="app-header-logo-center"
+        data-testid="brand-logo"
+      >
+        <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block" }} />
+      </Link>
       <div className="app-header-inner">
-        <Link to="/" className="brand-link" data-testid="brand-logo" style={{ display: "inline-flex", alignItems: "center" }}>
-          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 22, width: "auto" }} />
-        </Link>
         {workspaceLabel && user?.role !== "ADMIN" && (
           <span data-testid="workspace-pill" style={{
             padding: "6px 14px", borderRadius: 999,
             background: "var(--bg-subtle)", color: "var(--text-primary)",
-            fontSize: 13, fontWeight: 500, marginLeft: 8,
+            fontSize: 13, fontWeight: 500,
           }}>{workspaceLabel}</span>
         )}
         {tabs.length > 0 && (

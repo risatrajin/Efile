@@ -29,7 +29,7 @@ export default function ForgotPassword() {
   return (
     <div className="login-shell">
       <div className="login-card card animate-in">
-        <div className="brand-xl">CloudTax</div>
+        <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
         <div className="muted" style={{ fontSize: 12, marginBottom: 24 }}>Reset your password</div>
         <h2 className="section-title">Forgot password</h2>
 
@@ -163,7 +163,7 @@ export function ResetPassword() {
     return (
       <div className="login-shell">
         <div className="login-card card">
-          <div className="brand-xl">CloudTax</div>
+          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
           <h2 className="section-title" style={{ marginTop: 20 }}>Password reset</h2>
           <p className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
             Your password has been updated. You can now sign in with your new password.
@@ -184,7 +184,7 @@ export function ResetPassword() {
   return (
     <div className="login-shell">
       <div className="login-card card animate-in">
-        <div className="brand-xl">CloudTax</div>
+        <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
         <h2 className="section-title" style={{ marginTop: 20 }}>Set a new password</h2>
         <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
           {!initialToken && (

@@ -165,8 +165,14 @@ function CpasTab({ engs }) {
   const load = async () => {
     try {
       const { data } = await api.get("/users");
-      // Show CPAs and Admins as "Experts"
-      setUsers(data.filter((u) => u.role === "CPA" || u.role === "ADMIN").sort((a, b) => a.name.localeCompare(b.name)));
+      // Only show active experts (CPA + ADMIN). The /users endpoint already
+      // filters out soft-deleted rows, but we double-guard here in case
+      // clients cache an older payload.
+      setUsers(
+        data
+          .filter((u) => (u.role === "CPA" || u.role === "ADMIN") && u.is_active !== false)
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      );
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); }, []);
@@ -192,20 +198,20 @@ function CpasTab({ engs }) {
     <div data-testid="admin-cpas-tab">
       {err && <div className="alert alert-risk">{err}</div>}
 
-      {/* Team capacity */}
+      {/* Team capacity — match Users-tab stat-card style for a unified look */}
       <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 16 }}>Team capacity</h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 40 }} data-testid="team-capacity">
-        <div style={{ background: "#fff", borderRadius: 14, padding: "32px 28px" }}>
-          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1 }} data-testid="cap-total-clients">{totalClients}</div>
-          <div className="muted" style={{ fontSize: 13, marginTop: 18 }}>Total clients</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }} data-testid="team-capacity">
+        <div className="card" style={{ padding: 16 }} data-testid="cap-total-clients-card">
+          <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Total clients</div>
+          <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4 }} data-testid="cap-total-clients">{totalClients}</div>
         </div>
-        <div style={{ background: "#fff", borderRadius: 14, padding: "32px 28px" }}>
-          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1 }} data-testid="cap-avg-per-cpa">{avgPerCpa}</div>
-          <div className="muted" style={{ fontSize: 13, marginTop: 18 }}>Avg per CPA</div>
+        <div className="card" style={{ padding: 16 }} data-testid="cap-avg-per-cpa-card">
+          <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Avg per CPA</div>
+          <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4 }} data-testid="cap-avg-per-cpa">{avgPerCpa}</div>
         </div>
-        <div style={{ background: "#fff", borderRadius: 14, padding: "32px 28px" }}>
-          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1 }} data-testid="cap-pending">{pendingAssignment}</div>
-          <div className="muted" style={{ fontSize: 13, marginTop: 18 }}>Pending assignment</div>
+        <div className="card" style={{ padding: 16 }} data-testid="cap-pending-card">
+          <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Pending assignment</div>
+          <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4 }} data-testid="cap-pending">{pendingAssignment}</div>
         </div>
       </div>
 

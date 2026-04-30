@@ -588,9 +588,13 @@ async def reset_password(body: SetPasswordIn):
 async def list_users(user: dict = Depends(require_role("ADMIN", "CPA", "WS_PARTNER"))):
     db = get_db()
     role = user["role"]
-    q = {}
+    # Base filter: exclude soft-deleted / deactivated rows (is_active=False) so
+    # downstream UIs like the CPA tab never surface removed members as
+    # "active experts". Legacy rows without the is_active field are treated
+    # as active by default via ``$ne: False`` semantics.
+    q: dict = {"is_active": {"$ne": False}}
     if role == "CPA":
-        q = {"role": {"$in": ["CLIENT", "CPA", "ADMIN"]}}
+        q["role"] = {"$in": ["CLIENT", "CPA", "ADMIN"]}
     users = []
     async for u in db.users.find(q, {"password_hash": 0, "_id": 0}).sort("name", 1):
         users.append(u)
