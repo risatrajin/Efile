@@ -747,7 +747,26 @@ export default function CpaEngagement() {
   };
 
   const downloadDoc = async (doc) => {
-    try { const { data } = await api.get(`/documents/${doc.id}/download-url`); window.open(data.download_url, "_blank"); } catch (x) { setErr(fmtError(x)); }
+    try {
+      const { data } = await api.get(`/documents/${doc.id}/download-url`);
+      const url = data.download_url || "";
+      // S3 presigned URLs are self-authenticating — open directly.
+      // Local-fallback URLs point back at our own /api/documents/.../download
+      // which requires the auth cookie/header; open-in-new-tab can strip
+      // those, so fetch as a blob via the authenticated axios client and
+      // hand the browser an object URL instead.
+      if (/^https?:\/\//i.test(url)) {
+        window.open(url, "_blank");
+        return;
+      }
+      const resp = await api.get(`/documents/${doc.id}/download`, { responseType: "blob" });
+      const blob = new Blob([resp.data], { type: doc.mime_type || "application/octet-stream" });
+      const blobUrl = URL.createObjectURL(blob);
+      // Open in a new tab so the user can preview inline or download.
+      window.open(blobUrl, "_blank");
+      // Revoke after a minute — plenty of time for the browser to consume.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (x) { setErr(fmtError(x)); }
   };
 
   const createOpp = async (f) => { try { await api.post(`/engagements/${eid}/opportunities`, f); await load(); } catch (x) { setErr(fmtError(x)); } };

@@ -276,6 +276,20 @@
 
 ## Backlog (prioritized)
 
+### Iter 38 (Apr 30, 2026 — P1: Fix AI Extract + Document Download "Could not fetch document bytes")
+
+**Bug**: CPA dashboard's AI Extract and Document Download both failed with a 500 "Could not fetch document bytes" error. Blocked the whole parsing workflow.
+
+**Root cause**: `s3_service.get_object_bytes()` only spoke S3 — when a document was stored via the local-disk fallback (key prefixed with `local://...` because user's AWS IAM blocks S3 uploads), the function tried to hit S3 with the bogus key and returned None. The extract endpoint then raised 500.
+
+**Secondary issue**: `CpaEngagement.downloadDoc()` did `window.open(download_url)` on a relative `/api/documents/.../download` URL — that stripped the auth cookie/header for some browsers, leading to 401s.
+
+**Fixes**:
+- `s3_service.py`: `get_object_bytes()` now detects `local://` keys and reads directly from the filesystem (mirrors the existing local-fallback logic in `doc_download_local` + `doc_download_one_file`).
+- `frontend/pages/CpaEngagement.js`: `downloadDoc()` now detects relative (local) URLs, fetches them via the authenticated axios client as a blob, and opens a `URL.createObjectURL` blob URL. S3 presigned URLs still open directly. Mirrors the ClientPortal pattern that was already correct.
+
+**Tests**: `test_local_storage_fallback.py` — **5/5 PASS** (local:// reads from disk, missing path returns None, download-url returns relative path, /download streams real bytes, /extract no longer 500s on local). Full combined regression: **33/33 PASS** across iters 35/36/37/38.
+
 ### Iter 37 (Apr 30, 2026 — Admin Add Member smart logic + client lifecycle + permanent delete)
 
 **Feature 1 — Existing CLIENT → staff upgrade in Add Member**

@@ -78,6 +78,19 @@ def object_exists(object_key: str) -> bool:
 
 
 def get_object_bytes(object_key: str) -> bytes | None:
+    # Local-disk fallback storage: the rest of the app stamps ``object_key``
+    # with a ``local://<absolute_path>`` prefix when S3 upload was blocked by
+    # CORS/IAM and we proxied to disk. Read straight from the filesystem so
+    # that AI Extract and any other byte-consumers work uniformly across
+    # both storage paths.
+    if object_key and object_key.startswith("local://"):
+        path = object_key[len("local://"):]
+        try:
+            with open(path, "rb") as fh:
+                return fh.read()
+        except OSError as e:
+            log.error("Local get_object_bytes failed for %s: %s", path, e)
+            return None
     try:
         resp = get_client().get_object(Bucket=bucket_name(), Key=object_key)
         return resp["Body"].read()
