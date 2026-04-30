@@ -276,6 +276,13 @@
 
 ## Backlog (prioritized)
 
+### Iter 36.1 (Apr 30, 2026 — Users tab filter bar: single-row 70/15/15 layout)
+
+- `<UsersTable>` filter toolbar refactored from a wrapping flex row to a CSS Grid (`grid-template-columns: 70fr 15fr 15fr`) so search / role / status inputs always render on one horizontal line on desktop, with a responsive `@media (max-width: 720px)` breakpoint that stacks the three controls vertically on mobile.
+- All three inputs pinned to a consistent 40px height (was previously mixed ~36px vs ~40px depending on variant) + 12px gap between fields. Search icon positioning re-anchored to the relative wrapper.
+- The "N of M" summary row moved below the filter bar to avoid eating horizontal space.
+- Verified live at 1920x1080 desktop: Search = 823px (70%), Role = 176px (15%), Status = 176px (15%), all aligned on Y=408. Verified at 500px: controls stack vertically.
+
 ### Iter 36 (Apr 30, 2026 — Admin Portal: Email autocomplete in Add Member + new Users tab)
 
 **Feature 1 — Email typeahead in Add Member flow** (prevents duplicates + misclicks):

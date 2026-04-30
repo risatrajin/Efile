@@ -467,3 +467,37 @@ h2.section-title, .section-title {
 .menu-item:disabled { cursor: wait; opacity: 0.6; }
 .menu-item.menu-item-danger { color: #c62828; }
 .menu-item.menu-item-danger:hover { background: #ffebee; }
+
+/* Users tab filter bar — single-row 70/15/15 layout with responsive stack. */
+.users-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 70fr) minmax(0, 15fr) minmax(0, 15fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+.users-filter-bar > * {
+  min-width: 0;
+}
+.users-filter-bar .input,
+.users-filter-bar .select {
+  width: 100%;
+  height: 40px;
+  box-sizing: border-box;
+}
+.users-filter-search {
+  position: relative;
+}
+.users-filter-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  .users-filter-bar {
+    grid-template-columns: 1fr;
+  }
+}

@@ -173,9 +173,9 @@ export default function UsersTable({ navigate }) {
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ position: "relative", flex: "1 1 280px" }}>
-          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-secondary)" }} />
+      <div className="users-filter-bar" data-testid="users-filter-bar">
+        <div className="users-filter-search">
+          <Search size={14} className="users-filter-search-icon" />
           <input
             className="input"
             style={{ paddingLeft: 32 }}
@@ -185,21 +185,21 @@ export default function UsersTable({ navigate }) {
             data-testid="users-search"
           />
         </div>
-        <select className="select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} data-testid="users-role-filter">
+        <select className="select users-filter-role" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} data-testid="users-role-filter">
           <option value="all">All roles</option>
           <option value="ADMIN">Admin</option>
           <option value="CPA">CPA</option>
           <option value="WS_PARTNER">Partner</option>
           <option value="CLIENT">Client</option>
         </select>
-        <select className="select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-testid="users-status-filter">
+        <select className="select users-filter-status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-testid="users-status-filter">
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="invited">Invited</option>
           <option value="removed">Removed</option>
         </select>
-        <div className="muted" style={{ fontSize: 12 }}>{filtered.length} of {users.length}</div>
       </div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{filtered.length} of {users.length}</div>
 
       {err && <div className="alert alert-risk" data-testid="users-err">{err}</div>}
       {info && <div className="alert" data-testid="users-info" style={{ background: "#e8f5e9", border: "1px solid #c8e6c9", color: "#1b5e20", padding: "10px 12px", borderRadius: 8, fontSize: 13, marginBottom: 12 }}>{info}</div>}
