@@ -84,6 +84,78 @@ class TestInviteDuplicateMessages:
         data = r.json()
         assert data["user_id"]
         assert data["invite_link"]
+        assert data.get("reactivated") in (False, None)
+        # Cleanup
+        requests.delete(
+            f"{BASE}/api/users/{data['user_id']}",
+            headers=_headers(admin_token), timeout=20,
+        )
+
+
+class TestReactivateSoftDeleted:
+    """Invite → delete → re-invite the same email should reactivate the
+    original record with the new role/permissions and issue a fresh invite."""
+
+    def test_full_reactivate_cycle(self, admin_token):
+        email = f"reactivate_{uuid.uuid4().hex[:10]}@example.com"
+
+        # 1. Initial invite.
+        r1 = requests.post(
+            f"{BASE}/api/users/invite",
+            json={"email": email, "name": "Original Person", "role": "CPA"},
+            headers=_headers(admin_token),
+            timeout=20,
+        )
+        assert r1.status_code == 200, r1.text
+        uid1 = r1.json()["user_id"]
+        assert r1.json().get("reactivated") in (False, None)
+
+        # 2. Soft-delete.
+        r2 = requests.delete(
+            f"{BASE}/api/users/{uid1}",
+            headers=_headers(admin_token),
+            timeout=20,
+        )
+        assert r2.status_code == 200, r2.text
+
+        # 3. Re-invite same email with a *different* role — reactivation
+        # should preserve the original user id but apply the new role.
+        r3 = requests.post(
+            f"{BASE}/api/users/invite",
+            json={"email": email, "name": "Reactivated Person", "role": "WS_PARTNER"},
+            headers=_headers(admin_token),
+            timeout=20,
+        )
+        assert r3.status_code == 200, r3.text
+        data3 = r3.json()
+        assert data3["user_id"] == uid1, "reactivation must preserve the original user id"
+        assert data3.get("reactivated") is True, "response must flag reactivated:true"
+        assert data3["invite_link"].startswith("http"), "fresh invite link must be issued"
+
+        # 4. Team list must include the reactivated row with the new role.
+        r4 = requests.get(f"{BASE}/api/users/team", headers=_headers(admin_token), timeout=20)
+        assert r4.status_code == 200, r4.text
+        match = next((u for u in r4.json() if u.get("email") == email), None)
+        assert match is not None, "reactivated user should reappear in the team list"
+        assert match["role"] == "WS_PARTNER"
+        assert match.get("is_active") is True
+        assert match.get("reactivated_at")
+        assert match["name"] == "Reactivated Person"
+
+        # Cleanup.
+        requests.delete(f"{BASE}/api/users/{uid1}", headers=_headers(admin_token), timeout=20)
+
+    def test_reactivation_does_not_trigger_when_email_is_actively_in_use(self, admin_token):
+        # A live active collision must still win over reactivation — even if a
+        # separate soft-deleted record also had this email. (Pallavi is an
+        # active seeded CPA, so the invite must 409 and NEVER try to reactivate.)
+        r = requests.post(
+            f"{BASE}/api/users/invite",
+            json={"email": "pallavi@cloudtax.ca", "name": "X", "role": "CPA"},
+            headers=_headers(admin_token),
+            timeout=20,
+        )
+        assert r.status_code == 409, r.text
 
 
 class TestSelfRoleGuard:

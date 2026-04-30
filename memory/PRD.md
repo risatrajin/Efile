@@ -276,28 +276,32 @@
 
 ## Backlog (prioritized)
 
-### Iter 35 (Apr 30, 2026 — Admin Add Member: descriptive duplicate errors + self-role guard + 401 redirect)
+### Iter 35 (Apr 30, 2026 — Admin Add Member: descriptive duplicate errors + soft-delete reactivation + self-role guard + 401 redirect)
 
-**Bug report**: "Sometimes the system shows 'email already in the list,' but the member is not visible in the table, and occasionally it returns a 'Request failed with status code 403' error."
+**Bug report**: "A member is deleted and no longer visible in the table. When trying to add the same email again, the system shows 'email already exists'. Sometimes also 'Request failed with status code 403'."
 
-**Root cause 1 (duplicate confusion)**: The Roles & Permissions table hides CLIENT rows and soft-deleted users; a generic 409 `"User already exists"` left admins unable to tell *where* the collision was. Leftover CLIENT records (e.g. `john@mail.com`, `test@mail.com`) in the DB would block a staff invite on that email without the admin ever seeing why.
+**Root cause 1 (duplicate confusion)**: The Roles & Permissions table hides CLIENT rows and soft-deleted users; a generic 409 `"User already exists"` left admins unable to tell *where* the collision was. Leftover CLIENT records (e.g. `john@mail.com`, `test@mail.com`) in the DB would block a staff invite on that email without the admin ever seeing why. Additionally, legacy soft-deleted rows kept the original email (pre iter-32) and would collide on re-invite.
 
 **Root cause 2 (403)**: `require_role("ADMIN")` returns 403 whenever `user.role != "ADMIN"`. The foot-gun: an admin could PATCH their own role to `CPA` or `is_active=false` via the Edit Member modal, bricking their own session — the very next POST to `/users/invite` would then 403.
 
 **Backend** (`server.py`):
-- `POST /api/users/invite` now returns a contextual 409:
-  - CLIENT match → "This email is already registered as a client account (<Name>). Client accounts are managed from the client record — please use a different email for staff."
-  - Active staff match → "This email is already in use by an active <Role> (<Name>). Check the Roles & Permissions table above or use a different address."
-  - Soft-deleted match → defensive copy (normally unreachable since `delete_user` rotates the email).
-  - Also normalizes email to lowercase once at the top + adds a basic `@` sanity check returning 400.
+- `DELETE /api/users/{uid}` now preserves the original email in a new `removed_email` field (alongside rotating the live `email` to the `deleted+<id8>@cloudtax.invalid` placeholder that frees the unique index). This enables reactivation-on-invite going forward without breaking legacy behaviour.
+- `POST /api/users/invite` now does three-stage resolution:
+  1. **Active live collision** → descriptive 409 naming the role + the existing member:
+     - CLIENT match → "This email is already registered as a client account (<Name>). Client accounts are managed from the client record — please use a different email for staff."
+     - Active staff match → "This email is already in use by an active <Role> (<Name>). Check the Roles & Permissions table above or use a different address."
+  2. **Soft-deleted match via `removed_email`** → **reactivate** the original user id with the newly-chosen name/role/permissions, clear the soft-delete stamps (`removed_email/removed_at/removed_by_*/session_invalidated_at`), rotate live email back to the real address, burn any stale invite tokens, issue a fresh 7-day invite link, and fire the Resend welcome email. Response includes `reactivated: true`.
+  3. **Fresh email** → normal create flow.
+- Email normalization: lowercase trim + basic `@` check returning 400 before DB lookup.
 - `PATCH /api/users/{uid}` now rejects `uid == current_user.id` attempts to (a) change own role to anything other than ADMIN, or (b) set `is_active=false`. Returns 400 with a human message explaining to ask another admin.
 
 **Frontend** (`lib/api.js`, `pages/Login.js`, `pages/AdminSettings.js`):
 - Axios global response interceptor on 401 clears the local token and redirects to `/login?session=expired` (skipping the auth pages themselves to avoid loops). 403 is intentionally NOT globalised so legitimate admin-only endpoint responses can surface contextually.
 - Login page renders a `login-session-expired` amber banner when the `?session=expired` query param is present.
-- `AddMemberModal.submit()` catches 403 specifically and shows "Your admin session has expired or your permissions have changed. Please sign out and sign back in to continue." instead of the bare backend message.
+- `AddMemberModal`: new `invite-reactivated` blue banner (with `Check` icon) shown above the "Invitation email sent" card when the backend responds with `reactivated: true`. Wording: "Previously removed member reactivated. Their account has been restored with the new role & permissions. A fresh invitation has been issued."
+- `AddMemberModal.submit()` catches 403 specifically with the "session expired" copy.
 
-**Tests**: `test_invite_duplicate_and_self_role.py` — **7/7 PASS** (active CPA collision returns descriptive 409 + names the role + names the member, case-insensitive lookup, invalid email rejected, new email success, self-role-demote 400, self-deactivate 400, self name-change still 200 = guard doesn't over-block).
+**Tests**: `test_invite_duplicate_and_self_role.py` — **9/9 PASS** (active CPA collision → descriptive 409, case-insensitive lookup, invalid email rejected, fresh invite success, **full reactivate cycle: invite → delete → re-invite with different role → same user_id + reactivated:true + team list shows new role**, reactivation never triggers when email is actively in use, self-role-demote 400, self-deactivate 400, self name-change 200). Live end-to-end verified via Playwright screenshot showing both the blue reactivation banner and the green email-sent banner in the modal.
 
 ### Iter 34 (Feb 2026 — Roles & Permissions polish: dedupe, role-based presets, invite-info, copy-link, modal overlays)
 

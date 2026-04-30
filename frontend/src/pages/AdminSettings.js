@@ -270,6 +270,7 @@ function AddMemberModal({ onClose, onDone }) {
   const [err, setErr] = useState("");
   const [link, setLink] = useState(null);
   const [emailSent, setEmailSent] = useState(false);
+  const [reactivated, setReactivated] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
   const togglePerm = (k) => setForm((f) => ({ ...f, permissions: { ...f.permissions, [k]: !f.permissions[k] } }));
@@ -291,6 +292,7 @@ function AddMemberModal({ onClose, onDone }) {
       });
       setLink(data.invite_link);
       setEmailSent(!!data.email_sent);
+      setReactivated(!!data.reactivated);
       await onDone();
     } catch (e) {
       const status = e?.response?.status;
@@ -326,6 +328,21 @@ function AddMemberModal({ onClose, onDone }) {
         </div>
         {link ? (
           <div className="stack-md">
+            {reactivated && (
+              <div
+                data-testid="invite-reactivated"
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  padding: "12px 14px", background: "#e3f2fd",
+                  border: "1px solid #90caf9", borderRadius: 10,
+                }}
+              >
+                <Check size={16} style={{ color: "#0d47a1", flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: 13, lineHeight: 1.5, color: "#0d2b4e" }}>
+                  <strong>Previously removed member reactivated.</strong> Their account has been restored with the new role &amp; permissions. A fresh invitation has been issued.
+                </div>
+              </div>
+            )}
             {emailSent ? (
               <div
                 data-testid="invite-email-sent"

@@ -598,26 +598,19 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
     email_lc = (body.email or "").strip().lower()
     if not email_lc or "@" not in email_lc:
         raise HTTPException(400, "Please enter a valid email address")
+
+    # Step 1 — active collision on the live email field. The Roles table hides
+    # CLIENTs and soft-deleted members, so we must spell out exactly where the
+    # conflict lives to avoid the "email already exists but I can't see it"
+    # UX confusion.
     existing = await db.users.find_one({"email": email_lc})
     if existing:
-        # Build a descriptive message so the admin understands WHY the email is
-        # taken — the Roles table hides CLIENTs and soft-deleted members, so a
-        # bare "already exists" is misleading.
         ex_role = existing.get("role")
-        ex_active = existing.get("is_active", True)
         ex_name = existing.get("name") or "someone"
         if ex_role == "CLIENT":
             detail = (
                 f"This email is already registered as a client account ({ex_name}). "
                 "Client accounts are managed from the client record — please use a different email for staff."
-            )
-        elif not ex_active:
-            # This branch is effectively unreachable because delete_user rotates
-            # the email to `deleted+<id8>@cloudtax.invalid`, but we keep it as
-            # defensive copy for any legacy soft-deleted rows.
-            detail = (
-                "This email belongs to a previously removed member. "
-                "Please use a different address or contact support to reactivate."
             )
         else:
             role_label = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "WS Partner"}.get(ex_role, ex_role or "member")
@@ -626,6 +619,70 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
                 "Check the Roles & Permissions table above or use a different address."
             )
         raise HTTPException(409, detail)
+
+    # Step 2 — soft-deleted reactivation. A prior delete stamps ``removed_email``
+    # with the original address (the live ``email`` is rotated to
+    # deleted+<id8>@cloudtax.invalid so the unique index doesn't fire). When
+    # the admin re-invites that same address, reactivate the row with the
+    # newly-chosen name/role/permissions and issue a fresh invite link —
+    # giving the "add member" flow a smooth, consistent feel.
+    reactivate = await db.users.find_one({
+        "removed_email": email_lc,
+        "is_active": False,
+    })
+    if reactivate:
+        uid = reactivate["id"]
+        default_display = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner", "CLIENT": "Client"}.get(body.role, body.role)
+        temp_pass = uuid.uuid4().hex
+        await db.users.update_one(
+            {"id": uid},
+            {
+                "$set": {
+                    "email": email_lc,
+                    "name": body.name,
+                    "role": body.role,
+                    "phone": body.phone,
+                    "display_role": body.display_role or default_display,
+                    "permissions": body.permissions or default_permissions_for(body.role),
+                    "is_active": True,
+                    "password_hash": hash_password(temp_pass),
+                    "reactivated_at": datetime.now(timezone.utc),
+                    "reactivated_by_id": user["id"],
+                    "reactivated_by_name": user.get("name") or user.get("email"),
+                },
+                "$unset": {
+                    "removed_email": "",
+                    "removed_at": "",
+                    "removed_by_id": "",
+                    "removed_by_name": "",
+                    "session_invalidated_at": "",
+                },
+            },
+        )
+        # Burn any leftover invite/reset tokens from the prior lifecycle.
+        await db.password_reset_tokens.update_many(
+            {"user_id": uid, "used": False},
+            {"$set": {"used": True, "revoked_at": datetime.now(timezone.utc)}},
+        )
+        token = new_invite_token()
+        await db.password_reset_tokens.insert_one({
+            "id": str(uuid.uuid4()),
+            "token": token,
+            "user_id": uid,
+            "used": False,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+            "created_at": datetime.now(timezone.utc),
+        })
+        invite_link = f"{FRONTEND_URL}/set-password?token={token}"
+        email_result = ses_service.send_invite(email_lc, body.name, invite_link, body.role)
+        log.info("Reactivated soft-deleted user %s via invite (%s)", email_lc, uid)
+        return {
+            "user_id": uid,
+            "invite_link": invite_link,
+            "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
+            "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+            "reactivated": True,
+        }
     uid = str(uuid.uuid4())
     temp_pass = uuid.uuid4().hex  # random placeholder
     # Default display_role from canonical role
@@ -923,13 +980,17 @@ async def delete_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
         active_admins = await db.users.count_documents({"role": "ADMIN", "is_active": {"$ne": False}})
         if active_admins <= 1:
             raise HTTPException(400, "Cannot remove the last active admin")
-    # Soft-delete: deactivate + free the email so it can be re-invited.
+    # Soft-delete: deactivate + free the email so it can be re-invited. We
+    # preserve the ORIGINAL email in ``removed_email`` so a future invite with
+    # the same address can reactivate this record cleanly (see invite_user).
     freed_email = f"deleted+{uid[:8]}@cloudtax.invalid"
+    original_email = (target.get("email") or "").lower()
     await db.users.update_one(
         {"id": uid},
         {"$set": {
             "is_active": False,
             "email": freed_email,
+            "removed_email": original_email,
             "removed_at": datetime.now(timezone.utc),
             "removed_by_id": user["id"],
             "removed_by_name": user.get("name") or user.get("email"),
