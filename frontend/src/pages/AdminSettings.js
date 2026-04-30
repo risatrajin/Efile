@@ -433,6 +433,9 @@ function RolesTab() {
   const [editing, setEditing] = useState(null);     // user object being edited
   const [confirmRemove, setConfirmRemove] = useState(null);  // user pending removal
   const [openMenu, setOpenMenu] = useState(null);   // uid with actions menu open
+  // When the menu is rendered as a fixed-position overlay we need to know
+  // where to anchor it. Stored as {top, right} relative to the viewport.
+  const [menuAnchor, setMenuAnchor] = useState(null);
 
   const load = async () => {
     try { const { data } = await api.get("/users/team"); setTeam(data); } catch (x) { setErr(fmtError(x)); }
@@ -449,6 +452,27 @@ function RolesTab() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  // Close the menu on scroll/resize — otherwise the fixed-position anchor
+  // would drift away from the trigger button as the table scrolls.
+  useEffect(() => {
+    if (!openMenu) return;
+    const onMove = () => setOpenMenu(null);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [openMenu]);
+
+  const toggleMenu = (uid, triggerEl) => {
+    if (openMenu === uid) { setOpenMenu(null); return; }
+    const rect = triggerEl.getBoundingClientRect();
+    // Anchor the menu 4px below the button, right-aligned to the button.
+    setMenuAnchor({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOpenMenu(uid);
+  };
 
   const updatePerm = async (uid, key, value) => {
     const u = team.find((x) => x.id === uid);
@@ -554,7 +578,7 @@ function RolesTab() {
                   <td style={{ padding: "14px 8px", textAlign: "center", position: "relative" }} data-testid={`role-actions-${u.id}`}>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === u.id ? null : u.id); }}
+                      onClick={(e) => { e.stopPropagation(); toggleMenu(u.id, e.currentTarget); }}
                       data-testid={`role-actions-trigger-${u.id}`}
                       aria-label={`Actions for ${u.name}`}
                       style={{
@@ -564,15 +588,20 @@ function RolesTab() {
                       }}
                       onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
                       onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                    ><MoreVertical size={16} /></button>
-                    {openMenu === u.id && (
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                    {openMenu === u.id && menuAnchor && (
                       <div
                         data-testid={`role-actions-menu-${u.id}`}
+                        role="menu"
                         style={{
-                          position: "absolute", right: 8, top: "calc(100% - 4px)",
+                          position: "fixed",
+                          top: menuAnchor.top,
+                          right: menuAnchor.right,
                           background: "#fff", border: "1px solid var(--border-default)",
-                          borderRadius: 10, boxShadow: "0 10px 24px rgba(0,0,0,0.10)",
-                          zIndex: 50, minWidth: 200, padding: 4, textAlign: "left",
+                          borderRadius: 10, boxShadow: "0 10px 24px rgba(0,0,0,0.14)",
+                          zIndex: 1000, minWidth: 200, padding: 4, textAlign: "left",
                         }}
                       >
                         <button
