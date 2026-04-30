@@ -4,6 +4,7 @@ import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
 import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
+import UsersTable from "../components/shared/UsersTable";
 import { Plus, X } from "lucide-react";
 
 const COLUMNS = [
@@ -280,6 +281,7 @@ export default function AdminDashboard() {
   const adminTabs = [
     { key: "clients", label: "Clients" },
     { key: "cpas", label: "CPA's" },
+    { key: "users", label: "Users" },
   ];
 
   return (
@@ -347,6 +349,18 @@ export default function AdminDashboard() {
         )}
 
         {tab === "cpas" && <CpasTab engs={engs} />}
+
+        {tab === "users" && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 22, fontWeight: 700 }}>Users</h2>
+                <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>All users across CloudTax — search, filter, and manage lifecycle.</p>
+              </div>
+            </div>
+            <UsersTable navigate={navigate} />
+          </>
+        )}
       </div>
     </div>
   );

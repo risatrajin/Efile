@@ -4,6 +4,7 @@ load_dotenv()
 
 import os
 import io
+import re
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
@@ -517,7 +518,13 @@ async def set_password(body: SetPasswordIn):
         raise HTTPException(400, "Invalid or expired token")
     if row["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         raise HTTPException(400, "Token expired")
-    await db.users.update_one({"id": row["user_id"]}, {"$set": {"password_hash": hash_password(body.password)}})
+    await db.users.update_one(
+        {"id": row["user_id"]},
+        {"$set": {
+            "password_hash": hash_password(body.password),
+            "activated_at": datetime.now(timezone.utc),
+        }},
+    )
     await db.password_reset_tokens.update_one({"token": body.token}, {"$set": {"used": True}})
     return {"ok": True}
 
@@ -984,7 +991,13 @@ async def delete_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
     # preserve the ORIGINAL email in ``removed_email`` so a future invite with
     # the same address can reactivate this record cleanly (see invite_user).
     freed_email = f"deleted+{uid[:8]}@cloudtax.invalid"
-    original_email = (target.get("email") or "").lower()
+    live_email = (target.get("email") or "").lower()
+    # If the row is already rotated (repeated DELETE), preserve the previously
+    # captured ``removed_email`` instead of overwriting it with the placeholder.
+    if live_email.endswith("@cloudtax.invalid"):
+        original_email = target.get("removed_email") or live_email
+    else:
+        original_email = live_email
     await db.users.update_one(
         {"id": uid},
         {"$set": {
@@ -1026,6 +1039,198 @@ async def list_team(user: dict = Depends(require_role("ADMIN"))):
             u["display_role"] = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(u["role"], u["role"])
         out.append(u)
     return out
+
+
+async def _compute_user_status(db, u: dict) -> str:
+    """Derive the lifecycle status shown in the Users tab / autocomplete:
+    - ``removed``  → soft-deleted (is_active=false or removed_at set, or the
+                      email was rotated to the cloudtax.invalid placeholder).
+    - ``invited``  → account exists but the person hasn't finished setting
+                      their password yet. Detected via the absence of
+                      ``activated_at`` AND the presence of an unused invite
+                      token, OR the legacy heuristic that the user has no
+                      ``activated_at`` yet.
+    - ``active``   → everything else (logged in at least once, or activated).
+    """
+    if not u.get("is_active", True) or u.get("removed_at") or (u.get("email") or "").endswith("@cloudtax.invalid"):
+        return "removed"
+    if u.get("activated_at"):
+        return "active"
+    # A user is "invited" when they haven't completed set-password yet. We
+    # detect this by: (a) no activated_at AND (b) created recently (last 90
+    # days — beyond that assume the invite lifecycle was completed through
+    # some legacy path) AND (c) an unused, unexpired invite token is still on
+    # file. Older accounts without activated_at default to ``active`` so
+    # seeded users (admin/CPA) aren't miscategorised.
+    created_at = u.get("created_at")
+    if not created_at:
+        return "active"
+    if isinstance(created_at, datetime) and created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    age_days = (datetime.now(timezone.utc) - created_at).days if isinstance(created_at, datetime) else 999
+    if age_days > 90:
+        return "active"
+    has_pending_token = await db.password_reset_tokens.find_one({
+        "user_id": u["id"],
+        "used": False,
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    }) is not None
+    return "invited" if has_pending_token else "active"
+
+
+def _sanitize_user_row(u: dict) -> dict:
+    u = {k: v for k, v in u.items() if k != "password_hash"}
+    u.pop("_id", None)
+    return u
+
+
+@api.get("/users/search")
+async def search_users(q: str = "", limit: int = 10, user: dict = Depends(require_role("ADMIN"))):
+    """Autocomplete endpoint for the Add Member email field. Matches on email
+    or name (case-insensitive, contains). Returns up to ``limit`` rows with
+    lifecycle status. Includes CLIENT + soft-deleted records so the admin sees
+    the full picture before submitting — preventing "email already exists"
+    surprises.
+    """
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    limit = max(1, min(int(limit or 10), 25))
+    db = get_db()
+    # Case-insensitive substring on email OR name. Escape regex metacharacters.
+    safe = re.escape(q)
+    pattern = {"$regex": safe, "$options": "i"}
+    cursor = db.users.find(
+        {"$or": [{"email": pattern}, {"name": pattern}, {"removed_email": pattern}]},
+        {"password_hash": 0, "_id": 0},
+    ).limit(limit * 3)  # over-fetch, filter placeholders client-side
+    rows: List[dict] = []
+    async for u in cursor:
+        live_email = u.get("email") or ""
+        # Legacy soft-deletes had no ``removed_email`` stamp — surface nothing
+        # useful to the admin, so skip them entirely rather than leak the
+        # deleted+<id>@cloudtax.invalid placeholder into the dropdown.
+        if live_email.endswith("@cloudtax.invalid") and not u.get("removed_email"):
+            continue
+        displayed_email = u.get("removed_email") if live_email.endswith("@cloudtax.invalid") else live_email
+        status = await _compute_user_status(db, u)
+        rows.append({
+            "id": u.get("id"),
+            "email": displayed_email,
+            "name": u.get("name"),
+            "role": u.get("role"),
+            "display_role": u.get("display_role"),
+            "avatar_url": u.get("avatar_url"),
+            "status": status,
+        })
+        if len(rows) >= limit:
+            break
+    # Case-insensitive sort: exact-email matches first, then prefix, then contains.
+    q_lc = q.lower()
+    def sort_key(r):
+        e = (r.get("email") or "").lower()
+        if e == q_lc:
+            return (0, e)
+        if e.startswith(q_lc):
+            return (1, e)
+        return (2, e)
+    rows.sort(key=sort_key)
+    return rows
+
+
+@api.get("/users/all")
+async def list_all_users(user: dict = Depends(require_role("ADMIN"))):
+    """Comprehensive user list for the Admin → Users tab. Includes every
+    account regardless of role or lifecycle state. Each row carries a derived
+    ``status`` (active / invited / removed) so the UI can badge appropriately.
+    """
+    db = get_db()
+    out: List[dict] = []
+    async for u in db.users.find({}, {"password_hash": 0, "_id": 0}).sort("name", 1):
+        displayed_email = u.get("email") or ""
+        if displayed_email.endswith("@cloudtax.invalid") and u.get("removed_email"):
+            displayed_email = u["removed_email"]
+        status = await _compute_user_status(db, u)
+        row = _sanitize_user_row(dict(u))
+        row["email"] = displayed_email
+        row["status"] = status
+        # Best-effort last_updated_at: most-recent among stamp fields.
+        stamps = [
+            row.get("created_at"),
+            row.get("activated_at"),
+            row.get("reactivated_at"),
+            row.get("removed_at"),
+            row.get("avatar_updated_at"),
+            row.get("two_factor_enabled_at"),
+            row.get("two_factor_disabled_at"),
+        ]
+        stamps = [s for s in stamps if s]
+        row["last_updated_at"] = max(stamps) if stamps else None
+        out.append(row)
+    return out
+
+
+@api.post("/users/{uid}/deactivate")
+async def deactivate_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
+    """Flip ``is_active=false`` without rotating the email — reversible via
+    /reactivate. Distinct from DELETE which additionally frees the email
+    address. Protects against self-deactivation and last-active-admin.
+    """
+    if uid == user["id"]:
+        raise HTTPException(400, "You cannot deactivate your own account")
+    db = get_db()
+    target = await db.users.find_one({"id": uid})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("role") == "ADMIN" and target.get("is_active", True):
+        active_admins = await db.users.count_documents({"role": "ADMIN", "is_active": {"$ne": False}})
+        if active_admins <= 1:
+            raise HTTPException(400, "Cannot deactivate the last active admin")
+    await db.users.update_one(
+        {"id": uid},
+        {"$set": {
+            "is_active": False,
+            "deactivated_at": datetime.now(timezone.utc),
+            "deactivated_by_id": user["id"],
+            "session_invalidated_at": datetime.now(timezone.utc),
+        }},
+    )
+    log.info("Admin %s deactivated user %s", user.get("email"), uid)
+    return {"ok": True, "id": uid}
+
+
+@api.post("/users/{uid}/reactivate")
+async def reactivate_user(uid: str, user: dict = Depends(require_role("ADMIN"))):
+    """Undo deactivate/delete. For deleted users whose email was rotated, we
+    restore the original email from ``removed_email`` so they can sign in
+    again (assuming no live collision). Fails with 409 if the original email
+    now conflicts with another active account.
+    """
+    db = get_db()
+    target = await db.users.find_one({"id": uid})
+    if not target:
+        raise HTTPException(404, "User not found")
+    updates: dict = {"is_active": True, "reactivated_at": datetime.now(timezone.utc), "reactivated_by_id": user["id"]}
+    unset: dict = {
+        "removed_at": "",
+        "removed_by_id": "",
+        "removed_by_name": "",
+        "session_invalidated_at": "",
+        "deactivated_at": "",
+        "deactivated_by_id": "",
+    }
+    live_email = target.get("email") or ""
+    if live_email.endswith("@cloudtax.invalid") and target.get("removed_email"):
+        # Restore the original address — but only if nothing else has claimed it.
+        original = target["removed_email"]
+        collision = await db.users.find_one({"email": original, "id": {"$ne": uid}, "is_active": True})
+        if collision:
+            raise HTTPException(409, f"Cannot restore {original} — it's in use by another active account")
+        updates["email"] = original
+        unset["removed_email"] = ""
+    await db.users.update_one({"id": uid}, {"$set": updates, "$unset": unset})
+    log.info("Admin %s reactivated user %s", user.get("email"), uid)
+    return {"ok": True, "id": uid}
 
 
 @api.get("/auth/invite-info")

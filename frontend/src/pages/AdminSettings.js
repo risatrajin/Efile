@@ -7,7 +7,8 @@ import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import TwoFactorCard from "../components/shared/TwoFactorCard";
 import PasswordField from "../components/shared/PasswordField";
-import { ArrowLeft, Plus, X, Download, Check, MoreVertical, Pencil, Trash2, Mail } from "lucide-react";
+import EmailAutocomplete from "../components/shared/EmailAutocomplete";
+import { ArrowLeft, Plus, X, Download, Check, MoreVertical, Pencil, Trash2, Mail, AlertCircle } from "lucide-react";
 const PERMISSION_COLUMNS = [
   { key: "view_clients", label: "VIEW CLIENTS", title: "View Clients" },
   { key: "onboard_clients", label: "ONBOARD CLIENTS", title: "Onboard Clients" },
@@ -26,6 +27,53 @@ const PERMISSION_COLUMNS = [
 ];
 
 const DISPLAY_ROLES = ["Admin", "Manager", "Other", "CPA", "Partner"];
+
+// Inline hint that appears under the email input when the admin picks an
+// existing user from the typeahead. Describes what will happen next so the
+// invite flow doesn't surprise them.
+function ExistingUserHint({ row, onResend, busy }) {
+  if (!row) return null;
+  const status = row.status || "active";
+  const label = row.name || row.email;
+  let bg, border, fg, Icon, msg;
+  if (status === "active") {
+    bg = "#fdecea"; border = "#f9bdb9"; fg = "#b71c1c"; Icon = AlertCircle;
+    msg = `${label} is already an active member (${row.display_role || row.role}).`;
+  } else if (status === "invited") {
+    bg = "#fff8e1"; border = "#ffe082"; fg = "#8a6d1a"; Icon = Mail;
+    msg = `${label} already has a pending invitation. You can resend it, or submit to issue a fresh one.`;
+  } else {
+    bg = "#e3f2fd"; border = "#90caf9"; fg = "#0d47a1"; Icon = Check;
+    msg = `${label} was previously removed. Submit to reactivate with the selected role & permissions.`;
+  }
+  return (
+    <div
+      data-testid={`existing-user-hint-${status}`}
+      style={{
+        display: "flex", alignItems: "flex-start", gap: 8,
+        marginTop: 8, padding: "10px 12px",
+        background: bg, border: `1px solid ${border}`, borderRadius: 8,
+        fontSize: 12, lineHeight: 1.5, color: fg,
+      }}
+    >
+      <Icon size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+      <div style={{ flex: 1 }}>{msg}</div>
+      {status !== "active" && (
+        <button
+          type="button"
+          onClick={onResend}
+          disabled={busy}
+          data-testid="existing-user-resend"
+          style={{
+            padding: "4px 10px", borderRadius: 6, border: `1px solid ${fg}`,
+            background: "#fff", color: fg, fontSize: 11, fontWeight: 600,
+            cursor: busy ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+          }}
+        >{busy ? "Sending…" : "Resend invite"}</button>
+      )}
+    </div>
+  );
+}
 
 function roleBadge(label) {
   const map = {
@@ -272,6 +320,11 @@ function AddMemberModal({ onClose, onDone }) {
   const [emailSent, setEmailSent] = useState(false);
   const [reactivated, setReactivated] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // When the admin selects an existing row from the typeahead, we remember
+  // it so we can (a) short-circuit the submit with an appropriate message
+  // for active members and (b) offer a Resend for invited/removed ones.
+  const [existing, setExisting] = useState(null);
+  const [resendBusy, setResendBusy] = useState(false);
 
   const togglePerm = (k) => setForm((f) => ({ ...f, permissions: { ...f.permissions, [k]: !f.permissions[k] } }));
   const changeRole = (r) => {
@@ -407,7 +460,45 @@ function AddMemberModal({ onClose, onDone }) {
               </div>
               <div className="field">
                 <label className="field-label">EMAIL</label>
-                <input type="email" className="input" placeholder="email@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="add-email" />
+                <EmailAutocomplete
+                  value={form.email}
+                  onChange={(v) => {
+                    setForm((f) => ({ ...f, email: v }));
+                    // Typing clears the pinned selection so the admin can
+                    // invite a brand-new address by simply typing past the
+                    // previously-selected row.
+                    setExisting(null);
+                  }}
+                  onSelect={(row) => {
+                    setExisting(row);
+                    // If the admin hasn't filled name yet and the existing
+                    // row has one, pre-populate so the form isn't empty.
+                    if (row?.name && !form.first_name && !form.last_name) {
+                      const parts = row.name.trim().split(/\s+/);
+                      setForm((f) => ({
+                        ...f,
+                        first_name: parts[0] || "",
+                        last_name: parts.slice(1).join(" ") || "",
+                      }));
+                    }
+                  }}
+                  testid="add-email"
+                />
+                {existing && <ExistingUserHint row={existing} onResend={async () => {
+                  setErr(""); setResendBusy(true);
+                  try {
+                    const { data } = await api.post(`/users/${existing.id}/resend-invite`);
+                    setLink(data.invite_link);
+                    setEmailSent(!!data.email_sent);
+                    await onDone();
+                  } catch (e) {
+                    const status = e?.response?.status;
+                    setErr(status === 403
+                      ? "Your admin session has expired. Please sign out and sign back in."
+                      : fmtError(e));
+                  }
+                  setResendBusy(false);
+                }} busy={resendBusy} />}
               </div>
             </div>
 
@@ -440,10 +531,10 @@ function AddMemberModal({ onClose, onDone }) {
 
             <button
               onClick={submit}
-              disabled={busy || !form.email || !form.first_name}
+              disabled={busy || !form.email || !form.first_name || (existing?.status === "active")}
               style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#1e88e5", color: "#fff", fontWeight: 500, fontSize: 14, marginTop: 20, border: "none", cursor: busy ? "not-allowed" : "pointer" }}
               data-testid="add-member-submit"
-            >{busy ? "Adding…" : "Add member"}</button>
+            >{busy ? "Adding…" : (existing?.status === "active" ? "Already a member" : "Add member")}</button>
             <button onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "var(--bg-subtle)", fontSize: 13, marginTop: 8, border: "1px solid var(--border-default)", cursor: "pointer" }}>Cancel</button>
           </>
         )}

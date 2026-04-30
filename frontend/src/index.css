@@ -455,3 +455,15 @@ h2.section-title, .section-title {
   text-align: center; padding: 40px 0 20px;
   font-size: 11px; color: var(--text-tertiary);
 }
+
+/* Dropdown menu items (Users tab actions etc.) */
+.menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 12px; border-radius: 6px;
+  background: transparent; border: none; cursor: pointer;
+  font-size: 13px; color: var(--text-primary); text-align: left;
+}
+.menu-item:hover { background: var(--bg-subtle); }
+.menu-item:disabled { cursor: wait; opacity: 0.6; }
+.menu-item.menu-item-danger { color: #c62828; }
+.menu-item.menu-item-danger:hover { background: #ffebee; }

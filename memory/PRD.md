@@ -276,6 +276,25 @@
 
 ## Backlog (prioritized)
 
+### Iter 36 (Apr 30, 2026 — Admin Portal: Email autocomplete in Add Member + new Users tab)
+
+**Feature 1 — Email typeahead in Add Member flow** (prevents duplicates + misclicks):
+- Backend `GET /api/users/search?q=<>&limit=<>` (ADMIN-only): case-insensitive contains match on `email` / `name` / `removed_email`. Min query length 2 chars, default limit 10 (max 25). Skips legacy rotated-placeholder rows with no `removed_email`. Returns `{id, email, name, role, display_role, avatar_url, status}` with status derived by new `_compute_user_status()` helper (active / invited / removed).
+- Frontend `<EmailAutocomplete>` (`components/shared/EmailAutocomplete.js`): debounced 300ms input, dropdown renders on ≥2 chars, shows avatar + highlighted matched substring + name/role + color-coded status badge. Keyboard nav (↑/↓/Enter/Escape), mouse hover to preview, fixed-position dropdown with `zIndex: 2000` so it's never cut off by modal overflow.
+- `AddMemberModal` wiring: new `<ExistingUserHint>` inline alert appears when the admin selects a suggestion. Active → red "already a member" + disabled submit with label "Already a member". Invited → amber "pending invitation — resend or submit for fresh one" + inline "Resend invite" button calling `/users/{uid}/resend-invite`. Removed → blue "previously removed — submit to reactivate with new role". Typing past the selection clears the pin so fresh addresses flow through normally.
+
+**Feature 2 — Admin Dashboard "Users" tab** (centralized user management, positioned after CPA's):
+- Backend `GET /api/users/all` (ADMIN-only): comprehensive roster including every lifecycle state (active / invited / removed) + computed `last_updated_at` (max of created/activated/reactivated/removed/avatar/2fa timestamps). `password_hash` and `_id` sanitized out.
+- Backend `POST /api/users/{uid}/deactivate` (soft suspend without rotating email — reversible) + `POST /api/users/{uid}/reactivate` (restores `removed_email` back to `email` if rotated; 409 if the original address now collides with another active user). Both guard self-target and last-active-admin.
+- Frontend `<UsersTable>` (`components/shared/UsersTable.js`): 4 stat cards (Total / Active / Invited / Removed), search by name/email/role, role + status filters, full table with `[Avatar, Name]` / Email / Role badge / Status badge / Created / Updated / Actions columns. Empty state with Users icon. Actions kebab menu (fixed-position overlay, scroll-aware): Resend invitation (staff + non-removed), Deactivate (active staff), Reactivate (removed), Delete (staff + non-removed); clients carry an informational "managed from engagement record" line. Confirmation dialogs for Delete / Deactivate / Reactivate. Resend result modal surfaces the fresh invite link with email-sent indicator.
+- Global `.menu-item` / `.menu-item-danger` CSS classes extracted so the kebab menu styling is reusable.
+
+**Backend lifecycle polish:**
+- `/auth/set-password` now stamps `activated_at` on the user so the status computation can reliably distinguish "invited" from "active" going forward.
+- `DELETE /api/users/{uid}` captures the original email in `removed_email` (iter-35) and, on repeat-delete, preserves the previously-captured original rather than overwriting with the placeholder.
+
+**Tests**: `test_users_tab_and_search.py` — **11/11 PASS** (search min-length, 2-char match, case-insensitive, limit honoured, soft-deleted surfaced via original email, RBAC CPA→403; /users/all status + last_updated_at + no password_hash leak + RBAC; deactivate→/users/all status=removed→reactivate→status=active cycle; cannot-deactivate-self 400; CPA RBAC on both toggles). Plus regression on iter-35 suite: **20/20 PASS** total.
+
 ### Iter 35 (Apr 30, 2026 — Admin Add Member: descriptive duplicate errors + soft-delete reactivation + self-role guard + 401 redirect)
 
 **Bug report**: "A member is deleted and no longer visible in the table. When trying to add the same email again, the system shows 'email already exists'. Sometimes also 'Request failed with status code 403'."
