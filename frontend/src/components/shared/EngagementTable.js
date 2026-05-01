@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, LayoutGrid, List } from "lucide-react";
 import { fmtDate } from "../../lib/api";
 import { TierBadge, StatusBadge } from "./Badges";
 
@@ -189,44 +189,89 @@ export default function EngagementTable({
 }
 
 /**
- * View toggle pill: Kanban ⇄ Table
+ * View toggle pill: Kanban ⇄ Table (icon-only, animated sliding background)
  */
 export function ViewToggle({ value, onChange, testid = "view-toggle" }) {
   const opts = [
-    { key: "kanban", label: "Kanban" },
-    { key: "table", label: "Table" },
+    { key: "kanban", label: "Kanban View", Icon: LayoutGrid },
+    { key: "table", label: "Table View", Icon: List },
   ];
+  const activeIdx = Math.max(0, opts.findIndex((o) => o.key === value));
+  const BTN = 32; // square hit target
+  const PAD = 3;
   return (
     <div
+      role="tablist"
+      aria-label="View mode"
       style={{
+        position: "relative",
         display: "inline-flex",
         background: "var(--bg-subtle)",
         border: "1px solid var(--border-default)",
         borderRadius: 999,
-        padding: 3,
-        gap: 2,
+        padding: PAD,
+        gap: 0,
       }}
       data-testid={testid}
     >
+      {/* Sliding active pill */}
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          top: PAD,
+          left: PAD + activeIdx * BTN,
+          width: BTN,
+          height: BTN,
+          borderRadius: 999,
+          background: "var(--accent-dark)",
+          transition: "left 200ms ease-in-out, transform 200ms ease-in-out",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+        }}
+      />
       {opts.map((o) => {
         const active = value === o.key;
+        const { Icon } = o;
         return (
           <button
             key={o.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-label={o.label}
+            title={o.label}
             onClick={() => onChange(o.key)}
             data-testid={`${testid}-${o.key}`}
             style={{
-              padding: "6px 14px",
+              position: "relative",
+              zIndex: 1,
+              width: BTN,
+              height: BTN,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
               borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 500,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
               color: active ? "#fff" : "var(--text-secondary)",
-              background: active ? "var(--accent-dark)" : "transparent",
-              transition: "all 150ms ease",
-              minHeight: 28,
+              transition: "color 200ms ease-in-out, transform 200ms ease-in-out",
+              padding: 0,
+            }}
+            onMouseEnter={(e) => {
+              if (!active) e.currentTarget.style.color = "var(--text-primary)";
+              e.currentTarget.querySelector("svg").style.transform = "scale(1.08)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = active ? "#fff" : "var(--text-secondary)";
+              e.currentTarget.querySelector("svg").style.transform = "scale(1)";
             }}
           >
-            {o.label}
+            <Icon
+              size={16}
+              strokeWidth={2}
+              style={{ transition: "transform 200ms ease-in-out" }}
+            />
           </button>
         );
       })}
