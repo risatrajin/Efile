@@ -1,12 +1,19 @@
 """Resend transactional email service.
 
-Used for delivering 2FA OTP codes (and any future transactional emails) via the
-Resend API. Falls back gracefully when not configured: the OTP-issuing
-endpoints surface the code inline as a sandbox fallback.
+Used for delivering 2FA OTP codes and all transactional emails (invitations,
+password resets, notifications) via the Resend API. Falls back gracefully when
+not configured: the OTP-issuing endpoints surface the code inline as a sandbox
+fallback.
 
-Resend's testing mode only delivers to the verified sender address. For the
-pilot we use the shared `onboarding@resend.dev` sender which CAN deliver to
-arbitrary recipients during the free-tier trial period.
+Production config (iter 43+):
+  RESEND_API_KEY      — live production key from https://resend.com
+  RESEND_FROM_EMAIL   — must be on a domain verified at resend.com/domains
+                        (currently ``noreply@ws.cloudtax.ca`` after the DNS
+                        records for SPF/DKIM/Return-Path were added to the
+                        ``ws.cloudtax.ca`` subdomain).
+  RESEND_FROM_NAME    — display name shown by the client (defaults to
+                        "CloudTax"). Produces a ``From: CloudTax
+                        <noreply@ws.cloudtax.ca>`` header.
 """
 import os
 import logging
@@ -32,7 +39,13 @@ def _init():
 
 
 def _from_address() -> str:
-    return os.environ.get("RESEND_FROM_EMAIL") or "onboarding@resend.dev"
+    """Build the ``From`` header. Prefers ``Name <email>`` form when a display
+    name is configured so the inbox shows a human-readable sender."""
+    email = os.environ.get("RESEND_FROM_EMAIL") or "onboarding@resend.dev"
+    name = (os.environ.get("RESEND_FROM_NAME") or "").strip()
+    if name:
+        return f"{name} <{email}>"
+    return email
 
 
 _BRAND_STYLE = """

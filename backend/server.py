@@ -650,13 +650,13 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
                 "created_at": datetime.now(timezone.utc),
             })
             invite_link = f"{FRONTEND_URL}/set-password?token={token}"
-            email_result = ses_service.send_invite(email_lc, body.name or ex_name, invite_link, body.role)
-            log.info("Upgraded CLIENT %s to %s (%s)", email_lc, body.role, existing["id"])
+            email_result = await ses_service.send_invite_async(email_lc, body.name or ex_name, invite_link, body.role)
+            log.info("Upgraded CLIENT %s to %s (%s) — email_sent=%s", email_lc, body.role, existing["id"], email_result.get("success"))
             return {
                 "user_id": existing["id"],
                 "invite_link": invite_link,
-                "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
-                "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+                "email_sent": bool(email_result.get("success")),
+                "email_error": email_result.get("error") if not email_result.get("success") else None,
                 "upgraded": True,
             }
         if ex_role == "CLIENT":
@@ -726,13 +726,13 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
             "created_at": datetime.now(timezone.utc),
         })
         invite_link = f"{FRONTEND_URL}/set-password?token={token}"
-        email_result = ses_service.send_invite(email_lc, body.name, invite_link, body.role)
-        log.info("Reactivated soft-deleted user %s via invite (%s)", email_lc, uid)
+        email_result = await ses_service.send_invite_async(email_lc, body.name, invite_link, body.role)
+        log.info("Reactivated soft-deleted user %s via invite (%s) — email_sent=%s", email_lc, uid, email_result.get("success"))
         return {
             "user_id": uid,
             "invite_link": invite_link,
-            "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
-            "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+            "email_sent": bool(email_result.get("success")),
+            "email_error": email_result.get("error") if not email_result.get("success") else None,
             "reactivated": True,
         }
     uid = str(uuid.uuid4())
@@ -762,15 +762,16 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
     })
     invite_link = f"{FRONTEND_URL}/set-password?token={token}"
     # Dispatch the welcome email via Resend (welcome_cpa / welcome_ws / welcome_client).
-    # ``ses_service.send_invite`` is now a Resend proxy (iter 33); it schedules an
-    # async task so the HTTP response isn't blocked by network.
-    email_result = ses_service.send_invite(body.email, body.name, invite_link, body.role)
-    log.info("Invite issued: %s -> %s (email scheduled=%s)", body.email, invite_link, bool(email_result.get("success") or email_result.get("scheduled")))
+    # We AWAIT the send so the ``email_sent`` flag in our response reflects the
+    # real outcome — previously the sync helper returned ``scheduled=True``
+    # before the send actually completed, making failures invisible to admins.
+    email_result = await ses_service.send_invite_async(body.email, body.name, invite_link, body.role)
+    log.info("Invite issued: %s -> %s (email_sent=%s)", body.email, invite_link, email_result.get("success"))
     return {
         "user_id": uid,
         "invite_link": invite_link,
-        "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
-        "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+        "email_sent": bool(email_result.get("success")),
+        "email_error": email_result.get("error") if not email_result.get("success") else None,
     }
 
 
@@ -996,18 +997,18 @@ async def resend_invite(uid: str, user: dict = Depends(require_role("ADMIN"))):
         "created_at": now,
     })
     invite_link = f"{FRONTEND_URL}/set-password?token={token}"
-    email_result = ses_service.send_invite(
+    email_result = await ses_service.send_invite_async(
         target["email"],
         target.get("name") or target["email"],
         invite_link,
         target.get("role", "CPA"),
     )
-    log.info("Invite resent: %s -> %s (by %s)", target.get("email"), invite_link, user.get("email"))
+    log.info("Invite resent: %s -> %s (by %s, email_sent=%s)", target.get("email"), invite_link, user.get("email"), email_result.get("success"))
     return {
         "ok": True,
         "invite_link": invite_link,
-        "email_sent": bool(email_result.get("success") or email_result.get("scheduled")),
-        "email_error": email_result.get("error") if not email_result.get("success") and not email_result.get("scheduled") else None,
+        "email_sent": bool(email_result.get("success")),
+        "email_error": email_result.get("error") if not email_result.get("success") else None,
     }
 
 

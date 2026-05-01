@@ -1,11 +1,9 @@
 # CloudTax Test Credentials
 
-> After iter 33 production-prep DB reset (Apr 29, 2026), only the 3 staff accounts below exist.
-> All demo clients, WS partners, and engagements were cleared.
-
 ## Admin
-- `nim@cloudtax.ca` / `CloudTax2026!` (Nim Balachandran)
+- `nim@cloudtax.ca` / `CloudTax2026!` (Nim Balachandran) — **2FA enabled**
 - Home: `/admin/dashboard`
+- Note: test runs require 2FA disabled — handled per-run by devs; production always has 2FA on.
 
 ## CPAs
 - `pallavi@cloudtax.ca` / `CloudTax2026!` (Pallavi Sharma)
@@ -13,8 +11,12 @@
 - Home: `/cpa/files`
 
 ## WS partners
-- None seeded — re-invite via Admin Settings → Roles & Permissions → Add member, or use the invite flow.
+- `rajin@cloudtax.ca` / `CloudTax2026!` — active partner (seeded before iter 33, survived the DB reset).
+- Additional partners can be added via Admin Settings → Roles & Permissions.
 
-## Resend
-- `RESEND_API_KEY` in `/app/backend/.env` (trial-mode — only delivers to the verified account email `rajin@cloudtax.ca`)
-- To unlock all recipients: verify `cloudtax.ca` at https://resend.com/domains and set `RESEND_FROM_EMAIL=noreply@cloudtax.ca`.
+## Resend (Production — iter 43)
+- `RESEND_API_KEY` in `/app/backend/.env` — **production key**
+- `RESEND_FROM_EMAIL=noreply@ws.cloudtax.ca`
+- `RESEND_FROM_NAME=CloudTax`
+- Domain `ws.cloudtax.ca` verified at resend.com/domains (SPF/DKIM/Return-Path DNS records in place)
+- Delivery verified post-setup to `nimalan.ba@gmail.com`

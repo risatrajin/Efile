@@ -276,6 +276,23 @@
 
 ## Backlog (prioritized)
 
+### Iter 43 (May 1, 2026 — Production Resend setup + accurate delivery status)
+
+**Config**:
+- `/app/backend/.env` — new production key `RESEND_API_KEY=re_EN2BWfRp_...` (replaces trial key).
+- `RESEND_FROM_EMAIL=noreply@ws.cloudtax.ca` (replaces `onboarding@resend.dev`).
+- `RESEND_FROM_NAME=CloudTax` (new) — produces `From: CloudTax <noreply@ws.cloudtax.ca>` headers so inboxes show the human-readable sender.
+- Subdomain `ws.cloudtax.ca` verified at resend.com/domains with SPF/DKIM/Return-Path DNS records.
+
+**Code**:
+- `email_service._from_address()` now prefers `"Name <email>"` format when `RESEND_FROM_NAME` is set.
+- `ses_service` now exposes `send_invite_async()` alongside the legacy sync `send_invite()`. The async variant awaits the actual Resend API call so callers see an honest `success=True/False` instead of the sync variant's always-`scheduled=True` placeholder (which was masking trial-mode sandbox rejections as if they were successful sends — the "email not received" bug from the trial period).
+- Three `server.py` call-sites (`invite_user` new, `invite_user` reactivate, `invite_user` CLIENT-upgrade, `resend_invite`) switched to `await ses_service.send_invite_async(...)`. Their responses now include accurate `email_sent` + `email_error` fields.
+
+**Delivery verified**: Invite sent to `nimalan.ba@gmail.com` — `email_templates` logged `success=True`, HTTP response returned `email_sent: true`. First email successfully delivered via the production key on the verified domain.
+
+**Tests**: Full regression — **42/42 PASS + 1 skipped** across all 7 test files. Resend config change backwards-compatible; no logic tests broken.
+
 ### Iter 41 (Apr 30, 2026 — Checklist templates: global propagation + CPA review-checklist settings)
 
 **Bugs**:
