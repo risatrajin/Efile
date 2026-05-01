@@ -6,7 +6,7 @@ import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import EngagementNotes from "../components/shared/EngagementNotes";
 import { ChatThread } from "./Messages";
-import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft, Settings } from "lucide-react";
+import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft, Settings, Archive } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 import FiledReturnCard from "../components/shared/FiledReturnCard";
@@ -14,6 +14,13 @@ import T183PlacementModal from "../components/shared/T183PlacementModal";
 import ChecklistSettingsModal from "../components/shared/ChecklistSettingsModal";
 
 const STATUS_FLOW = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"];
+
+function fmtBytes(b) {
+  if (b == null) return "";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function DocIcon({ status }) {
   if (status === "REVIEWED") return <Check size={14} style={{ color: "#2e7d32" }} />;
@@ -771,6 +778,59 @@ export default function CpaEngagement() {
     } catch (x) { setErr(fmtError(x)); }
   };
 
+  // Download a specific file from a multi-file document. Uses the per-file
+  // backend route which preserves the original filename in Content-Disposition.
+  const downloadSingleFile = async (doc, file) => {
+    try {
+      const resp = await api.get(`/documents/${doc.id}/files/${file.id}/download`, { responseType: "blob" });
+      const blob = new Blob([resp.data], { type: file.mime_type || "application/octet-stream" });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = file.file_name || "download";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (x) { setErr(fmtError(x)); }
+  };
+
+  // Bulk ZIP download of every uploaded client file for this engagement.
+  const [downloadAllBusy, setDownloadAllBusy] = useState(false);
+  const downloadAllDocs = async () => {
+    if (downloadAllBusy) return;
+    setDownloadAllBusy(true);
+    try {
+      const resp = await api.get(`/engagements/${eid}/documents/download-all`, {
+        responseType: "blob",
+      });
+      // Extract the server-suggested filename if present.
+      const dispo = resp.headers?.["content-disposition"] || resp.headers?.["Content-Disposition"] || "";
+      let filename = "documents.zip";
+      const m = /filename="?([^"]+)"?/i.exec(dispo);
+      if (m) filename = m[1];
+      const blob = new Blob([resp.data], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (x) {
+      setErr(fmtError(x));
+    } finally {
+      setDownloadAllBusy(false);
+    }
+  };
+
+  // Whether any checklist doc actually has a file on disk — drives the
+  // visibility of the "Download all" action.
+  const hasAnyUploadedFile = (docs || []).some(
+    (d) => (Array.isArray(d.files) && d.files.some((f) => f.object_key)) || d.object_key,
+  );
+
   const createOpp = async (f) => { try { await api.post(`/engagements/${eid}/opportunities`, f); await load(); } catch (x) { setErr(fmtError(x)); } };
 
   const flagIssue = async (note) => {
@@ -917,11 +977,25 @@ export default function CpaEngagement() {
 
             {/* Document checklist */}
             <div className="card" data-testid="doc-checklist">
-              <div className="flex items-center between">
+              <div className="flex items-center between" style={{ gap: 8 }}>
                 <h2 className="card-title">Document checklist</h2>
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowNewReq(true)} data-testid="request-new-doc">
-                  <FilePlus size={12} /> Request additional
-                </button>
+                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                  {hasAnyUploadedFile && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={downloadAllDocs}
+                      disabled={downloadAllBusy}
+                      data-testid="download-all-docs"
+                      title="Bundle every uploaded file into a single ZIP"
+                    >
+                      {downloadAllBusy ? <span className="spinner" /> : <Archive size={12} />}
+                      {downloadAllBusy ? " Preparing…" : " Download all"}
+                    </button>
+                  )}
+                  <button className="btn btn-secondary btn-sm" onClick={() => setShowNewReq(true)} data-testid="request-new-doc">
+                    <FilePlus size={12} /> Request additional
+                  </button>
+                </div>
               </div>
               <div className="mt-3">
                 {docs.filter((d) => !d.deferred_at).map((d) => (
@@ -951,7 +1025,47 @@ export default function CpaEngagement() {
                           </span>
                         )}
                       </div>
-                      <div className="muted" style={{ fontSize: 12 }}>{d.description}{d.file_name ? ` · ${d.file_name}` : ""}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>{d.description}</div>
+                      {/* Per-file list: clients can attach multiple files to one
+                          request — render each one with its own Download icon so
+                          the CPA can fetch every file, not just the latest. */}
+                      {Array.isArray(d.files) && d.files.length > 0 && (
+                        <div className="mt-2 stack-xs" data-testid={`doc-files-${d.id}`}>
+                          {d.files.map((f) => (
+                            <div
+                              key={f.id}
+                              data-testid={`doc-file-${f.id}`}
+                              style={{
+                                display: "flex", alignItems: "center", gap: 8,
+                                padding: "6px 10px", background: "var(--bg-subtle)",
+                                border: "1px solid var(--border-default)", borderRadius: 8,
+                                fontSize: 12, maxWidth: "100%",
+                              }}
+                            >
+                              <FileText size={13} style={{ color: "#1565c0", flexShrink: 0 }} />
+                              <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                                {f.file_name || "file"}
+                              </span>
+                              {f.file_size != null && (
+                                <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtBytes(f.file_size)}</span>
+                              )}
+                              {f.uploaded_at && (
+                                <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtDate(f.uploaded_at)}</span>
+                              )}
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ marginLeft: "auto", padding: "2px 6px" }}
+                                onClick={() => downloadSingleFile(d, f)}
+                                data-testid={`download-file-${f.id}`}
+                                title="Download this file"
+                                aria-label={`Download ${f.file_name || "file"}`}
+                              >
+                                <Download size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {d.was_reuploaded && d.status !== "ISSUE" && d.prev_issue_note && (
                         <div
                           className="alert mt-2"
@@ -1002,8 +1116,10 @@ export default function CpaEngagement() {
                           </button>
                         )}
                       </div>
-                      {/* Always-visible Download — anchored to the right */}
-                      {d.object_key && (
+                      {/* Always-visible Download — only shown when NO files[]
+                          array is set (true legacy docs). Modern multi-file docs
+                          render per-file download buttons in the files list. */}
+                      {d.object_key && !(Array.isArray(d.files) && d.files.length > 0) && (
                         <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => downloadDoc(d)}

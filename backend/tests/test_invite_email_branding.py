@@ -54,7 +54,9 @@ def test_ws_invite_multiword_firstname_preserved():
         "first_name": "Van Der",
         "link": "https://cloudtax.ca/set-password?token=x",
     })
-    assert "Wealthsimple partner, Van Der" in html
+    # Iter-49 copy: "CloudTax's Portal, Van Der (Partner)" — verbatim multi-word.
+    assert "Van Der (Partner)" in html
+    assert "Van Der Berg" not in html  # surname must not leak
 
 
 def test_invite_greeting_omits_comma_when_no_name():

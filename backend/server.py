@@ -2394,6 +2394,118 @@ async def doc_download_local(doc_id: str, token: Optional[str] = None, user: dic
     return FileResponse(path, media_type=doc.get("mime_type") or "application/octet-stream", filename=doc.get("file_name") or "download")
 
 
+def _safe_zip_path(corp_name: Optional[str], doc_name: str, file_name: str) -> str:
+    """Build a ZIP-safe member path grouping each file under its document folder.
+
+    Deduplicates illegal characters for Windows / macOS archive viewers.
+    """
+    import re as _re
+
+    def sanitize(s: str) -> str:
+        s = (s or "").strip().replace("/", "-").replace("\\", "-")
+        s = _re.sub(r"[\x00-\x1f<>:\"|?*]", "", s)
+        return s[:80] or "file"
+
+    folder = sanitize(doc_name) or "Document"
+    name = sanitize(file_name) or "file"
+    return f"{folder}/{name}"
+
+
+@api.get("/engagements/{eid}/documents/download-all")
+async def download_all_documents(eid: str, user: dict = Depends(get_current_user)):
+    """Bundle every uploaded client file for an engagement into a single ZIP.
+
+    Only documents with at least one uploaded file are included; deferred /
+    pending requests are skipped. Each file lands inside a folder named after
+    its document request so the CPA's local archive stays organized.
+    """
+    import io
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+    from datetime import datetime as _dt
+
+    eng = await get_engagement_or_404(eid, user)
+    if user["role"] == "WS_PARTNER":
+        raise HTTPException(403, "WS partners cannot download documents")
+
+    db = get_db()
+    corp = await db.corporations.find_one({"id": eng.get("corporation_id")}, {"_id": 0, "name": 1}) if eng.get("corporation_id") else None
+    corp_name = (corp or {}).get("name") or "Client"
+
+    docs = [d async for d in db.documents.find(
+        {"engagement_id": eid}, {"_id": 0}
+    ).sort("sort_order", 1)]
+
+    # Collect every physical file: new multi-file docs use files[] array; older
+    # single-file docs still have object_key at the top level.
+    to_zip: list[tuple[str, str, Optional[str]]] = []  # (zip_path, object_key, mime_type)
+    used_paths: set[str] = set()
+    for d in docs:
+        files = d.get("files") or []
+        if not files and d.get("object_key"):
+            files = [{
+                "object_key": d["object_key"],
+                "file_name": d.get("file_name") or "download",
+                "mime_type": d.get("mime_type"),
+            }]
+        for f in files:
+            key = f.get("object_key") or ""
+            if not key:
+                continue
+            zip_path = _safe_zip_path(corp_name, d.get("name") or "Document", f.get("file_name") or "file")
+            # Dedupe name collisions (same filename uploaded twice in one doc).
+            base = zip_path
+            n = 2
+            while zip_path in used_paths:
+                stem, _, ext = base.rpartition(".")
+                if stem:
+                    zip_path = f"{stem} ({n}).{ext}"
+                else:
+                    zip_path = f"{base} ({n})"
+                n += 1
+            used_paths.add(zip_path)
+            to_zip.append((zip_path, key, f.get("mime_type")))
+
+    if not to_zip:
+        raise HTTPException(404, "No uploaded files to download")
+
+    # Build the archive in-memory. This is acceptable for the current document
+    # volume per engagement (dozens of files, tens of MBs at most). A streaming
+    # rewrite can come later if/when we see >500MB archives.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for zip_path, key, _mime in to_zip:
+            try:
+                if key.startswith("local://"):
+                    path = key[len("local://"):]
+                    if not os.path.isfile(path):
+                        continue
+                    zf.write(path, arcname=zip_path)
+                else:
+                    # S3 object — reuse the sync helper; OK in a ZIP build path
+                    # that is itself synchronous.
+                    data = s3_service.get_object_bytes(key)
+                    if data is None:
+                        continue
+                    zf.writestr(zip_path, data)
+            except Exception as e:
+                log.warning("download-all: skipped %s (%s)", key, e)
+                continue
+
+    buf.seek(0)
+    stamp = _dt.now().strftime("%Y%m%d-%H%M")
+    # Only keep ASCII-safe characters in the filename — HTTP header values
+    # are latin-1 constrained so an em-dash or fancy unicode would 500 here.
+    safe_corp = "".join(c for c in corp_name if (c.isascii() and (c.isalnum() or c in (" ", "-", "_")))).strip() or "client"
+    filename = f"{safe_corp} - documents - {stamp}.zip"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @api.patch("/documents/{doc_id}")
 async def update_document(doc_id: str, body: dict, user: dict = Depends(require_role("CPA", "ADMIN"))):
     db = get_db()

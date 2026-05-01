@@ -165,15 +165,25 @@ def _tpl_welcome_client(d: dict):
     cpa = d.get("cpa_name")
     link = d.get("link") or f"{_frontend_url()}/portal"
     first = _resolve_first_name(d)
-    greeting = f"You&rsquo;re invited to join CloudTax, {first}" if first else "You&rsquo;re invited to join CloudTax"
-    text_greeting = f"Hi {first}," if first else "Hi,"
+    # New copy spec (iter 49): personalize with the exact first-name value and
+    # suffix the role in parens so the inbox preview answers two questions at a
+    # glance — "is this for me?" and "what kind of invite is it?". No trailing
+    # comma / role tag when we have no first name on file.
+    if first:
+        heading = f"You&rsquo;re invited to join CloudTax&rsquo;s Portal, {first} (Client)"
+        subject = f"You're invited to CloudTax's Portal, {first} (Client)"
+        text_greeting = f"Hi {first},"
+    else:
+        heading = "You&rsquo;re invited to join CloudTax&rsquo;s Portal"
+        subject = "You're invited to CloudTax's Portal"
+        text_greeting = "Hi,"
     cpa_line = (
         f"Your dedicated CPA is <strong>{cpa}</strong>, and you&rsquo;ll be able to message them directly from the portal."
         if cpa else
         "A dedicated CPA will be assigned and introduced to you shortly."
     )
     body = (
-        _h1(greeting)
+        _h1(heading)
         + _p(f"CloudTax has been set up to help you file your corporate taxes for <strong>{corp}</strong> — securely, simply, and without the back-and-forth.")
         + _p("Once you join, you can use our secure client portal to upload the documents on your personalized checklist, e-sign your T183 when your return is ready, and track progress end-to-end.")
         + _p(cpa_line)
@@ -185,16 +195,24 @@ def _tpl_welcome_client(d: dict):
         "Upload documents, e-sign your T183, and message your CPA — all in one secure place.\n\n"
         f"Activate your portal: {link}\n\n(Link is valid for 7 days.)"
     )
-    return ("You're invited to CloudTax — file your corporate taxes", _wrap(body, preheader=f"Secure portal set up for {corp}. Activate in 1 minute."), text)
+    return (subject, _wrap(body, preheader=f"Secure portal set up for {corp}. Activate in 1 minute."), text)
 
 
 def _tpl_welcome_cpa(d: dict):
     link = d.get("link") or f"{_frontend_url()}/set-password"
     first = _resolve_first_name(d)
-    greeting = f"Welcome to the CloudTax team, {first}" if first else "Welcome to the CloudTax team"
-    text_greeting = f"Welcome to CloudTax, {first}." if first else "Welcome to CloudTax."
+    # CPA keeps a warmer "Welcome to the team" heading — we still tag the role
+    # for consistency with client/partner invites.
+    if first:
+        heading = f"Welcome to the CloudTax team, {first} (CPA)"
+        subject = f"Welcome to CloudTax, {first} (CPA)"
+        text_greeting = f"Welcome to CloudTax, {first}."
+    else:
+        heading = "Welcome to the CloudTax team"
+        subject = "Welcome to the CloudTax CPA team"
+        text_greeting = "Welcome to CloudTax."
     body = (
-        _h1(greeting)
+        _h1(heading)
         + _p("You&rsquo;ve been invited to join CloudTax as a CPA. You&rsquo;ll use the platform to manage your assigned corporate-tax engagements end-to-end: review documents, run our AI-assisted data extraction, collaborate with the Wealthsimple partner team, and deliver filed returns to your clients.")
         + _p("Your workspace gives you a single view of every engagement, a shared review checklist, and a private chat thread per client.")
         + _cta_button("Set your password &amp; sign in", link)
@@ -205,20 +223,22 @@ def _tpl_welcome_cpa(d: dict):
         "run AI extraction on client documents, collaborate with Wealthsimple partners, and deliver filed returns from one place.\n\n"
         f"Set your password and sign in: {link}\n\n(Link is valid for 7 days.)"
     )
-    return ("Welcome to the CloudTax CPA team", _wrap(body, preheader="Your CPA workspace is ready — set your password to begin."), text)
+    return (subject, _wrap(body, preheader="Your CPA workspace is ready — set your password to begin."), text)
 
 
 def _tpl_welcome_ws(d: dict):
     link = d.get("link") or f"{_frontend_url()}/set-password"
     first = _resolve_first_name(d)
-    greeting = (
-        f"CloudTax invited you to join as a Wealthsimple partner, {first}"
-        if first else
-        "CloudTax invited you to join as a Wealthsimple partner"
-    )
-    text_greeting = f"Hi {first}," if first else "Hi,"
+    if first:
+        heading = f"CloudTax invited you to join CloudTax&rsquo;s Portal, {first} (Partner)"
+        subject = f"You're invited to CloudTax's Portal, {first} (Partner)"
+        text_greeting = f"Hi {first},"
+    else:
+        heading = "CloudTax invited you to join CloudTax&rsquo;s Portal"
+        subject = "You're invited to CloudTax's Portal"
+        text_greeting = "Hi,"
     body = (
-        _h1(greeting)
+        _h1(heading)
         + _p("You&rsquo;ll use the partner dashboard to refer physician clients to our done-for-you corporate-tax preparation workflow, track each engagement through intake, prep, review and filing, and see the advisory opportunities our CPAs surface along the way.")
         + _p("Everything is built around a shared pipeline — you see exactly where every client stands and what&rsquo;s outstanding, without chasing anyone over email.")
         + _cta_button("Set your password &amp; enter the dashboard", link)
@@ -230,7 +250,7 @@ def _tpl_welcome_ws(d: dict):
         "and see advisory opportunities surfaced by our CPAs.\n\n"
         f"Set your password and sign in: {link}\n\n(Link is valid for 7 days.)"
     )
-    return ("You&rsquo;re invited to CloudTax as a Wealthsimple partner", _wrap(body, preheader="Partner dashboard ready — set your password to begin."), text)
+    return (subject, _wrap(body, preheader="Partner dashboard ready — set your password to begin."), text)
 
 
 def _tpl_engagement_started(d: dict):
