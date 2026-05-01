@@ -42,21 +42,28 @@ def _fire_and_forget(template: str, to_email: str, data: dict) -> dict:
 
 # ---- Public helpers kept for backward compatibility -----------------------
 
-async def send_invite_async(to_email: str, name: str, invite_link: str, role: str) -> dict:
+async def send_invite_async(to_email: str, name: str, invite_link: str, role: str, first_name: Optional[str] = None) -> dict:
     """Async invite — awaits the actual Resend call so the caller's response
     accurately reflects delivery success. Use this from FastAPI routes so
     admins see a truthful ``email_sent`` flag instead of an always-true
-    ``scheduled`` placeholder."""
+    ``scheduled`` placeholder.
+
+    ``first_name`` (when supplied) is threaded through verbatim to preserve
+    multi-word values like ``"Dr Bala"`` in the greeting.
+    """
     from email_templates import send_email
     role_l = (role or "").lower()
     template = (
         "welcome_cpa" if role_l == "cpa"
         else ("welcome_ws" if role_l in ("ws_partner", "partner", "ws") else "welcome_client")
     )
-    return await send_email(to_email, template, {"name": name, "link": invite_link})
+    payload = {"name": name, "link": invite_link}
+    if first_name:
+        payload["first_name"] = first_name
+    return await send_email(to_email, template, payload)
 
 
-def send_invite(to_email: str, name: str, invite_link: str, role: str) -> dict:
+def send_invite(to_email: str, name: str, invite_link: str, role: str, first_name: Optional[str] = None) -> dict:
     """Sync (fire-and-forget) variant. Kept for legacy sync call-sites that
     don't care about delivery status. Returns ``scheduled=True`` without
     awaiting."""
@@ -65,7 +72,10 @@ def send_invite(to_email: str, name: str, invite_link: str, role: str) -> dict:
         "welcome_cpa" if role_l == "cpa"
         else ("welcome_ws" if role_l in ("ws_partner", "partner", "ws") else "welcome_client")
     )
-    return _fire_and_forget(template, to_email, {"name": name, "link": invite_link})
+    payload = {"name": name, "link": invite_link}
+    if first_name:
+        payload["first_name"] = first_name
+    return _fire_and_forget(template, to_email, payload)
 
 
 def send_password_reset(to_email: str, name: str, reset_link: str) -> dict:

@@ -376,13 +376,28 @@ h2.section-title, .section-title {
   overflow-x: hidden;
   flex: 1 1 auto;
   min-height: 0;
-  padding-right: 4px;  /* breathing room for scrollbar */
+  /* Thin, modern scrollbar parked hard against the right edge. */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.18) transparent;
 }
-/* Subtle scrollbar so it disappears when idle in Kanban columns */
 .kanban-col > .stack-sm::-webkit-scrollbar,
-.kanban-col-scroll::-webkit-scrollbar { width: 6px; }
+.kanban-col-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.kanban-col > .stack-sm::-webkit-scrollbar-track,
+.kanban-col-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
 .kanban-col > .stack-sm::-webkit-scrollbar-thumb,
-.kanban-col-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 999px; }
+.kanban-col-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.14);
+  border-radius: 999px;
+}
+.kanban-col > .stack-sm:hover::-webkit-scrollbar-thumb,
+.kanban-col-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.28);
+}
 .kanban-col-empty {
   flex: 1 1 auto;
   min-height: 0;

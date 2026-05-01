@@ -32,16 +32,41 @@ def _frontend_url() -> str:
 
 
 def _brand_logo_svg() -> str:
-    # Inline cloud-with-wordmark so email clients don't need external image
-    # fetches (many block them by default). Kept small & warm.
+    # Use the combined CloudTax + Wealthsimple PNG (retina ready) — SVG is not
+    # reliably supported in Gmail / Outlook, so we serve a ~880x66 PNG from the
+    # frontend static directory and let the email client scale it down to
+    # ~220px wide. The URL lives under the public FRONTEND_URL so that all
+    # inbox providers (which strip cookies) can fetch it anonymously.
+    logo_url = f"{_frontend_url()}/cloudtax-wealthsimple-logo@2x.png"
     return (
-        "<span style=\"display:inline-flex;align-items:center;gap:8px;\">"
-        "<svg width=\"26\" height=\"20\" viewBox=\"0 0 32 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
-        "<path d=\"M24.5 10.2c.1-.4.1-.9.1-1.3C24.6 5 21.3 2 17.3 2c-3.1 0-5.8 1.7-6.9 4.2-.4-.1-.9-.2-1.4-.2-3 0-5.4 2.4-5.4 5.3 0 .4 0 .7.1 1.1-1.9.5-3.2 2.1-3.2 4 0 2.3 1.9 4.1 4.3 4.1h19.1c2.9 0 5.2-2.3 5.2-5.1 0-2.4-1.8-4.5-4.6-5.2z\" fill=\"#1a1a1a\"/>"
-        "</svg>"
-        "<span style=\"font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:500;letter-spacing:-0.4px;color:#1a1a1a;\">CloudTax</span>"
-        "</span>"
+        f"<img src=\"{logo_url}\" alt=\"CloudTax + Wealthsimple\" "
+        "width=\"220\" height=\"17\" "
+        "style=\"display:block;border:0;outline:none;text-decoration:none;max-width:220px;height:auto;\" />"
     )
+
+
+def _resolve_first_name(d: dict) -> str:
+    """Return the exact first-name string to greet the recipient with.
+
+    Priority:
+      1. ``first_name`` if present on the payload — returned VERBATIM, so
+         multi-word first-name values like ``"Dr Bala"`` or ``"Van Der"``
+         survive intact. This is the path CLIENT invites take because we
+         now persist first/last name separately on the user document.
+      2. ``name`` field — used only as a last-ditch fallback for staff
+         invites that still collect a single "Full name" input. In that
+         case we take the first whitespace-separated token, which is the
+         best we can do without structured first/last data.
+      3. Empty string when neither is usable — callers should then omit
+         the comma entirely in the greeting (no "Hi ," trailing commas).
+    """
+    fn = (d.get("first_name") or "").strip()
+    if fn:
+        return fn
+    raw = (d.get("name") or "").strip()
+    if not raw:
+        return ""
+    return raw.split()[0]
 
 
 def _wrap(body_html: str, *, preheader: str = "") -> str:
@@ -63,7 +88,7 @@ def _wrap(body_html: str, *, preheader: str = "") -> str:
     <tr>
       <td align="center">
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-          <tr><td style="padding:4px 4px 18px 4px;">{_brand_logo_svg()}</td></tr>
+          <tr><td align="center" style="padding:4px 4px 20px 4px;">{_brand_logo_svg()}</td></tr>
           <tr>
             <td style="background:#ffffff;border:1px solid #ebe7e0;border-radius:16px;padding:32px 34px;">
               {body_html}
@@ -136,18 +161,19 @@ def _fmt_money(v) -> str:
 # ============================================================================
 
 def _tpl_welcome_client(d: dict):
-    name = d.get("name") or "there"
     corp = d.get("corporation_name") or "your corporation"
     cpa = d.get("cpa_name")
     link = d.get("link") or f"{_frontend_url()}/portal"
-    first = name.split()[0] if name else "there"
+    first = _resolve_first_name(d)
+    greeting = f"You&rsquo;re invited to join CloudTax, {first}" if first else "You&rsquo;re invited to join CloudTax"
+    text_greeting = f"Hi {first}," if first else "Hi,"
     cpa_line = (
         f"Your dedicated CPA is <strong>{cpa}</strong>, and you&rsquo;ll be able to message them directly from the portal."
         if cpa else
         "A dedicated CPA will be assigned and introduced to you shortly."
     )
     body = (
-        _h1(f"You&rsquo;re invited to join CloudTax, {first}")
+        _h1(greeting)
         + _p(f"CloudTax has been set up to help you file your corporate taxes for <strong>{corp}</strong> — securely, simply, and without the back-and-forth.")
         + _p("Once you join, you can use our secure client portal to upload the documents on your personalized checklist, e-sign your T183 when your return is ready, and track progress end-to-end.")
         + _p(cpa_line)
@@ -155,7 +181,7 @@ def _tpl_welcome_client(d: dict):
         + _muted("This invitation link is valid for 7 days. If it expires, ask your CPA or CloudTax admin to resend it.")
     )
     text = (
-        f"Hi {first},\n\nYou're invited to join CloudTax to file your corporate taxes for {corp}.\n"
+        f"{text_greeting}\n\nYou're invited to join CloudTax to file your corporate taxes for {corp}.\n"
         "Upload documents, e-sign your T183, and message your CPA — all in one secure place.\n\n"
         f"Activate your portal: {link}\n\n(Link is valid for 7 days.)"
     )
@@ -163,18 +189,19 @@ def _tpl_welcome_client(d: dict):
 
 
 def _tpl_welcome_cpa(d: dict):
-    name = d.get("name") or "there"
     link = d.get("link") or f"{_frontend_url()}/set-password"
-    first = name.split()[0] if name else "there"
+    first = _resolve_first_name(d)
+    greeting = f"Welcome to the CloudTax team, {first}" if first else "Welcome to the CloudTax team"
+    text_greeting = f"Welcome to CloudTax, {first}." if first else "Welcome to CloudTax."
     body = (
-        _h1(f"Welcome to the CloudTax team, {first}")
+        _h1(greeting)
         + _p("You&rsquo;ve been invited to join CloudTax as a CPA. You&rsquo;ll use the platform to manage your assigned corporate-tax engagements end-to-end: review documents, run our AI-assisted data extraction, collaborate with the Wealthsimple partner team, and deliver filed returns to your clients.")
         + _p("Your workspace gives you a single view of every engagement, a shared review checklist, and a private chat thread per client.")
         + _cta_button("Set your password &amp; sign in", link)
         + _muted("This invitation link is valid for 7 days. After you set your password you&rsquo;ll be prompted to enable 2FA on your first sign-in.")
     )
     text = (
-        f"Welcome to CloudTax, {first}.\n\nYou've been invited to join as a CPA. You'll manage corporate-tax engagements, "
+        f"{text_greeting}\n\nYou've been invited to join as a CPA. You'll manage corporate-tax engagements, "
         "run AI extraction on client documents, collaborate with Wealthsimple partners, and deliver filed returns from one place.\n\n"
         f"Set your password and sign in: {link}\n\n(Link is valid for 7 days.)"
     )
@@ -182,18 +209,23 @@ def _tpl_welcome_cpa(d: dict):
 
 
 def _tpl_welcome_ws(d: dict):
-    name = d.get("name") or "there"
     link = d.get("link") or f"{_frontend_url()}/set-password"
-    first = name.split()[0] if name else "there"
+    first = _resolve_first_name(d)
+    greeting = (
+        f"CloudTax invited you to join as a Wealthsimple partner, {first}"
+        if first else
+        "CloudTax invited you to join as a Wealthsimple partner"
+    )
+    text_greeting = f"Hi {first}," if first else "Hi,"
     body = (
-        _h1(f"CloudTax invited you to join as a Wealthsimple partner, {first}")
+        _h1(greeting)
         + _p("You&rsquo;ll use the partner dashboard to refer physician clients to our done-for-you corporate-tax preparation workflow, track each engagement through intake, prep, review and filing, and see the advisory opportunities our CPAs surface along the way.")
         + _p("Everything is built around a shared pipeline — you see exactly where every client stands and what&rsquo;s outstanding, without chasing anyone over email.")
         + _cta_button("Set your password &amp; enter the dashboard", link)
         + _muted("This invitation link is valid for 7 days. After you set your password you&rsquo;ll be prompted to enable 2FA on your first sign-in.")
     )
     text = (
-        f"Hi {first},\n\nCloudTax invited you to join the platform as a Wealthsimple partner. "
+        f"{text_greeting}\n\nCloudTax invited you to join the platform as a Wealthsimple partner. "
         "Refer physician clients to our done-for-you corporate-tax workflow, track every engagement in one pipeline, "
         "and see advisory opportunities surfaced by our CPAs.\n\n"
         f"Set your password and sign in: {link}\n\n(Link is valid for 7 days.)"

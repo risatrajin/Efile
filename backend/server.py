@@ -677,7 +677,10 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
                 "created_at": datetime.now(timezone.utc),
             })
             invite_link = f"{FRONTEND_URL}/set-password?token={token}"
-            email_result = await ses_service.send_invite_async(email_lc, body.name or ex_name, invite_link, body.role)
+            email_result = await ses_service.send_invite_async(
+                email_lc, body.name or ex_name, invite_link, body.role,
+                first_name=existing.get("first_name"),
+            )
             log.info("Upgraded CLIENT %s to %s (%s) — email_sent=%s", email_lc, body.role, existing["id"], email_result.get("success"))
             return {
                 "user_id": existing["id"],
@@ -1029,6 +1032,7 @@ async def resend_invite(uid: str, user: dict = Depends(require_role("ADMIN"))):
         target.get("name") or target["email"],
         invite_link,
         target.get("role", "CPA"),
+        first_name=target.get("first_name"),
     )
     log.info("Invite resent: %s -> %s (by %s, email_sent=%s)", target.get("email"), invite_link, user.get("email"), email_result.get("success"))
     return {
@@ -1660,7 +1664,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         })
         invite_link = f"{FRONTEND_URL}/set-password?token={token}"
         try:
-            ses_service.send_invite(email, full_name, invite_link, "client")
+            ses_service.send_invite(email, full_name, invite_link, "client", first_name=first_name)
         except Exception as e:
             log.warning("send_invite failed (likely SES sandbox): %s", e)
         log.info("WS onboarding invite issued: %s -> %s", email, invite_link)

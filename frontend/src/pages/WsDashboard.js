@@ -361,6 +361,7 @@ export default function WsDashboard() {
             {COLUMNS.map((col) => {
               const items = engs.filter((e) => e.status === col.key);
               const isOnboarding = col.key === "ONBOARDING";
+              const isReferred = col.key === "REFERRED";
               const isEmpty = items.length === 0;
               return (
                 <div className="kanban-col" key={col.key} data-testid={`kanban-col-${col.key}`}>
@@ -371,27 +372,18 @@ export default function WsDashboard() {
                     </div>
                     {!isOnboarding && <Lock size={11} style={{ color: "var(--text-tertiary)" }} />}
                   </div>
-                  {isEmpty ? (
+                  {/* Empty state UI is intentionally kept ONLY on the Partner's
+                      Referred column — that's the handoff pocket where it helps
+                      partners understand why it's quiet (CPAs pick up from here).
+                      Every other column stays visually clean when empty. */}
+                  {isEmpty && isReferred && (
                     <div className="kanban-col-empty" data-testid={`kanban-empty-${col.key}`}>
                       <div className="kanban-col-empty-icon"><Inbox size={20} /></div>
-                      <div className="kanban-col-empty-title">No clients in {col.label.toLowerCase()}</div>
-                      <div className="kanban-col-empty-sub">
-                        {isOnboarding
-                          ? "Add a client to get started."
-                          : "Clients will appear here as they move through the pipeline."}
-                      </div>
-                      {isOnboarding && (
-                        <button
-                          className="btn btn-primary"
-                          style={{ marginTop: 4 }}
-                          onClick={() => { setEditingEng(null); setShowAdd(true); }}
-                          data-testid="add-client-empty"
-                        >
-                          <Plus size={12} /> Add client
-                        </button>
-                      )}
+                      <div className="kanban-col-empty-title">No clients referred yet</div>
+                      <div className="kanban-col-empty-sub">Submitted onboarding files will land here while a CPA is assigned.</div>
                     </div>
-                  ) : (
+                  )}
+                  {(isEmpty ? isOnboarding : true) && (
                     <div className="stack-sm">
                       {isOnboarding
                         ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onMove={moveToCloudtax} onOpen={() => openOnboarding(e.id)} />)
