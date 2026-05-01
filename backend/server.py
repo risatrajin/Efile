@@ -1622,7 +1622,12 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         raise HTTPException(400, "first_name and client_email required to start a draft")
     if not (body.corp_name or "").strip():
         raise HTTPException(400, "corp_name is required — please provide the client's corporation name")
-    full_name = f"{body.first_name.strip()} {body.last_name.strip()}".strip() if body.last_name else body.first_name.strip()
+    # Preserve the EXACT first/last name the caller typed. Multi-word values like
+    # "Dr Bala" must not be split on whitespace — we only use ``full_name`` as a
+    # display-friendly concatenation for legacy callers that still read ``name``.
+    first_name = body.first_name.strip()
+    last_name = (body.last_name or "").strip()
+    full_name = (first_name + " " + last_name).strip() if last_name else first_name
     email = body.client_email.lower()
     invite_link = None
     client = await db.users.find_one({"email": email})
@@ -1633,6 +1638,8 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
             "email": email,
             "password_hash": hash_password(uuid.uuid4().hex),
             "name": full_name,
+            "first_name": first_name,
+            "last_name": last_name,
             "role": "CLIENT",
             "phone": body.phone,
             "is_active": True,
@@ -1740,13 +1747,23 @@ async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depe
     corp = await db.corporations.find_one({"id": eng["corporation_id"]})
     client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
 
-    # Update client name from first/last
-    if body.first_name or body.last_name:
+    # Update client name from first/last. Preserve whitespace in multi-word names
+    # like "Dr Bala" — the two fields are stored VERBATIM; ``name`` is just a
+    # concatenation convenience.
+    if body.first_name is not None or body.last_name is not None:
         first = (body.first_name or "").strip()
         last = (body.last_name or "").strip()
-        full = f"{first} {last}".strip() if last else (first if first else None)
-        if full and client:
-            await db.users.update_one({"id": client["id"]}, {"$set": {"name": full}})
+        full = (first + " " + last).strip() if last else first
+        if client:
+            update_set = {}
+            if body.first_name is not None:
+                update_set["first_name"] = first
+            if body.last_name is not None:
+                update_set["last_name"] = last
+            if full:
+                update_set["name"] = full
+            if update_set:
+                await db.users.update_one({"id": client["id"]}, {"$set": update_set})
     if body.client_email and client:
         await db.users.update_one({"id": client["id"]}, {"$set": {"email": body.client_email.lower()}})
     if body.phone is not None and client:

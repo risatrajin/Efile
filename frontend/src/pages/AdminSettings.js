@@ -499,13 +499,25 @@ function AddMemberModal({ onClose, onDone }) {
                     setExisting(row);
                     // If the admin hasn't filled name yet and the existing
                     // row has one, pre-populate so the form isn't empty.
-                    if (row?.name && !form.first_name && !form.last_name) {
-                      const parts = row.name.trim().split(/\s+/);
-                      setForm((f) => ({
-                        ...f,
-                        first_name: parts[0] || "",
-                        last_name: parts.slice(1).join(" ") || "",
-                      }));
+                    // Prefer the verbatim first_name/last_name so multi-word
+                    // values like "Dr Bala" survive the round-trip. Fall back
+                    // to a single split of ``name`` only for legacy rows.
+                    if (!form.first_name && !form.last_name) {
+                      if (row?.first_name != null || row?.last_name != null) {
+                        setForm((f) => ({
+                          ...f,
+                          first_name: row.first_name || "",
+                          last_name: row.last_name || "",
+                        }));
+                      } else if (row?.name) {
+                        const raw = row.name.trim();
+                        const idx = raw.indexOf(" ");
+                        setForm((f) => ({
+                          ...f,
+                          first_name: idx === -1 ? raw : raw.slice(0, idx),
+                          last_name: idx === -1 ? "" : raw.slice(idx + 1),
+                        }));
+                      }
                     }
                   }}
                   testid="add-email"

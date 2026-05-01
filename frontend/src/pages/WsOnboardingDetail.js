@@ -58,10 +58,20 @@ export default function WsOnboardingDetail() {
       setEng(data);
       const c = data.client || {};
       const corp = data.corporation || {};
-      const parts = (c.name || "").trim().split(/\s+/);
+      // Prefer the exact first_name / last_name stored on the user document —
+      // multi-word first names like "Dr Bala" would otherwise be mangled by
+      // any whitespace split. Only fall back to a split of ``name`` for legacy
+      // records that predate the separate fields.
+      let firstName = c.first_name;
+      let lastName = c.last_name;
+      if (firstName == null && lastName == null) {
+        const raw = (c.name || "").trim();
+        firstName = raw;  // treat the whole legacy ``name`` as first_name to
+        lastName = "";    // avoid auto-splitting and losing intent.
+      }
       setForm({
-        first_name: parts[0] || "",
-        last_name: parts.slice(1).join(" ") || "",
+        first_name: firstName || "",
+        last_name: lastName || "",
         client_email: c.email || "",
         phone: c.phone || "",
         province: corp.province || "ON",

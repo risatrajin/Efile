@@ -36,7 +36,16 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
   const [form, setForm] = useState(() => {
     const c = existing?.client || {};
     const corp = existing?.corporation || {};
-    const [, first, last] = (c.name || "").match(/Dr\.?\s+(\w+)\s*(.*)/) || [null, "", ""];
+    // Preserve the EXACT first/last name if the backend now stores them
+    // separately. Only fall back to reading ``name`` for legacy records, and
+    // even then we don't guess — we drop the whole value into first_name so
+    // nothing gets auto-restructured.
+    let first = c.first_name;
+    let last = c.last_name;
+    if (first == null && last == null) {
+      first = (c.name || "").trim();
+      last = "";
+    }
     return {
       first_name: first || "", last_name: last || "",
       client_email: c.email || "",
@@ -49,7 +58,10 @@ function AddClientModal({ onClose, onCreated, existing = null }) {
     };
   });
 
-  const step1Valid = form.first_name && form.last_name && form.client_email && form.corp_name;
+  // Only first_name is strictly required — allow clients with a single
+  // verbatim name (e.g. mononyms, or multi-word first names where the
+  // operator left last name empty).
+  const step1Valid = form.first_name && form.client_email && form.corp_name;
 
   const goNext = async () => {
     setBusy(true); setErr("");
