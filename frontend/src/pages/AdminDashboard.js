@@ -5,7 +5,7 @@ import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
 import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
 import UsersTable from "../components/shared/UsersTable";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Inbox } from "lucide-react";
 
 const COLUMNS = [
   { key: "REFERRED", label: "Referred" },
@@ -327,6 +327,7 @@ export default function AdminDashboard() {
               <div className="kanban" style={{ gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(220px, 1fr))` }} data-testid="admin-kanban">
                 {COLUMNS.map((col) => {
                   const items = engs.filter((e) => e.status === col.key);
+                  const isEmpty = items.length === 0;
                   return (
                     <div className="kanban-col" key={col.key} data-testid={`admin-kanban-col-${col.key}`}>
                       <div className="kanban-col-header">
@@ -335,10 +336,17 @@ export default function AdminDashboard() {
                           <div className="kanban-col-count">{items.length}</div>
                         </div>
                       </div>
-                      <div className="stack-sm">
-                        {items.map((e) => <AdminCard key={e.id} eng={e} onClick={() => navigate(`/admin/client/${e.id}`)} />)}
-                        {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 8, textAlign: "center" }}>No clients</div>}
-                      </div>
+                      {isEmpty ? (
+                        <div className="kanban-col-empty" data-testid={`admin-kanban-empty-${col.key}`}>
+                          <div className="kanban-col-empty-icon"><Inbox size={20} /></div>
+                          <div className="kanban-col-empty-title">No clients in {col.label.toLowerCase()}</div>
+                          <div className="kanban-col-empty-sub">Clients will appear here as they move through the pipeline.</div>
+                        </div>
+                      ) : (
+                        <div className="stack-sm">
+                          {items.map((e) => <AdminCard key={e.id} eng={e} onClick={() => navigate(`/admin/client/${e.id}`)} />)}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

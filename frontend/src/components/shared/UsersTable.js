@@ -210,7 +210,7 @@ export default function UsersTable({ navigate }) {
       {info && <div className="alert" data-testid="users-info" style={{ background: "#e8f5e9", border: "1px solid #c8e6c9", color: "#1b5e20", padding: "10px 12px", borderRadius: 8, fontSize: 13, marginBottom: 12 }}>{info}</div>}
 
       <div className="card" style={{ padding: 0, overflow: "visible" }} data-testid="users-table-card">
-        <div style={{ overflow: "auto" }}>
+        <div style={{ overflow: "auto", borderRadius: "calc(var(--radius-card) - 1px)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }} data-testid="users-table">
             <thead>
               <tr style={{ background: "var(--bg-subtle)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, color: "var(--text-secondary)" }}>

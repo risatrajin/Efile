@@ -4,7 +4,7 @@ import { api, fmtError, fmtDate } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
 import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
-import { Plus, Lock, ArrowRight, X } from "lucide-react";
+import { Plus, Lock, ArrowRight, X, Inbox } from "lucide-react";
 
 const COLUMNS = [
   { key: "ONBOARDING", label: "Onboarding", icon: "add" },
@@ -361,6 +361,7 @@ export default function WsDashboard() {
             {COLUMNS.map((col) => {
               const items = engs.filter((e) => e.status === col.key);
               const isOnboarding = col.key === "ONBOARDING";
+              const isEmpty = items.length === 0;
               return (
                 <div className="kanban-col" key={col.key} data-testid={`kanban-col-${col.key}`}>
                   <div className="kanban-col-header">
@@ -368,27 +369,41 @@ export default function WsDashboard() {
                       <div className="kanban-col-title">{col.label}</div>
                       <div className="kanban-col-count">{items.length}</div>
                     </div>
-                    {isOnboarding ? (
-                      <button onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-circle"
-                              style={{ width: 28, height: 28, borderRadius: "50%", background: "#1565c0", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                        <Plus size={14} />
-                      </button>
-                    ) : (
-                      <Lock size={11} style={{ color: "var(--text-tertiary)" }} />
-                    )}
+                    {!isOnboarding && <Lock size={11} style={{ color: "var(--text-tertiary)" }} />}
                   </div>
-                  <div className="stack-sm">
-                    {isOnboarding
-                      ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onMove={moveToCloudtax} onOpen={() => openOnboarding(e.id)} />)
-                      : items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)
-                    }
-                    {items.length === 0 && <div className="tertiary" style={{ fontSize: 11, padding: 12 }}>No clients</div>}
-                  </div>
-                  {isOnboarding && (
-                    <button className="btn btn-primary w-full mt-3"
-                            onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-bottom">
-                      <Plus size={12} /> Add client
-                    </button>
+                  {isEmpty ? (
+                    <div className="kanban-col-empty" data-testid={`kanban-empty-${col.key}`}>
+                      <div className="kanban-col-empty-icon"><Inbox size={20} /></div>
+                      <div className="kanban-col-empty-title">No clients in {col.label.toLowerCase()}</div>
+                      <div className="kanban-col-empty-sub">
+                        {isOnboarding
+                          ? "Add a client to get started."
+                          : "Clients will appear here as they move through the pipeline."}
+                      </div>
+                      {isOnboarding && (
+                        <button
+                          className="btn btn-primary"
+                          style={{ marginTop: 4 }}
+                          onClick={() => { setEditingEng(null); setShowAdd(true); }}
+                          data-testid="add-client-empty"
+                        >
+                          <Plus size={12} /> Add client
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="stack-sm">
+                      {isOnboarding
+                        ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onMove={moveToCloudtax} onOpen={() => openOnboarding(e.id)} />)
+                        : items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)
+                      }
+                      {isOnboarding && (
+                        <button className="btn btn-primary w-full mt-3"
+                                onClick={() => { setEditingEng(null); setShowAdd(true); }} data-testid="add-client-bottom">
+                          <Plus size={12} /> Add client
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               );

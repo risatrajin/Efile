@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
-import { api, fmtError } from "../lib/api";
+import { api, fmtError, TIER_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
 
@@ -13,10 +13,11 @@ const STAGE_OPTIONS = [
   { key: "DELIVERY", label: "Delivery" },
   { key: "FILED", label: "Filed" },
 ];
+// Tier options sourced from the canonical TIER_LABELS map so the filter
+// always matches what the backend / pipeline cards actually show.
 const TIER_OPTIONS = [
   { key: "all", label: "All tiers" },
-  { key: "BASIC", label: "Basic" },
-  { key: "PREMIUM", label: "Premium" },
+  ...Object.entries(TIER_LABELS).map(([key, label]) => ({ key, label })),
 ];
 
 export default function CpaFiles() {

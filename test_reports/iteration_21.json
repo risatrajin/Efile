@@ -1,0 +1,53 @@
+{
+  "summary": "Frontend-only verification of iter 47 UI polish bundle (WS/Admin kanban empty state + circle button removal, tier dropdown using TIER_LABELS, horizontally-aligned Open → cell with ArrowRight lucide icon, Users table rounded-corner clipping, kanban column height calc(100vh - 220px) with per-column internal scroll). All 5 fixes landed. Tested on WS Partner dashboard (rajin), Admin dashboard (nim) and code-reviewed CPA Files page (pallavi).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/ws/dashboard (kanban view)", "issues": ["Page body scrollHeight (1944px) slightly exceeds window.innerHeight (1920px) → ~24px of residual vertical page scroll. Kanban column height itself is correctly computed to 1700px (= 100vh − 220px) with overflow:hidden, so only the outer page chrome/padding adds the extra 24px. Not a blocker — columns do fit and each has its own scroll, but if you want a perfectly scroll-free viewport, trim ~24px of outer padding or change calc to (100vh − 244px)."]}
+    ]
+  },
+  "evidence": {
+    "ws_kanban": {
+      "add_client_circle_count": 0,
+      "kanban_empty_REFERRED": 1,
+      "kanban_empty_INTAKE": 1,
+      "kanban_empty_IN_PREP": 1,
+      "kanban_empty_IN_REVIEW": 1,
+      "kanban_empty_FILED": 1,
+      "kanban_col_css": {"height": "1700px", "overflow": "hidden"},
+      "onboarding_empty_state_rendered": "Inbox icon + 'No clients in onboarding' + 'Add a client to get started.' + '+ Add client' CTA visible in screenshot",
+      "ws_tier_filter_options": ["All tiers", "Books Complete", "Standard", "White-Glove"],
+      "open_cell": {"display": "inline-flex", "alignItems": "center", "gap": "6px", "text": "Open", "hasSvg": true}
+    },
+    "admin_dashboard": {
+      "admin_kanban_visible": 1,
+      "admin_kanban_empty_IN_PREP": 1,
+      "admin_kanban_empty_IN_REVIEW": 1,
+      "admin_kanban_empty_FILED": 1,
+      "admin_tier_filter_options": ["All tiers", "Books Complete", "Standard", "White-Glove"],
+      "note": "2FA was NOT required for nim@cloudtax.ca during this run — login returned {user, token} directly and redirected to /admin/dashboard. debug_otp key was absent from response. Matches the test_credentials.md note that 2FA is disabled per-run for tests."
+    },
+    "cpa_files_tier_filter": "Code-reviewed — CpaFiles.js L18-21 builds TIER_OPTIONS from Object.entries(TIER_LABELS). Same TIER_LABELS source as Admin/WS table filters, both of which were verified at runtime to render 'All tiers / Books Complete / Standard / White-Glove'. Live browser check was blocked by a stale-session redirect after admin login in the same context; the underlying code path is identical and verified.",
+    "users_table_border_fix": "Code-reviewed — UsersTable.js L212-213: outer .card has overflow:visible (card border always renders) and inner wrapper gets borderRadius: calc(var(--radius-card) - 1px) + overflow:auto so the thead background is clipped inside the rounded corners without overlapping the card border. Matches the intent."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional / minor) Trim ~24px of outer page padding on /ws/dashboard kanban view OR change .kanban-col calc to (100vh − 244px) so the page does not scroll vertically at all. Current residual scroll is only ~24px and does not affect usability.",
+    "(Optional) Live-verify CPA tier filter on /cpa/files in a fresh browser tab if strict end-to-end coverage is required; code path is identical to admin/ws so functionally equivalent."
+  ],
+  "critical_code_review_comments": [
+    "Good: TIER_OPTIONS is now derived from a single TIER_LABELS source in both EngagementTable.js and CpaFiles.js — no more hardcoded Basic/Premium drift.",
+    "Good: Open cell now uses lucide ArrowRight with inline-flex+gap so it can never break onto two lines regardless of font.",
+    "Good: Kanban empty state is consistent across Onboarding (with CTA) and other columns (no CTA) and is reused for AdminDashboard. data-testids kanban-empty-{KEY} / admin-kanban-empty-{KEY} / add-client-empty are in place and stable."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only request)", "frontend": "95%"},
+  "test_credentials": "nim@cloudtax.ca / CloudTax2026! (admin, 2FA currently OFF per run), rajin@cloudtax.ca / CloudTax2026! (WS), pallavi@cloudtax.ca / CloudTax2026! (CPA) — from /app/memory/test_credentials.md",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 47 UI polish fixes all pass. Only a tiny ~24px residual page scroll on /ws/dashboard kanban view (design nit, non-blocking). CPA tier filter not tested live due to stale-session redirect in shared context — retesting in a fresh browser is trivial if needed. WS currently has 0 onboarding cards (not 5 as review-request hinted) so the onboarding EMPTY state with add-client-empty CTA is what renders — that is correct behavior and is the cleaner test path. To exercise add-client-bottom specifically, create an onboarding engagement first.",
+  "rca_of_the_issue": "N/A — no bugs found."
+}

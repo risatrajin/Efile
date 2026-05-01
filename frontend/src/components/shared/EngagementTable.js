@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Search, LayoutGrid, List } from "lucide-react";
-import { fmtDate } from "../../lib/api";
+import { Search, LayoutGrid, List, ArrowRight } from "lucide-react";
+import { fmtDate, TIER_LABELS } from "../../lib/api";
 import { TierBadge, StatusBadge } from "./Badges";
 
 const STAGE_OPTIONS_DEFAULT = [
@@ -12,10 +12,13 @@ const STAGE_OPTIONS_DEFAULT = [
   { key: "DELIVERY", label: "Delivery" },
   { key: "FILED", label: "Filed" },
 ];
+// Tier dropdown is sourced from the canonical TIER_LABELS map so the filter
+// options always match what the rest of the app (pipeline cards, client data,
+// backend) actually stores. Hardcoding "Basic"/"Premium" previously caused
+// silent filter mismatches.
 const TIER_OPTIONS = [
   { key: "all", label: "All tiers" },
-  { key: "BASIC", label: "Basic" },
-  { key: "PREMIUM", label: "Premium" },
+  ...Object.entries(TIER_LABELS).map(([key, label]) => ({ key, label })),
 ];
 
 /**
@@ -174,7 +177,19 @@ export default function EngagementTable({
                       )}
                       <td style={{ ...cellBody, color: "var(--text-secondary)" }}>{fmtDate(lastUpdate) || "—"}</td>
                       <td style={{ ...cellBody, textAlign: "right" }}>
-                        <span style={{ color: "#1e88e5", fontSize: 12, fontWeight: 500 }}>Open →</span>
+                        <span
+                          style={{
+                            color: "#1e88e5",
+                            fontSize: 12,
+                            fontWeight: 500,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Open <ArrowRight size={12} strokeWidth={2.5} />
+                        </span>
                       </td>
                     </tr>
                   );
