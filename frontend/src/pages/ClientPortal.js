@@ -200,13 +200,35 @@ function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView,
                     display: "inline-flex", alignItems: "center", gap: 8,
                     padding: "6px 10px", background: "var(--bg-subtle)", borderRadius: 6,
                     fontSize: 12, color: "var(--text-primary)", border: "1px solid var(--border-default)",
-                    cursor: "pointer", maxWidth: "100%",
+                    cursor: (onView || onViewFile) ? "pointer" : "default", maxWidth: "100%",
                   }}
                 >
                   <FileText size={12} style={{ color: "#1565c0", flexShrink: 0 }} />
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280 }}>{f.file_name}</span>
                   {f.file_size > 0 && <span className="tertiary" style={{ fontSize: 11, flexShrink: 0 }}>· {fmtSize(f.file_size)}</span>}
                 </button>
+                {/* Explicit "View" button — equally visible to primary client AND
+                    delegates so the action is discoverable. The whole pill is
+                    also clickable, but the icon-button hits the same handler
+                    and confirms the doc can be opened. */}
+                {(onView || onViewFile) && (
+                  <button
+                    type="button"
+                    onClick={() => onViewFile ? onViewFile(doc, f) : onView?.(doc)}
+                    data-testid={`view-file-${doc.id}-${f.id}`}
+                    title="View"
+                    aria-label={`View ${f.file_name || "file"}`}
+                    style={{
+                      width: 28, height: 28, borderRadius: 6,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      color: "var(--text-secondary)", background: "transparent",
+                      border: "1px solid var(--border-default)",
+                      transition: "background-color 120ms ease, color 120ms ease",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+                  ><Eye size={12} /></button>
+                )}
                 {canEdit && (
                   <button
                     type="button"
@@ -765,7 +787,7 @@ export default function ClientPortal() {
         <>
           <div className="card" data-testid="docs-summary-card">
             <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS WE NEED</div>
-            {visibleDocs.map((d) => <DocItem key={d.id} doc={d} mode="summary" />)}
+            {visibleDocs.map((d) => <DocItem key={d.id} doc={d} mode="summary" onView={onView} onViewFile={onViewFile} />)}
           </div>
 
           <div className="card" data-testid="cpa-questions-card">
@@ -886,7 +908,7 @@ export default function ClientPortal() {
 
           <div className="card" data-testid="docs-submitted-card">
             <div className="section-label" style={{ marginBottom: 16 }}>DOCUMENTS SUBMITTED</div>
-            {visibleDocs.map((d) => <DocItem key={d.id} doc={d} mode="summary" />)}
+            {visibleDocs.map((d) => <DocItem key={d.id} doc={d} mode="summary" onView={onView} onViewFile={onViewFile} />)}
           </div>
         </>
       )}
