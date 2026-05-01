@@ -119,10 +119,38 @@ function fmtSize(b) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function DocStatusDot({ doc }) {
+  // Colored dot rendered before the document title to make each request's
+  // current state scannable at a glance. Keep this compact (8px) — the
+  // text-based badges (REQUIRED / New request / ✓ Uploaded / Upload pending)
+  // carry the verbose labeling.
+  const isDone = ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(doc.status);
+  const isIssue = doc.status === "ISSUE";
+  const isDeferred = !!doc.deferred_at && !isDone && !isIssue;
+  let color = "#d5d1cc"; // neutral default (not yet actioned)
+  let title = "Awaiting your choice";
+  if (isIssue) { color = "#c62828"; title = "Issue — please re-upload"; }
+  else if (isDone) { color = "#2e7d32"; title = "Uploaded"; }
+  else if (isDeferred) { color = "#ef6c00"; title = "Upload pending (you chose to upload later)"; }
+  else if (doc.is_required) { color = "#ef6c00"; title = "Required"; }
+  return (
+    <span
+      aria-label={title}
+      title={title}
+      data-testid={`doc-status-dot-${doc.id}`}
+      style={{
+        display: "inline-block", width: 8, height: 8, borderRadius: 999,
+        background: color, flexShrink: 0,
+      }}
+    />
+  );
+}
+
 function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView, onViewFile, mode = "list" }) {
   const isDone = ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(doc.status);
   const isIssue = doc.status === "ISSUE";
   const isReUploaded = doc.status === "UPLOADED" && doc.re_uploaded_at;
+  const isDeferred = !!doc.deferred_at && !isDone && !isIssue;
   const showUpdated = isReUploaded || (isDone && doc.uploaded_at && (new Date() - new Date(doc.uploaded_at) < 7 * 86400000));
   const canEdit = mode === "interactive";
   // Unified files[] (server normalizes legacy single-file docs) sorted oldest → newest
@@ -132,10 +160,17 @@ function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView,
     <div data-testid={`doc-item-${doc.id}`} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "16px 0", borderBottom: "1px solid var(--border-default)", gap: 12 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <DocStatusDot doc={doc} />
           <span style={{ fontSize: 14, fontWeight: 500 }}>{doc.name}</span>
           {doc.is_new_request && <span style={{ background: "#e3f2fd", color: "#1565c0", fontSize: 11, fontWeight: 500, padding: "2px 10px", borderRadius: 999 }}>New request</span>}
-          {doc.is_required && !isDone && !isIssue && (
+          {doc.is_required && !isDone && !isIssue && !isDeferred && (
             <span style={{ background: "#fff3e0", color: "#ef6c00", fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, letterSpacing: 0.3 }}>REQUIRED</span>
+          )}
+          {isDeferred && (
+            <span
+              data-testid={`doc-deferred-badge-${doc.id}`}
+              style={{ background: "#fff3e0", color: "#ef6c00", fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, letterSpacing: 0.3 }}
+            >UPLOAD PENDING</span>
           )}
           {isDone && files.length > 1 && (
             <span data-testid={`file-count-${doc.id}`} style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, letterSpacing: 0.3 }}>
@@ -143,7 +178,16 @@ function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView,
             </span>
           )}
         </div>
-        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{doc.description}</div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+          {doc.description}
+          {isDeferred && (
+            <span
+              className="tertiary"
+              data-testid={`doc-deferred-hint-${doc.id}`}
+              style={{ display: "block", fontSize: 11, marginTop: 4, color: "#ef6c00" }}
+            >You chose to upload this later. Open the menu any time to upload.</span>
+          )}
+        </div>
         {isDone && files.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
             {files.map((f) => (
@@ -209,10 +253,13 @@ function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView,
         {isDone && mode === "summary" && (
           <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>✓ Uploaded</span>
         )}
-        {!isDone && !isIssue && doc.status === "PENDING" && !doc.is_new_request && mode === "summary" && (
+        {!isDone && !isIssue && doc.status === "PENDING" && !doc.is_new_request && !isDeferred && mode === "summary" && (
           <span style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>Not uploaded</span>
         )}
-        {!isDone && !isIssue && (doc.is_new_request || (doc.status === "PENDING" && mode === "interactive")) && (
+        {!isDone && !isIssue && isDeferred && mode === "summary" && (
+          <span data-testid={`doc-pending-summary-${doc.id}`} style={{ background: "#fff3e0", color: "#ef6c00", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>Upload pending</span>
+        )}
+        {!isDone && !isIssue && mode === "interactive" && (doc.is_new_request || isDeferred || doc.status === "PENDING") && (
           <ChooseDropdown doc={doc} onUpload={(f) => onUpload(doc, f)} onDefer={() => onDefer(doc)} busy={busy === doc.id} />
         )}
       </div>
@@ -599,7 +646,10 @@ export default function ClientPortal() {
   const corp = eng.corporation || {};
   const cpa = eng.assigned_cpa;
   const issueDocs = docs.filter((d) => d.status === "ISSUE");
-  const visibleDocs = docs.filter((d) => !d.deferred_at);
+  // Keep deferred ("I'll upload later") items visible — the DocItem now shows
+  // an UPLOAD PENDING badge + status dot instead of hiding the row. Only the
+  // ISSUE list is rendered separately above, so those are pulled out here.
+  const visibleDocs = docs;
   // Use the CPA-entered filing_summary (preferred) and fall back to legacy tax_summary
   const taxSummary = eng.filing_summary || eng.tax_summary || {};
   const t2DraftDoc = eng.t2_draft_doc_id ? docs.find((d) => d.id === eng.t2_draft_doc_id) : null;
