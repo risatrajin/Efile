@@ -276,6 +276,27 @@
 
 ## Backlog (prioritized)
 
+### Iter 44 (May 1, 2026 — Trust-this-device 2FA + view-toggle icons + header cleanup)
+
+**Feature 1 — Trust this device for 30 days (2FA friction reduction)**:
+- New module `/app/backend/trusted_devices.py` — issue/check/revoke helpers. Tokens: `secrets.token_urlsafe(32)` raw, SHA-256 at rest in `trusted_devices` collection ({id, user_id, token_hash, user_agent, ip, created_at, last_used_at, expires_at, revoked}). Raw token lives ONLY in a HttpOnly+Secure+SameSite=None cookie `ct_trusted_device` (30-day max-age).
+- `POST /api/auth/2fa/verify-login` now accepts optional `trust_device: bool`. When true + OTP valid, issues the cookie and returns `trusted_device_issued: true`.
+- `POST /api/auth/login` checks the cookie first for 2FA-enabled users — if valid (match on user_id + token_hash, not revoked, not expired), skips the OTP challenge and returns `{token, trusted_device: true}`. Bumps `last_used_at`.
+- New management endpoints: `GET /api/auth/trusted-devices` (list without hash), `DELETE /api/auth/trusted-devices/{id}` (revoke one), `POST /api/auth/trusted-devices/revoke-all`.
+- Invalidation hooks: `POST /auth/change-password` and `POST /auth/reset-password` BOTH call `revoke_all_for_user` so a rotated password nukes every lingering trust-device session.
+- Frontend: `<Login>` OTP step now has an accessible checkbox (`login-trust-device-checkbox`, `htmlFor="login-trust-device"`, keyboard focusable) with copy "I trust this computer for 30 days" + helper text. Unchecked by default. `verifyLoginOtp(challengeId, code, trustDevice)` forwards the flag. `api.js` now sets `withCredentials: true` so the cookie rides cross-origin requests under the Kubernetes ingress.
+
+**Feature 2 — View toggle icon-only**:
+- `ViewToggle` in `EngagementTable.js` rewritten: 32×32 square hit targets, LayoutGrid/List icons from lucide, sliding black pill background that slides `200ms ease-in-out` between positions. Aria-labels `"Kanban View"` / `"Table View"`, `role="tablist"/"tab"`, `aria-selected`. Icons scale to 1.08 on hover. Works in both Admin + WS dashboards since the component is shared.
+
+**Feature 3 — Header cleanup**:
+- `AppHeader.js` dropped the role-based workspace pill ("Partner workspace" / "CPA workspace" / "Client Portal" / "Admin") entirely.
+- Also filters `tabs` on `key === "dashboard"` so the redundant "Dashboard" tab disappears — the Home icon in the right cluster already owns dashboard navigation. Other tabs (e.g. "Users") still render.
+
+**Tests**: `tests/test_trust_device.py` — **4/4 PASS** (issue+skip cycle, no-cookie-when-false, list+delete single device + re-challenge, revoke-all). `ViewToggle` + header cleanup verified via bundle grep (`LayoutGrid` + `visibleTabs` shipped; `workspace-pill` / `"Kanban"`/`"Table"` / `"Partner workspace"` text strings no longer in the bundle).
+
+**Security notes**: Trust cookie is HttpOnly (not JS-readable), Secure-only, SameSite=None (required for cross-subdomain ingress). SHA-256 hash at rest means DB exposure alone can't forge a cookie. Password rotation (both change + reset) atomically burns every trust row.
+
 ### Iter 43 (May 1, 2026 — Production Resend setup + accurate delivery status)
 
 **Config**:

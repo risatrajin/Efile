@@ -5,6 +5,7 @@ const BASE = process.env.REACT_APP_BACKEND_URL;
 export const api = axios.create({
   baseURL: `${BASE}/api`,
   headers: { "Content-Type": "application/json" },
+  withCredentials: true, // send the ct_trusted_device cookie (and access_token) across requests
 });
 
 // Attach token from localStorage as fallback (belt + suspenders for SameSite=None issues)

@@ -53,15 +53,16 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const verifyLoginOtp = async (challengeId, code) => {
+  const verifyLoginOtp = async (challengeId, code, trustDevice = false) => {
     try {
       const { data } = await api.post("/auth/2fa/verify-login", {
         challenge_id: challengeId,
         code,
+        trust_device: !!trustDevice,
       });
       if (data.token) localStorage.setItem("ct_token", data.token);
       setUser(data.user);
-      return { ok: true };
+      return { ok: true, trustedDeviceIssued: !!data.trusted_device_issued };
     } catch (e) {
       return { ok: false, error: fmtError(e) };
     }

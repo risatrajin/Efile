@@ -24,6 +24,7 @@ export default function Login() {
   // 2FA challenge state — when present, swap the form for an OTP entry
   const [otpState, setOtpState] = useState(null);
   const [otpCode, setOtpCode] = useState("");
+  const [trustDevice, setTrustDevice] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendBusy, setResendBusy] = useState(false);
   const [resendInfo, setResendInfo] = useState("");
@@ -64,7 +65,7 @@ export default function Login() {
   const onSubmitOtp = async (e) => {
     e.preventDefault();
     setBusy(true); setErr("");
-    const r = await verifyLoginOtp(otpState.challengeId, otpCode.trim());
+    const r = await verifyLoginOtp(otpState.challengeId, otpCode.trim(), trustDevice);
     setBusy(false);
     if (!r.ok) { setErr(r.error); return; }
   };
@@ -94,6 +95,7 @@ export default function Login() {
   const cancelOtp = () => {
     setOtpState(null);
     setOtpCode("");
+    setTrustDevice(false);
     setErr("");
     setResendCooldown(0);
     setResendInfo("");
@@ -183,6 +185,37 @@ export default function Login() {
                   style={{ letterSpacing: 6, fontSize: 18, textAlign: "center" }}
                 />
               </div>
+              <label
+                htmlFor="login-trust-device"
+                className="flex items-center"
+                style={{
+                  gap: 10,
+                  padding: "10px 12px",
+                  border: "1px solid var(--border-default)",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontSize: 13,
+                  userSelect: "none",
+                  background: trustDevice ? "var(--bg-subtle)" : "transparent",
+                  transition: "background-color 150ms ease",
+                }}
+                data-testid="login-trust-device-label"
+              >
+                <input
+                  id="login-trust-device"
+                  type="checkbox"
+                  checked={trustDevice}
+                  onChange={(e) => setTrustDevice(e.target.checked)}
+                  data-testid="login-trust-device-checkbox"
+                  style={{ width: 16, height: 16, accentColor: "var(--accent-dark)", cursor: "pointer" }}
+                />
+                <span>
+                  <span style={{ fontWeight: 500 }}>I trust this computer for 30 days</span>
+                  <span className="muted" style={{ display: "block", fontSize: 11, marginTop: 2 }}>
+                    Skip the verification code on this browser for the next 30 days.
+                  </span>
+                </span>
+              </label>
               {!otpState.sentViaEmail && otpState.debugOtp && (
                 <div
                   style={{

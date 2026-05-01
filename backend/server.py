@@ -24,6 +24,7 @@ from auth import (
 import s3_service
 import ses_service
 import email_service
+import trusted_devices
 from email_templates import send_email as _email_templates_send
 import ai_service
 from config import (
@@ -358,8 +359,16 @@ async def login(body: LoginIn, request: Request, response: Response):
 
     await record_attempt(identifier, True)
 
-    # 2FA gate: when enabled, return a challenge instead of an access token.
+    # 2FA gate: when enabled, return a challenge instead of an access token —
+    # UNLESS this browser has a valid "trusted device" cookie for the same user.
     if user.get("two_factor_enabled"):
+        trusted = await trusted_devices.check_trust_cookie(request, user["id"])
+        if trusted:
+            log.info("2FA skipped via trusted device: %s", user["email"])
+            token = create_access_token(user["id"], user["email"], user["role"])
+            set_auth_cookie(response, token)
+            return {"user": safe_user(user), "token": token, "trusted_device": True}
+
         # Cooldown is bypassed here because login is the entry-point — if the
         # user is in a fresh login flow they shouldn't hit a stale 429. The
         # explicit "Resend code" action *does* use the cooldown.
@@ -388,10 +397,15 @@ async def login(body: LoginIn, request: Request, response: Response):
 
 
 @api.post("/auth/2fa/verify-login")
-async def verify_login_otp(body: dict, response: Response):
-    """Complete login by exchanging a valid OTP for a real access token."""
+async def verify_login_otp(body: dict, request: Request, response: Response):
+    """Complete login by exchanging a valid OTP for a real access token.
+
+    If the caller sets ``trust_device=true`` we also issue a 30-day device token
+    so future logins from this browser can skip the 2FA challenge.
+    """
     challenge_id = (body or {}).get("challenge_id")
     code = (body or {}).get("code")
+    trust_device = bool((body or {}).get("trust_device"))
     if not challenge_id or not code:
         raise HTTPException(400, "Missing challenge_id or code")
     user = await _consume_otp(challenge_id, code, OTP_PURPOSE_LOGIN)
@@ -399,7 +413,14 @@ async def verify_login_otp(body: dict, response: Response):
         raise HTTPException(400, "Invalid challenge")
     token = create_access_token(user["id"], user["email"], user["role"])
     set_auth_cookie(response, token)
-    return {"user": safe_user(user), "token": token}
+    trusted_issued = False
+    if trust_device:
+        ua = request.headers.get("user-agent") or ""
+        ip = request.client.host if request.client else ""
+        raw = await trusted_devices.issue_trust_token(user["id"], user_agent=ua, ip=ip)
+        trusted_devices.set_trust_cookie(response, raw)
+        trusted_issued = True
+    return {"user": safe_user(user), "token": token, "trusted_device_issued": trusted_issued}
 
 
 @api.post("/auth/2fa/enable-init")
@@ -579,6 +600,12 @@ async def reset_password(body: SetPasswordIn):
         raise HTTPException(400, "Token expired")
     await db.users.update_one({"id": row["user_id"]}, {"$set": {"password_hash": hash_password(body.password)}})
     await db.password_reset_tokens.update_one({"token": body.token}, {"$set": {"used": True}})
+    # Invalidate every trusted device — a forced password rotation must not
+    # leave a stale "remember this browser" hook that bypasses 2FA.
+    try:
+        await trusted_devices.revoke_all_for_user(row["user_id"])
+    except Exception as e:
+        log.warning("trusted_devices.revoke_all_for_user failed on reset: %s", e)
     return {"ok": True}
 
 
@@ -4400,13 +4427,52 @@ class ChangePasswordIn(BaseModel):
 
 
 @api.post("/auth/change-password")
-async def change_password(body: ChangePasswordIn, user: dict = Depends(get_current_user)):
+async def change_password(body: ChangePasswordIn, response: Response, user: dict = Depends(get_current_user)):
     db = get_db()
     full = await db.users.find_one({"id": user["id"]})
     if not full or not verify_password(body.current_password, full["password_hash"]):
         raise HTTPException(400, "Current password is incorrect")
     await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.new_password)}})
+    # Security: clear every trusted device on password change so a stolen
+    # browser session can't silently skip 2FA after the legit owner rotates
+    # their password.
+    try:
+        await trusted_devices.revoke_all_for_user(user["id"])
+        trusted_devices.clear_trust_cookie(response)
+    except Exception as e:
+        log.warning("trusted_devices.revoke_all_for_user failed on change: %s", e)
     return {"ok": True}
+
+
+@api.get("/auth/trusted-devices")
+async def list_trusted_devices(user: dict = Depends(get_current_user)):
+    """List the caller's active trusted devices (for a future 'manage devices' UI)."""
+    rows = await trusted_devices.list_for_user(user["id"])
+    # Strip internal _id and serialize datetimes to ISO strings.
+    out = []
+    for r in rows:
+        r = dict(r)
+        for k in ("created_at", "last_used_at", "expires_at"):
+            v = r.get(k)
+            if hasattr(v, "isoformat"):
+                r[k] = v.isoformat()
+        out.append(r)
+    return {"devices": out}
+
+
+@api.delete("/auth/trusted-devices/{device_id}")
+async def revoke_trusted_device(device_id: str, user: dict = Depends(get_current_user)):
+    ok = await trusted_devices.revoke_one(user["id"], device_id)
+    if not ok:
+        raise HTTPException(404, "Device not found")
+    return {"ok": True}
+
+
+@api.post("/auth/trusted-devices/revoke-all")
+async def revoke_all_trusted_devices(response: Response, user: dict = Depends(get_current_user)):
+    count = await trusted_devices.revoke_all_for_user(user["id"])
+    trusted_devices.clear_trust_cookie(response)
+    return {"ok": True, "revoked": count}
 
 
 app.include_router(api)

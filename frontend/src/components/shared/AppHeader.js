@@ -34,10 +34,10 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
 
   const onSignOut = async () => { await logout(); navigate("/login"); };
 
-  const workspaceLabel = user?.role === "WS_PARTNER" ? "Partner workspace"
-    : user?.role === "CPA" ? "CPA workspace"
-    : user?.role === "CLIENT" ? "Client Portal"
-    : user?.role === "ADMIN" ? "Admin" : null;
+  // Filter out any "dashboard" tab — the Home icon on the right cluster already
+  // handles dashboard navigation, so the workspace pill + Dashboard link on the
+  // left were redundant and visually noisy.
+  const visibleTabs = (tabs || []).filter((t) => t.key !== "dashboard");
 
   return (
     <header className="app-header" data-testid="app-header">
@@ -50,16 +50,9 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
         >
           <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block" }} />
         </Link>
-        {workspaceLabel && user?.role !== "ADMIN" && (
-          <span data-testid="workspace-pill" style={{
-            padding: "6px 14px", borderRadius: 999,
-            background: "var(--bg-subtle)", color: "var(--text-primary)",
-            fontSize: 13, fontWeight: 500,
-          }}>{workspaceLabel}</span>
-        )}
-        {tabs.length > 0 && (
+        {visibleTabs.length > 0 && (
           <nav className="nav-tabs" data-testid="nav-tabs">
-            {tabs.map((t) => {
+            {visibleTabs.map((t) => {
               const active = (t.matcher ? t.matcher(location.pathname) : location.pathname.startsWith(t.to));
               const unread = unreadByKey[t.key] || 0;
               return (
