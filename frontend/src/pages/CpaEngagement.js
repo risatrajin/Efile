@@ -658,10 +658,11 @@ export default function CpaEngagement() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [showChecklistSettings, setShowChecklistSettings] = useState(false);
+  const [delegateList, setDelegateList] = useState([]);
 
   const load = async () => {
     try {
-      const [a, b, c, d, e, f, h, t] = await Promise.all([
+      const [a, b, c, d, e, f, h, t, dl] = await Promise.all([
         api.get(`/engagements/${eid}`),
         api.get(`/engagements/${eid}/documents`),
         api.get(`/engagements/${eid}/extracted-data`),
@@ -670,8 +671,10 @@ export default function CpaEngagement() {
         api.get(`/engagements/${eid}/checklist`),
         api.get(`/engagements/${eid}/history`),
         api.get(`/engagements/${eid}/t183`),
+        api.get(`/engagements/${eid}/delegates`).catch(() => ({ data: { delegates: [] } })),
       ]);
       setEng(a.data); setDocs(b.data); setExtracted(c.data); setOpps(d.data); setTime(e.data); setCl(f.data); setHistory(h.data); setT183(t.data);
+      setDelegateList(dl.data?.delegates || []);
     } catch (x) { setErr(fmtError(x)); }
   };
   const loadT183 = async () => {
@@ -1291,6 +1294,47 @@ export default function CpaEngagement() {
                 <div><span className="muted">Practice: </span>{corp.practice_type || "—"}</div>
                 <div><span className="muted">WS advisor: </span>{eng.ws_advisor?.name || "—"}</div>
               </div>
+              {Array.isArray(delegateList) && delegateList.length > 0 && (
+                <div
+                  className="mt-3"
+                  style={{ borderTop: "1px solid var(--border-default)", paddingTop: 10 }}
+                  data-testid="cpa-delegates-section"
+                >
+                  <div className="section-label" style={{ marginBottom: 8 }}>
+                    DELEGATES ({delegateList.length})
+                  </div>
+                  <div className="stack-xs" style={{ fontSize: 12 }}>
+                    {delegateList.map((d) => (
+                      <div
+                        key={d.id}
+                        data-testid={`cpa-delegate-${d.id}`}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          gap: 8, padding: "6px 8px",
+                          background: "var(--bg-subtle)", borderRadius: 6,
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {d.name || d.email}
+                          </div>
+                          <div className="tertiary" style={{ fontSize: 10 }}>
+                            {(d.relationship || "").toUpperCase()} · {d.email}
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            background: d.status === "ACTIVE" ? "#e8f5e9" : "#fff3e0",
+                            color: d.status === "ACTIVE" ? "#2e7d32" : "#ef6c00",
+                            padding: "1px 8px", borderRadius: 999,
+                            fontSize: 10, fontWeight: 500,
+                          }}
+                        >{d.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="card" data-testid="cra-card">

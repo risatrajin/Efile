@@ -338,7 +338,13 @@ function fmtCurrency(n) {
   return n < 0 ? `($${Math.abs(n).toLocaleString()})` : `$${n.toLocaleString()}`;
 }
 
-function T183Card({ eng, onPreview, onSign }) {
+function T183Card({ eng, onPreview, onSign, delegateContext }) {
+  // When the current user is a delegate (rather than the primary physician),
+  // the T183 must still be signed by the primary client personally — CRA
+  // legal authority. Show a friendly message instead of the sign button.
+  const ctx = (delegateContext?.contexts || []).find((c) => c.engagement_id === eng.id);
+  const isDelegate = !!ctx;
+  const primaryName = ctx?.primary_client_first_name || ctx?.primary_client_name || "the primary client";
   return (
     <div className="card" data-testid="t183-card">
       <div data-testid="t183-row" style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -348,7 +354,9 @@ function T183Card({ eng, onPreview, onSign }) {
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
             {eng.t183_signed_at
               ? <>Signed by {eng.t183_signed_name} · {fmtDate(eng.t183_signed_at)}</>
-              : "Required: sign to authorize CPA to file electronically with CRA."}
+              : isDelegate
+                ? <>Awaiting signature from <strong>{primaryName}</strong>.</>
+                : "Required: sign to authorize CPA to file electronically with CRA."}
           </div>
         </div>
         <button onClick={onPreview} className="btn btn-secondary btn-sm" data-testid="t183-preview">
@@ -356,6 +364,16 @@ function T183Card({ eng, onPreview, onSign }) {
         </button>
         {eng.t183_signed_at ? (
           <span className="badge badge-complete" data-testid="t183-signed-badge" style={{ fontSize: 11 }}>Signed</span>
+        ) : isDelegate ? (
+          <span
+            data-testid="t183-delegate-blocked"
+            style={{
+              padding: "6px 12px", borderRadius: 999,
+              background: "#fff3e0", color: "#ef6c00",
+              fontSize: 11, fontWeight: 500,
+            }}
+            title={`Only ${primaryName} can sign this document.`}
+          >Primary client only</span>
         ) : (
           <button onClick={onSign} className="btn btn-primary btn-sm" data-testid="t183-sign-btn">
             <PenLine size={14} /> Sign T183
@@ -484,10 +502,15 @@ export default function ClientPortal() {
   const [authChecks, setAuthChecks] = useState({});
   const [authBusy, setAuthBusy] = useState(false);
   const [forceUploadMode, setForceUploadMode] = useState(false);
+  const [delegateContext, setDelegateContext] = useState(null);
 
   const loadAll = async () => {
     try {
-      const { data: list } = await api.get("/engagements");
+      const [{ data: list }, ctxRes] = await Promise.all([
+        api.get("/engagements"),
+        api.get("/me/delegate-context").catch(() => ({ data: null })),
+      ]);
+      setDelegateContext(ctxRes.data || null);
       const e = list[0];
       setEng(e);
       if (e) {
@@ -659,6 +682,34 @@ export default function ClientPortal() {
 
   return (
     <div className="page-narrow stack-lg" style={{ paddingTop: 24, maxWidth: 760 }} data-testid="client-portal">
+      {(() => {
+        const ctx = (delegateContext?.contexts || []).find((c) => c.engagement_id === eng.id);
+        if (!ctx) return null;
+        const primaryName = ctx.primary_client_first_name || ctx.primary_client_name || "the primary client";
+        const rel = (ctx.relationship || "delegate").toLowerCase();
+        return (
+          <div
+            data-testid="delegate-banner"
+            style={{
+              padding: "10px 14px",
+              background: "#fff8e1",
+              border: "1px solid #ffe082",
+              borderRadius: 10,
+              fontSize: 12,
+              color: "#5d4037",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span aria-hidden="true" style={{ fontSize: 14 }}>👥</span>
+            <span>
+              You&rsquo;re viewing this as <strong>{rel}</strong> for <strong>{primaryName}</strong>&rsquo;s engagement.
+              The T183 must still be signed by them personally.
+            </span>
+          </div>
+        );
+      })()}
       {/* Engagement title card */}
       <div className="card" data-testid="engagement-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -904,7 +955,7 @@ export default function ClientPortal() {
           </div>
 
           {/* Signed T183 stays visible after filing for client's records */}
-          <T183Card eng={eng} onPreview={previewT183} onSign={() => setT183Open(true)} />
+          <T183Card eng={eng} onPreview={previewT183} onSign={() => setT183Open(true)} delegateContext={delegateContext} />
 
           <div className="card" data-testid="filed-summary-card">
             <div className="section-label" style={{ marginBottom: 16 }}>FILED RETURN SUMMARY</div>

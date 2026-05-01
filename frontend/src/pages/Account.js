@@ -7,6 +7,7 @@ import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import TwoFactorCard from "../components/shared/TwoFactorCard";
 import PasswordField from "../components/shared/PasswordField";
+import DelegateManagementCard from "../components/shared/DelegateManagementCard";
 
 function Toggle({ checked, onChange, testid }) {
   return (
@@ -66,6 +67,29 @@ export default function AccountPage() {
   const [pwBusy, setPwBusy] = useState(false);
   const [pwErr, setPwErr] = useState("");
   const [pwDone, setPwDone] = useState(false);
+  // Primary-client detection: a CLIENT with at least one engagement they OWN
+  // (i.e. not a delegate). We fetch `/api/me/delegate-context` and the
+  // engagement list so we can render the Manage-access card only for the
+  // physician — never for delegates.
+  const [primaryEngagementId, setPrimaryEngagementId] = useState(null);
+  const [delegateContext, setDelegateContext] = useState(null);
+
+  const loadDelegateContext = async () => {
+    if (user?.role !== "CLIENT") return;
+    try {
+      const [{ data: ctx }, { data: engs }] = await Promise.all([
+        api.get("/me/delegate-context"),
+        api.get("/engagements"),
+      ]);
+      setDelegateContext(ctx);
+      const delegateEids = new Set((ctx.contexts || []).map((c) => c.engagement_id));
+      const primaryEng = (engs || []).find((e) => !delegateEids.has(e.id));
+      setPrimaryEngagementId(primaryEng?.id || null);
+    } catch (_) {
+      // Silent — Manage-access just won't render. The rest of Account is fine.
+    }
+  };
+  useEffect(() => { loadDelegateContext(); /* eslint-disable-next-line */ }, [user?.id]);
 
   const load = async () => {
     try {
@@ -174,6 +198,12 @@ export default function AccountPage() {
         <ToggleRow label="Document requests" value={prefs.push?.doc_requests} onChange={() => togglePref("push", "doc_requests")} testid="pref-doc-requests" />
         <ToggleRow label="CPA messages" value={prefs.push?.cpa_messages} onChange={() => togglePref("push", "cpa_messages")} testid="pref-cpa-messages" />
       </div>
+
+      {/* Manage access — primary client only. Hidden when the current user
+          is a delegate (no primaryEngagementId) or has no engagements yet. */}
+      {isClient && primaryEngagementId && !delegateContext?.is_delegate && (
+        <DelegateManagementCard engagementId={primaryEngagementId} primaryClientName={me.name} />
+      )}
 
       {/* Security & privacy */}
       <div className="card" data-testid="security-card">

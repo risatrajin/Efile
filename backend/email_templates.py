@@ -493,11 +493,68 @@ def _tpl_admin_tier_changed(d: dict):
     return (f"Tier changed: {client} ({old} → {new})", _wrap(body, preheader=reason or "Tier change logged"), f"Tier changed for {client}: {old} -> {new}. {reason}. Open: {link}")
 
 
+# ----- Delegate access (iter 50) -------------------------------------------
+
+def _tpl_delegate_invite(d: dict):
+    """Sent to a brand-new delegate who needs to set up an account before
+    they can access the engagement."""
+    link = d.get("link") or f"{_frontend_url()}/set-password"
+    rel = (d.get("relationship") or "delegate").lower()
+    primary = d.get("primary_client_name") or "your physician"
+    first = _resolve_first_name(d)
+    if first:
+        heading = f"You&rsquo;ve been invited to CloudTax&rsquo;s Portal, {first} ({rel.title()})"
+        subject = f"You're invited to CloudTax's Portal as {primary}'s {rel}"
+        text_greeting = f"Hi {first},"
+    else:
+        heading = "You&rsquo;ve been invited to CloudTax&rsquo;s Portal"
+        subject = f"You're invited to CloudTax's Portal as {primary}'s {rel}"
+        text_greeting = "Hi,"
+    body = (
+        _h1(heading)
+        + _p(f"<strong>{primary}</strong> has invited you to access their CloudTax engagement as their <strong>{rel}</strong>. You&rsquo;ll be able to upload documents, message the CPA, and track progress on the corporate-tax filing.")
+        + _p("Some actions stay reserved for the primary client &mdash; you won&rsquo;t be able to sign the T183 or change account settings on their behalf.")
+        + _cta_button("Set your password &amp; sign in", link)
+        + _muted("This invitation link is valid for 7 days. After you set your password you&rsquo;ll be prompted to enable 2FA on your first sign-in.")
+    )
+    text = (
+        f"{text_greeting}\n\n{primary} has invited you to access their CloudTax engagement as their {rel}.\n"
+        "Upload documents, message the CPA, and track progress on the corporate-tax filing.\n"
+        "(The primary client retains exclusive control of T183 signing and account settings.)\n\n"
+        f"Set your password and sign in: {link}\n\n(Link is valid for 7 days.)"
+    )
+    return (subject, _wrap(body, preheader=f"{primary} has added you as their {rel} on CloudTax."), text)
+
+
+def _tpl_delegate_added(d: dict):
+    """Sent when an existing CloudTax user is added as a delegate to an
+    engagement — no account-creation step required, just a heads-up."""
+    link = d.get("link") or f"{_frontend_url()}/portal"
+    rel = (d.get("relationship") or "delegate").lower()
+    primary = d.get("primary_client_name") or "the primary client"
+    first = _resolve_first_name(d)
+    greeting = f"Hi {first}," if first else "Hello,"
+    body = (
+        _h1(f"You&rsquo;ve been added as {primary}&rsquo;s {rel}")
+        + _p(f"The next time you sign in to CloudTax you&rsquo;ll see <strong>{primary}</strong>&rsquo;s engagement in your portal alongside your own. You can upload documents, send messages to the CPA, and track filing progress.")
+        + _cta_button("Open your portal", link)
+        + _muted("If you weren&rsquo;t expecting this, you can ask the primary client to revoke your access at any time from their account settings.")
+    )
+    text = (
+        f"{greeting}\n\nYou've been added as {primary}'s {rel} on CloudTax.\n"
+        f"Open your portal: {link}"
+    )
+    return (f"You're now {primary}'s {rel} on CloudTax", _wrap(body, preheader=f"{primary} added you as their {rel}."), text)
+
+
+# ----------------------------------------------------------------------------
 # Registry — template_key -> (builder, recipient_role_hint_for_logs)
 TEMPLATES: dict[str, Callable[[dict], tuple[str, str, str]]] = {
     "welcome_client": _tpl_welcome_client,
     "welcome_cpa": _tpl_welcome_cpa,
     "welcome_ws": _tpl_welcome_ws,
+    "delegate_invite": _tpl_delegate_invite,
+    "delegate_added": _tpl_delegate_added,
     "engagement_started": _tpl_engagement_started,
     "document_reminder": _tpl_document_reminder,
     "new_document_requested": _tpl_new_document_requested,

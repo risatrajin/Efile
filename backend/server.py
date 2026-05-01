@@ -6,6 +6,7 @@ import os
 import io
 import re
 import uuid
+import secrets
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Any, List
@@ -25,6 +26,7 @@ import s3_service
 import ses_service
 import email_service
 import trusted_devices
+import delegates
 from email_templates import send_email as _email_templates_send
 import ai_service
 from config import (
@@ -246,8 +248,14 @@ async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
         pass
     if role == "CLIENT":
         corp = await db.corporations.find_one({"id": eng["corporation_id"]})
-        if not corp or corp["client_id"] != user["id"]:
-            raise HTTPException(403, "Not your engagement")
+        is_primary = bool(corp and corp.get("client_id") == user["id"])
+        if is_primary:
+            return strip_id(eng)
+        # Delegate access — same engagement, scoped permissions checked at
+        # individual route level (T183 sign etc.).
+        if await delegates.is_active_delegate(user["id"], engagement_id):
+            return strip_id(eng)
+        raise HTTPException(403, "Not your engagement")
     return strip_id(eng)
 
 
@@ -547,6 +555,14 @@ async def set_password(body: SetPasswordIn):
         }},
     )
     await db.password_reset_tokens.update_one({"token": body.token}, {"$set": {"used": True}})
+    # If this user was invited as a delegate, flip every pending row for their
+    # email to ACTIVE so they can immediately access the engagement(s).
+    user = await db.users.find_one({"id": row["user_id"]}, {"_id": 0, "email": 1})
+    if user and user.get("email"):
+        try:
+            await delegates.activate_for_user(user["email"], row["user_id"])
+        except Exception as e:
+            log.warning("delegates.activate_for_user failed: %s", e)
     return {"ok": True}
 
 
@@ -1459,9 +1475,18 @@ async def list_engagements(user: dict = Depends(get_current_user)):
         q = {"assigned_cpa_id": user["id"]}
     elif role == "CLIENT":
         corp = await db.corporations.find_one({"client_id": user["id"]})
-        if not corp:
+        # Engagements where the user is the primary client...
+        primary_q = {"corporation_id": corp["id"]} if corp else None
+        # ...plus engagements where the user is an active delegate.
+        delegate_eids = await delegates.list_engagement_ids_for_delegate(user["id"])
+        if primary_q and delegate_eids:
+            q = {"$or": [primary_q, {"id": {"$in": delegate_eids}}]}
+        elif primary_q:
+            q = primary_q
+        elif delegate_eids:
+            q = {"id": {"$in": delegate_eids}}
+        else:
             return []
-        q = {"corporation_id": corp["id"]}
     engs = [e async for e in db.engagements.find(q).sort("referral_date", -1)]
     out = await _enrich_engagements(engs)
     # Orphan filter — drop engagements whose client user record has been
@@ -3685,6 +3710,14 @@ async def sign_t183(eid: str, body: T183SignIn, user: dict = Depends(get_current
     eng = await get_engagement_or_404(eid, user)
     if user["role"] != "CLIENT":
         raise HTTPException(403, "Only the client can sign the T183")
+    # Delegates have read access to the engagement but the T183 must be signed
+    # by the primary client (the physician) personally — Canada Revenue Agency
+    # legal authority to file rests with the taxpayer of record.
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if not corp or corp.get("client_id") != user["id"]:
+        primary = await db.users.find_one({"id": (corp or {}).get("client_id")}, {"_id": 0, "name": 1, "first_name": 1, "last_name": 1})
+        nm = (primary or {}).get("first_name") or (primary or {}).get("name") or "the primary client"
+        raise HTTPException(403, f"Only {nm} can sign this document")
     if not body.signature or "data:image/" not in body.signature:
         raise HTTPException(400, "signature must be a base64 image data URL")
     if not body.signer_name.strip():
@@ -4606,6 +4639,243 @@ async def revoke_all_trusted_devices(response: Response, user: dict = Depends(ge
     count = await trusted_devices.revoke_all_for_user(user["id"])
     trusted_devices.clear_trust_cookie(response)
     return {"ok": True, "revoked": count}
+
+
+# ============================================================================
+# Delegate access (iter 50)
+# ----------------------------------------------------------------------------
+# A primary client (the physician — corporation.client_id) can invite up to two
+# delegates per engagement. Delegates are regular CLIENT-role users; their
+# scoping lives in the ``delegates`` collection. See /app/backend/delegates.py
+# for the model + helpers.
+# ============================================================================
+
+class DelegateInviteIn(BaseModel):
+    email: EmailStr
+    name: str
+    relationship: str  # one of delegates.VALID_RELATIONSHIPS
+
+
+async def _ensure_primary_client(eng: dict, user: dict) -> dict:
+    """Raise 403 unless ``user`` is the primary client (the physician) for this
+    engagement. Used for delegate management (only physicians can invite/revoke
+    delegates) and for actions reserved to the taxpayer of record (T183 sign).
+    Returns the corporation row on success."""
+    db = get_db()
+    if user["role"] != "CLIENT":
+        raise HTTPException(403, "Only the primary client can manage delegates")
+    corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+    if not corp or corp.get("client_id") != user["id"]:
+        raise HTTPException(403, "Only the primary client can manage delegates")
+    return corp
+
+
+@api.post("/engagements/{eid}/delegates")
+async def invite_delegate(eid: str, body: DelegateInviteIn, user: dict = Depends(get_current_user)):
+    """Invite up to two delegates per engagement. Idempotent: re-inviting an
+    email with a pending row resends the email and refreshes the row's
+    ``invited_at``."""
+    db = get_db()
+    eng = await get_engagement_or_404(eid, user)
+    await _ensure_primary_client(eng, user)
+
+    rel = (body.relationship or "").strip().lower()
+    if rel not in delegates.VALID_RELATIONSHIPS:
+        raise HTTPException(400, f"relationship must be one of {sorted(delegates.VALID_RELATIONSHIPS)}")
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    invited_email = body.email.lower()
+    if invited_email == user["email"].lower():
+        raise HTTPException(400, "You cannot invite yourself as a delegate")
+
+    # Cap at MAX active+pending per engagement.
+    active = await delegates.count_active(eid)
+    existing = await db.delegates.find_one({"engagement_id": eid, "email": invited_email})
+    if not existing and active >= delegates.MAX_ACTIVE_DELEGATES_PER_ENGAGEMENT:
+        raise HTTPException(400, f"Maximum of {delegates.MAX_ACTIVE_DELEGATES_PER_ENGAGEMENT} delegates per engagement")
+
+    invited_at = datetime.now(timezone.utc)
+    if existing:
+        if existing.get("status") == delegates.STATUS_REVOKED:
+            # Reactivate from revoked → re-invited
+            await db.delegates.update_one(
+                {"id": existing["id"]},
+                {"$set": {
+                    "status": delegates.STATUS_INVITED,
+                    "name": name,
+                    "relationship": rel,
+                    "invited_at": invited_at,
+                    "revoked_at": None,
+                }},
+            )
+        else:
+            await db.delegates.update_one(
+                {"id": existing["id"]},
+                {"$set": {"name": name, "relationship": rel, "invited_at": invited_at}},
+            )
+        delegate_id = existing["id"]
+    else:
+        delegate_id = str(uuid.uuid4())
+        await db.delegates.insert_one({
+            "id": delegate_id,
+            "engagement_id": eid,
+            "invited_by": user["id"],
+            "user_id": None,
+            "email": invited_email,
+            "name": name,
+            "relationship": rel,
+            "status": delegates.STATUS_INVITED,
+            "invited_at": invited_at,
+            "accepted_at": None,
+            "revoked_at": None,
+        })
+
+    # If the invitee already has an account, mark the row ACTIVE immediately —
+    # they don't need to set a password again. They simply log in and the
+    # engagement appears in their list.
+    invitee = await db.users.find_one({"email": invited_email}, {"_id": 0, "id": 1, "name": 1})
+    invite_link = None
+    if invitee and invitee.get("id"):
+        await db.delegates.update_one(
+            {"id": delegate_id},
+            {"$set": {"status": delegates.STATUS_ACTIVE, "user_id": invitee["id"], "accepted_at": invited_at}},
+        )
+        # Send a "you've been added as a delegate" notification email rather
+        # than an account-creation invite.
+        try:
+            await _email_templates_send(
+                invited_email,
+                "delegate_added",
+                {
+                    "name": name,
+                    "relationship": rel,
+                    "primary_client_name": user.get("name") or "the primary client",
+                    "link": f"{FRONTEND_URL}/portal",
+                },
+            )
+        except Exception as e:
+            log.warning("delegate_added email failed: %s", e)
+    else:
+        # New user → issue a fresh set-password token so they can self-onboard.
+        # Reuse the existing password_reset_tokens table for cohesion with the
+        # rest of the invite flow. We pre-create the user (CLIENT role) so the
+        # token has a real user_id to bind to.
+        new_uid = str(uuid.uuid4())
+        await db.users.insert_one({
+            "id": new_uid,
+            "email": invited_email,
+            "password_hash": hash_password(uuid.uuid4().hex),
+            "name": name,
+            "first_name": name,
+            "last_name": "",
+            "role": "CLIENT",
+            "is_active": True,
+            "two_factor_enabled": False,
+            "created_at": datetime.now(timezone.utc),
+        })
+        # Bind the delegate row to the freshly-created user so set-password can
+        # pivot it from INVITED → ACTIVE.
+        await db.delegates.update_one(
+            {"id": delegate_id},
+            {"$set": {"user_id": new_uid}},
+        )
+        token = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
+            "token": token,
+            "user_id": new_uid,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+            "used": False,
+            "created_at": datetime.now(timezone.utc),
+            "purpose": "delegate_invite",
+        })
+        invite_link = f"{FRONTEND_URL}/set-password?token={token}"
+        try:
+            await _email_templates_send(
+                invited_email,
+                "delegate_invite",
+                {
+                    "name": name,
+                    "first_name": name,
+                    "relationship": rel,
+                    "primary_client_name": user.get("name") or "your physician",
+                    "link": invite_link,
+                },
+            )
+        except Exception as e:
+            log.warning("delegate_invite email failed: %s", e)
+
+    # Audit on the engagement timeline so the CPA + admins see the activity.
+    await log_status_change(
+        eid, user["id"], None, eng.get("status", ""),
+        note=f"Delegate invited: {name} <{invited_email}> ({rel})",
+    )
+
+    row = await db.delegates.find_one({"id": delegate_id})
+    return {"delegate": delegates._serialize(row), "invite_link": invite_link}
+
+
+@api.get("/engagements/{eid}/delegates")
+async def list_delegates(eid: str, user: dict = Depends(get_current_user)):
+    eng = await get_engagement_or_404(eid, user)
+    # Primary client + CPA + Admin can see the list. Delegates themselves see
+    # nothing — they cannot manage other delegates.
+    db = get_db()
+    if user["role"] == "CLIENT":
+        corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+        if not corp or corp.get("client_id") != user["id"]:
+            raise HTTPException(403, "Delegates cannot list peers")
+    return {"delegates": await delegates.list_for_engagement(eid)}
+
+
+@api.delete("/delegates/{delegate_id}")
+async def revoke_delegate(delegate_id: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    row = await db.delegates.find_one({"id": delegate_id})
+    if not row:
+        raise HTTPException(404, "Delegate not found")
+    eng = await get_engagement_or_404(row["engagement_id"], user)
+    await _ensure_primary_client(eng, user)
+    await db.delegates.update_one(
+        {"id": delegate_id},
+        {"$set": {"status": delegates.STATUS_REVOKED, "revoked_at": datetime.now(timezone.utc)}},
+    )
+    await log_status_change(
+        row["engagement_id"], user["id"], None, eng.get("status", ""),
+        note=f"Delegate access revoked: {row.get('name') or row.get('email')}",
+    )
+    return {"ok": True}
+
+
+@api.get("/me/delegate-context")
+async def my_delegate_context(user: dict = Depends(get_current_user)):
+    """For the currently-signed-in user, return the list of engagements they
+    have delegate access to (if any) along with the primary client's name and
+    the delegate's stated relationship. Used by the frontend to render the
+    "You are viewing as <relationship> for Dr. <name>" banner and to gate the
+    T183 signing UI."""
+    db = get_db()
+    rows = []
+    async for r in db.delegates.find(
+        {"user_id": user["id"], "status": delegates.STATUS_ACTIVE},
+        {"_id": 0},
+    ):
+        eng = await db.engagements.find_one({"id": r["engagement_id"]}, {"_id": 0})
+        if not eng:
+            continue
+        corp = await db.corporations.find_one({"id": eng.get("corporation_id")}, {"_id": 0, "client_id": 1, "name": 1})
+        primary = await db.users.find_one(
+            {"id": (corp or {}).get("client_id")},
+            {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
+        ) if corp else None
+        rows.append({
+            "engagement_id": r["engagement_id"],
+            "relationship": r.get("relationship"),
+            "primary_client_name": (primary or {}).get("name") if primary else None,
+            "primary_client_first_name": (primary or {}).get("first_name") if primary else None,
+            "corporation_name": (corp or {}).get("name") if corp else None,
+        })
+    return {"contexts": rows, "is_delegate": bool(rows)}
 
 
 app.include_router(api)

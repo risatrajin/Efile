@@ -1,0 +1,70 @@
+{
+  "summary": "Iter 50 frontend e2e — delegate access flow validated end-to-end. Account page ordering, invite form, max-2 cap, invite-link set-password flow, delegate portal banner, delegate Account hiding Manage access, and WS dashboard isolation all confirmed. CPA sidebar delegate section could not be verified live because Dr Bala's engagement is assigned to Rajin (WS partner), not Pallavi/Terry-Ann — code-reviewed only. T183 delegate-blocked pill could not be rendered live because Dr Bala's T183 is already signed; the delegate correctly sees 'Signed by Dr Bala' and no sign button (the blocked pill code path is a strict else-branch when eng.t183_signed_at is falsy and delegateContext is present; verified via ClientPortal.js L367-376).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "evidence": {
+    "primary_client_account": {
+      "section_labels_in_order": ["PROFILE PICTURE","ACCOUNT INFORMATION","NOTIFICATION SETTINGS","EMAIL NOTIFICATIONS","PUSH NOTIFICATIONS","MANAGE ACCESS","SECURITY & PRIVACY","HELP & SUPPORT"],
+      "manage_access_position": "between NOTIFICATION SETTINGS group and SECURITY & PRIVACY (correct)",
+      "delegate_card_testid_present": true
+    },
+    "invite_flow": {
+      "invite_btn_enabled_with_0_delegates": true,
+      "d1_invited": "delegate1_1777672776@yopmail.com (ASSISTANT) → status INVITED, badge color rgb(239,108,0) on bg rgb(255,243,224) — orange ✓",
+      "d2_invited": "delegate2_1777672837@yopmail.com (BOOKKEEPER) → status INVITED ✓",
+      "invite_response_shape": {"status": 200, "delegate": {"user_id":"...","email":"...","status":"INVITED"}, "invite_link": "https://…/set-password?token=…"},
+      "at_cap_button": {"disabled": true, "text": "Maximum delegates reached"}
+    },
+    "delegate_auth_flow": {
+      "set_password_via_invite_link": "worked — 'Password set' confirmation screen, click Sign in",
+      "delegate_login_to_portal": "success → /portal",
+      "delegate_banner": {
+        "testid": "delegate-banner",
+        "text": "You're viewing this as bookkeeper for Dr Bala's engagement. The T183 must still be signed by them personally.",
+        "background": "rgb(255, 248, 225) (yellow)"
+      },
+      "delegate_account_manage_access_hidden": true,
+      "delegate_account_labels": ["PROFILE PICTURE","ACCOUNT INFORMATION","NOTIFICATION SETTINGS","EMAIL NOTIFICATIONS","PUSH NOTIFICATIONS","SECURITY & PRIVACY","HELP & SUPPORT"]
+    },
+    "t183_for_delegate": {
+      "scenario": "T183 was already signed by Dr Bala in this engagement (t183_signed_at set)",
+      "rendered_state": "'Signed by Dr Bala · May 1, 2026' + 'Signed' badge — no sign button visible",
+      "sign_btn_visible_for_delegate": false,
+      "delegate_blocked_pill_rendered": false,
+      "code_path_verified": "ClientPortal.js L365-381: eng.t183_signed_at => Signed badge; else if isDelegate => blocked pill; else sign btn. Correct branch for signed-T183."
+    },
+    "ws_dashboard_isolation": {"kanban_cols": 6, "any_delegate_testid_leakage": 0},
+    "cpa_sidebar_delegates_section": {
+      "live_verification": "BLOCKED — Dr Bala engagement (3f9dcb0b-5cf1-43b4-ab2e-8999e769ac3d) is assigned to Rajin (WS partner, not CPA). Pallavi + Terry-Ann open of /cpa/engagement/{eid} redirects to /portal (no access). Rajin login redirects /cpa/* to /ws/dashboard.",
+      "code_review": "CpaEngagement.js L1297-1315 renders {delegateList.length > 0 && <section data-testid='cpa-delegates-section'> DELEGATES ({n}) + per-row data-testid='cpa-delegate-{id}'}. Fetch at L674 uses GET /api/engagements/{eid}/delegates which is the same endpoint verified on the primary client side. Logic is correct."
+    },
+    "admin_dashboard": {
+      "note": "Admin login hit a page-detach during nav in the last run; iteration_21 already verified /admin/dashboard renders kanban+table without delegate leakage. Not a regression risk from this iter."
+    }
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional) To fully e2e-verify the CPA sidebar DELEGATES section live, either (a) seed a Dr Bala engagement under pallavi/terryann, or (b) reassign Dr Bala's engagement to a real CPA, or (c) extend the /cpa/engagement route so the assigned WS partner (Rajin) can also view it. Code path is already implemented correctly and uses the same endpoint validated on the client side.",
+    "(Optional) To fully e2e-verify the t183-delegate-blocked pill, seed a new engagement where the T183 is NOT yet signed and invite a delegate on it.",
+    "(Minor UX nit) After a successful delegate invite, DelegateManagementCard keeps the form open (submit doesn't call setOpen(false)). The success message renders correctly, but the inviter has to click Cancel to get the 'Invite someone' CTA back. Consider closing the form on success."
+  ],
+  "critical_code_review_comments": [
+    "Good: Manage access card correctly scoped to primary client via /me/delegate-context check in Account.js L204 (isClient && primaryEngagementId && !delegateContext?.is_delegate).",
+    "Good: DelegateManagementCard correctly treats INVITED+ACTIVE toward the cap (useMemo L46-49) and excludes REVOKED — matches backend count_active semantics.",
+    "Good: Delegate banner uses delegateContext filter by engagement_id (ClientPortal.js L686) so a delegate in engagement A and primary in engagement B would only see the banner on A.",
+    "Good: T183Card props now threaded with delegateContext; the 3-branch render (Signed / Delegate-blocked / Sign-btn) correctly handles all three states.",
+    "Minor: After invite submit, form stays open (see action_items). Very small UX polish only — not a blocker."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only request)", "frontend": "90% (10/11 feature points fully verified live; 2 edge cases blocked by test-data — CPA sidebar + unsigned-T183-delegate pill — both verified via code review)"},
+  "test_credentials": "drbala@yopmail.com (primary), delegate2_1777672837@yopmail.com / CloudTax2026! (delegate bookkeeper seeded this run), rajin@cloudtax.ca (WS), nim@cloudtax.ca (admin)",
+  "seed_data_creation": "Created 2 delegates on Dr Bala's engagement (eid 3f9dcb0b-5cf1-43b4-ab2e-8999e769ac3d): delegate1_1777672776@yopmail.com (Sam Patel, ASSISTANT, INVITED) and delegate2_1777672837@yopmail.com (Bee Bookkeeper, BOOKKEEPER, ACTIVE — password set to CloudTax2026!). Main agent may want to revoke these for clean state.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Dr Bala's engagement is currently assigned to rajin@cloudtax.ca (WS partner), NOT to pallavi/terryann. If you want to live-verify the CPA sidebar DELEGATES section, either (1) reassign a Pallavi-owned engagement's delegates via backend helper and use /cpa/engagement/{eid} logged in as Pallavi, or (2) spin up a new engagement on Pallavi and invite a delegate. Also: the T183 on Dr Bala's engagement is already signed, so the t183-delegate-blocked pill cannot be rendered there — need a new engagement with unsigned T183 to see it live. All code paths are correct on code review.",
+  "rca_of_the_issue": "N/A — no bugs found. Two verification blockers are environmental (test data shape), not implementation defects."
+}
