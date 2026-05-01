@@ -352,9 +352,9 @@ h2.section-title, .section-title {
   padding: 16px;
   /* Each column is self-scrolling and fits the viewport below the header/toolbar,
      so users never scroll the page vertically — only cards inside a column. */
-  height: calc(100vh - 220px);
+  height: calc(100vh - 244px);
   min-height: 360px;
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 244px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
