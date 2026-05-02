@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { api, fmtError } from "../lib/api";
+import { getToken, setToken, clearToken } from "../lib/tokenStorage";
 
 const AuthCtx = createContext(null);
 
@@ -12,7 +13,7 @@ export function AuthProvider({ children }) {
       // Skip the /auth/me round-trip entirely when there's no token — avoids
       // producing a loud 401 in the network tab + Playwright/Sentry noise
       // for every unauthenticated first-paint.
-      const token = (() => { try { return localStorage.getItem("ct_token"); } catch { return null; } })();
+      const token = getToken();
       if (!token) {
         setUser(false);
         setBooting(false);
@@ -45,7 +46,7 @@ export function AuthProvider({ children }) {
           resendAfterSec: data.resend_after_sec || 30,
         };
       }
-      if (data.token) localStorage.setItem("ct_token", data.token);
+      if (data.token) setToken(data.token);
       setUser(data.user);
       return { ok: true };
     } catch (e) {
@@ -60,7 +61,7 @@ export function AuthProvider({ children }) {
         code,
         trust_device: !!trustDevice,
       });
-      if (data.token) localStorage.setItem("ct_token", data.token);
+      if (data.token) setToken(data.token);
       setUser(data.user);
       return { ok: true, trustedDeviceIssued: !!data.trusted_device_issued };
     } catch (e) {
@@ -70,7 +71,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch {}
-    localStorage.removeItem("ct_token");
+    clearToken();
     setUser(false);
   };
 

@@ -2153,6 +2153,28 @@ async def doc_upload_url(doc_id: str, body: dict, user: dict = Depends(get_curre
     return res
 
 
+async def _attribution_for_user(user: dict, engagement_id: str) -> dict:
+    """Compose a serialisable {id, name, role, relationship} attribution
+    payload for a file-upload or message event. Looks up the delegate row so
+    the UI can render "Uploaded by Sam Patel · Bookkeeper · 2 hours ago" for
+    delegate uploads and "Uploaded by Dr Bala Chan · Client · 2 hours ago"
+    for primary-client uploads."""
+    out = {
+        "id": user.get("id"),
+        "name": user.get("name") or user.get("email") or "",
+        "role": user.get("role"),
+        "relationship": None,
+    }
+    if user.get("role") == "CLIENT":
+        try:
+            row = await delegates.get_delegate_for_engagement(user["id"], engagement_id)
+            if row:
+                out["relationship"] = row.get("relationship")
+        except Exception as e:
+            log.warning("attribution delegate-lookup failed: %s", e)
+    return out
+
+
 @api.post("/documents/{doc_id}/complete-upload")
 async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user: dict = Depends(get_current_user)):
     db = get_db()
@@ -2165,6 +2187,18 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
     # next upload counts as a "re-upload" and we surface a badge in the CPA's
     # checklist so they immediately see the client has addressed the issue.
     was_flagged = doc.get("status") == "ISSUE"
+    attribution = await _attribution_for_user(user, doc["engagement_id"])
+    file_id = str(uuid.uuid4())
+    file_row = {
+        "id": file_id,
+        "object_key": body.object_key,
+        "storage": "s3",
+        "file_name": body.file_name,
+        "file_size": body.file_size,
+        "mime_type": body.mime_type,
+        "uploaded_at": now,
+        "uploaded_by": attribution,
+    }
     set_fields = {
         "status": "UPLOADED",
         "object_key": body.object_key,
@@ -2172,6 +2206,7 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
         "file_size": body.file_size,
         "mime_type": body.mime_type,
         "uploaded_at": now,
+        "uploaded_by": attribution,
         "issue_note": None,
         "deferred_at": None,
     }
@@ -2179,7 +2214,10 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
         set_fields["was_reuploaded"] = True
         set_fields["prev_issue_note"] = doc.get("issue_note") or None
         set_fields["reuploaded_at"] = now
-    await db.documents.update_one({"id": doc_id}, {"$set": set_fields})
+    await db.documents.update_one(
+        {"id": doc_id},
+        {"$set": set_fields, "$push": {"files": file_row}},
+    )
     # Notify CPA — distinguish a re-upload from a first-time upload so the
     # heads-up message in the bell is accurate.
     if eng.get("assigned_cpa_id"):
@@ -2270,6 +2308,7 @@ async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict
 
     now = datetime.now(timezone.utc)
     file_id = str(uuid.uuid4())
+    attribution = await _attribution_for_user(user, doc["engagement_id"])
     new_file = {
         "id": file_id,
         "object_key": object_key,
@@ -2278,6 +2317,7 @@ async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict
         "file_size": len(body),
         "mime_type": content_type,
         "uploaded_at": now,
+        "uploaded_by": attribution,
     }
     await db.documents.update_one({"id": doc_id}, {
         "$push": {"files": new_file},
@@ -2290,6 +2330,7 @@ async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict
             "file_size": len(body),
             "mime_type": content_type,
             "uploaded_at": now,
+            "uploaded_by": attribution,
             "issue_note": None,
             "deferred_at": None,
         },

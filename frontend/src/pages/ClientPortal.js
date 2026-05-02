@@ -191,7 +191,33 @@ function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView,
         {isDone && files.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
             {files.map((f) => (
-              <div key={f.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <div key={f.id} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {f.uploaded_by && (
+                  <div
+                    className="tertiary"
+                    data-testid={`uploaded-by-${doc.id}-${f.id}`}
+                    style={{ fontSize: 11, lineHeight: 1.3 }}
+                  >
+                    Uploaded by <strong style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{f.uploaded_by.name}</strong>
+                    {(() => {
+                      // Prefer the delegate's relationship when present
+                      // (Bookkeeper / Spouse / etc.), fall back to a friendly
+                      // role label so primary-client uploads aren't blank.
+                      const rel = (f.uploaded_by.relationship || "").trim();
+                      const role = (f.uploaded_by.role || "").trim();
+                      const tag = rel
+                        ? rel.charAt(0).toUpperCase() + rel.slice(1)
+                        : role === "CLIENT" ? "Client"
+                        : role === "CPA" ? "CPA"
+                        : role === "ADMIN" ? "Admin"
+                        : role === "WS_PARTNER" ? "Partner"
+                        : "";
+                      return tag ? <> · {tag}</> : null;
+                    })()}
+                    {f.uploaded_at ? <> · {fmtDate(f.uploaded_at)}</> : null}
+                  </div>
+                )}
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <button
                   type="button"
                   onClick={() => onViewFile ? onViewFile(doc, f) : onView?.(doc)}
@@ -248,6 +274,7 @@ function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView,
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   ><Trash2 size={12} /></button>
                 )}
+                </div>
               </div>
             ))}
             {canEdit && onUpload && (

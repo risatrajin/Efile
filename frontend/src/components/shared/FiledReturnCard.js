@@ -1,6 +1,7 @@
 import React from "react";
 import { Download, CheckCircle2 } from "lucide-react";
 import { fmtDate } from "../../lib/api";
+import { getToken } from "../../lib/tokenStorage";
 
 const BASE = process.env.REACT_APP_BACKEND_URL || "";
 
@@ -41,7 +42,7 @@ export default function FiledReturnCard({ eng }) {
   const handleDownload = async () => {
     if (!draftId) return;
     try {
-      const token = localStorage.getItem("ct_token");
+      const token = getToken();
       const r = await fetch(`${BASE}${downloadHref}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

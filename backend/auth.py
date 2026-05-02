@@ -47,11 +47,15 @@ def decode_token(token: str) -> dict:
 
 
 async def get_current_user(request: Request) -> dict:
-    token = request.cookies.get("access_token")
+    # Per-tab token first, fallback to cookie. The Authorization header is
+    # populated from sessionStorage on the frontend (lib/tokenStorage.js) so it
+    # uniquely identifies the *tab* rather than the shared browser session.
+    # Reading the cookie first would let one tab's login leak into another tab
+    # that's signed in as a different role (regression reported in iter 52).
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:] if auth.startswith("Bearer ") else None
     if not token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[7:]
+        token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:

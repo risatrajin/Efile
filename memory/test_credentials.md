@@ -14,6 +14,10 @@
 - `rajin@cloudtax.ca` / `CloudTax2026!` — active partner (seeded before iter 33, survived the DB reset).
 - Additional partners can be added via Admin Settings → Roles & Permissions.
 
+## Clients (test fixtures used by test suites)
+- `drbala@yopmail.com` / `CloudTax2026!` (Dr Bala Chan) — primary client used by delegate test suites (`test_delegates.py`, `test_delegate_upload_and_view.py`, `test_attribution_and_session.py`). Has an IN_PREP engagement at `Bala Medical PC` with a 3-document checklist.
+- Re-seed via `/app/backend/tests/_helpers.py` if missing — drbala's user/corp/engagement is the canonical fixture for delegate flows.
+
 ## Resend (Production — iter 43)
 - `RESEND_API_KEY` in `/app/backend/.env` — **production key**
 - `RESEND_FROM_EMAIL=noreply@ws.cloudtax.ca`

@@ -1031,20 +1031,44 @@ export default function CpaEngagement() {
                       <div className="muted" style={{ fontSize: 12 }}>{d.description}</div>
                       {/* Per-file list: clients can attach multiple files to one
                           request — render each one with its own Download icon so
-                          the CPA can fetch every file, not just the latest. */}
+                          the CPA can fetch every file, not just the latest. The
+                          "Uploaded by" attribution row makes delegate uploads
+                          (e.g. bookkeeper for Dr. Tong) immediately distinguishable
+                          from the primary client's uploads. */}
                       {Array.isArray(d.files) && d.files.length > 0 && (
                         <div className="mt-2 stack-xs" data-testid={`doc-files-${d.id}`}>
                           {d.files.map((f) => (
-                            <div
-                              key={f.id}
-                              data-testid={`doc-file-${f.id}`}
-                              style={{
-                                display: "flex", alignItems: "center", gap: 8,
-                                padding: "6px 10px", background: "var(--bg-subtle)",
-                                border: "1px solid var(--border-default)", borderRadius: 8,
-                                fontSize: 12, maxWidth: "100%",
-                              }}
-                            >
+                            <div key={f.id} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                              {f.uploaded_by && (
+                                <div
+                                  className="tertiary"
+                                  data-testid={`cpa-uploaded-by-${f.id}`}
+                                  style={{ fontSize: 10, lineHeight: 1.3, paddingLeft: 4 }}
+                                >
+                                  Uploaded by <strong style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{f.uploaded_by.name}</strong>
+                                  {(() => {
+                                    const rel = (f.uploaded_by.relationship || "").trim();
+                                    const role = (f.uploaded_by.role || "").trim();
+                                    const tag = rel
+                                      ? rel.charAt(0).toUpperCase() + rel.slice(1)
+                                      : role === "CLIENT" ? "Client"
+                                      : role === "CPA" ? "CPA"
+                                      : role === "ADMIN" ? "Admin"
+                                      : role === "WS_PARTNER" ? "Partner"
+                                      : "";
+                                    return tag ? <> · {tag}</> : null;
+                                  })()}
+                                </div>
+                              )}
+                              <div
+                                data-testid={`doc-file-${f.id}`}
+                                style={{
+                                  display: "flex", alignItems: "center", gap: 8,
+                                  padding: "6px 10px", background: "var(--bg-subtle)",
+                                  border: "1px solid var(--border-default)", borderRadius: 8,
+                                  fontSize: 12, maxWidth: "100%",
+                                }}
+                              >
                               <FileText size={13} style={{ color: "#1565c0", flexShrink: 0 }} />
                               <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                                 {f.file_name || "file"}
@@ -1065,6 +1089,7 @@ export default function CpaEngagement() {
                               >
                                 <Download size={12} />
                               </button>
+                              </div>
                             </div>
                           ))}
                         </div>

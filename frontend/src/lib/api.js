@@ -1,16 +1,21 @@
 import axios from "axios";
+import { getToken, clearToken } from "./tokenStorage";
 
 const BASE = process.env.REACT_APP_BACKEND_URL;
 
 export const api = axios.create({
   baseURL: `${BASE}/api`,
   headers: { "Content-Type": "application/json" },
-  withCredentials: true, // send the ct_trusted_device cookie (and access_token) across requests
+  // Cookies (ct_trusted_device, access_token) ride along, but we still attach
+  // the per-tab Authorization header below so a stale shared cookie can't
+  // override the freshly-logged-in tab's identity.
+  withCredentials: true,
 });
 
-// Attach token from localStorage as fallback (belt + suspenders for SameSite=None issues)
+// Attach the per-tab token from sessionStorage on every request so multiple
+// roles open in different tabs can never cross-pollute each other.
 api.interceptors.request.use((config) => {
-  const t = localStorage.getItem("ct_token");
+  const t = getToken();
   if (t) config.headers.Authorization = `Bearer ${t}`;
   return config;
 });
@@ -29,8 +34,8 @@ api.interceptors.response.use(
       // invalid (explicit log-out-prompt UX). A 401 with no local token
       // simply means "you're not logged in" — don't bully them with a
       // banner saying their session expired when it never existed.
-      const hadToken = !!localStorage.getItem("ct_token");
-      try { localStorage.removeItem("ct_token"); } catch (_) {}
+      const hadToken = !!getToken();
+      clearToken();
       const p = window.location.pathname || "";
       const isAuthPage = p === "/login" || p.startsWith("/set-password") || p.startsWith("/forgot-password") || p.startsWith("/reset-password");
       if (!isAuthPage && hadToken) {

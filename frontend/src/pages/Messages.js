@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useOutletContext } from "react-router-dom";
 import { api, fmtError, initials } from "../lib/api";
+import { getToken } from "../lib/tokenStorage";
 import { Paperclip, Send } from "lucide-react";
 
 const BASE = process.env.REACT_APP_BACKEND_URL;
@@ -53,7 +54,7 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
   // SSE
   useEffect(() => {
     if (!engagementId) return;
-    const token = localStorage.getItem("ct_token");
+    const token = getToken();
     if (!token) return;
     const url = `${BASE}/api/engagements/${engagementId}/messages/stream?token=${encodeURIComponent(token)}`;
     let es;
