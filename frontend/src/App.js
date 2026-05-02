@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AccessibilityProvider } from "./contexts/AccessibilityContext";
 import Login, { SetPassword } from "./pages/Login";
@@ -46,11 +46,58 @@ function RootRedirect() {
   return <Navigate to={roleHome(user.role)} replace />;
 }
 
+// ---------- Dynamic browser-tab title ----------
+// Runs on every route change. Maps the current pathname to a human label and
+// sets ``document.title = "<label> | CloudTax's Portal"``. Falls back to the
+// base title alone if the route doesn't have a friendly name yet. Keeps all
+// portals (Admin/CPA/Partner/Client) on the same brand suffix.
+const BASE_TITLE = "CloudTax\u2019s Portal";
+
+function labelForPath(pathname) {
+  if (!pathname) return null;
+  // Public / auth pages
+  if (pathname === "/login") return "Sign in";
+  if (pathname === "/forgot-password") return "Forgot password";
+  if (pathname === "/reset-password") return "Reset password";
+  if (pathname === "/set-password") return "Set password";
+  // Client portal
+  if (pathname === "/portal") return "Dashboard";
+  if (pathname.startsWith("/portal/messages")) return "Messages";
+  if (pathname.startsWith("/portal/account")) return "Account";
+  // WS partner
+  if (pathname === "/ws/dashboard") return "Client Pipeline";
+  if (pathname.startsWith("/ws/onboarding/")) return "Onboarding";
+  if (pathname.startsWith("/ws/file/")) return "Client file";
+  // CPA
+  if (pathname === "/cpa/files") return "My files";
+  if (pathname.startsWith("/cpa/engagement/")) return "Engagement";
+  if (pathname.startsWith("/cpa/messages")) return "Messages";
+  // Admin
+  if (pathname === "/admin/dashboard") return "Dashboard";
+  if (pathname.startsWith("/admin/client/")) return "Client";
+  if (pathname === "/admin/users") return "Users";
+  if (pathname === "/admin/settings") return "Settings";
+  if (pathname.startsWith("/admin/messages")) return "Messages";
+  // Shared
+  if (pathname === "/account") return "Account";
+  return null;
+}
+
+function PageTitle() {
+  const { pathname } = useLocation();
+  React.useEffect(() => {
+    const label = labelForPath(pathname);
+    document.title = label ? `${label} | ${BASE_TITLE}` : BASE_TITLE;
+  }, [pathname]);
+  return null;
+}
+
 export default function App() {
   return (
     <AccessibilityProvider>
       <AuthProvider>
         <BrowserRouter>
+        <PageTitle />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/set-password" element={<SetPassword />} />
