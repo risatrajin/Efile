@@ -9,6 +9,43 @@ log = logging.getLogger(__name__)
 
 _client = None
 
+# Last error from the most recent failed S3 mutation. Read by ``server.py``
+# after a failed ``put_object_bytes`` so it can decide whether to raise an
+# admin-visible alert (e.g. on ``AccessDenied``).
+_last_error_code: str | None = None
+_last_error_message: str | None = None
+
+
+def last_error_info() -> tuple[str | None, str | None]:
+    """Return ``(code, message)`` from the most recent failed S3 call."""
+    return _last_error_code, _last_error_message
+
+
+def _record_failure(err: Exception, action: str) -> None:
+    """Stash the last error and emit a structured log line.
+
+    For ``AccessDenied`` we emit a LOUD ``[S3 ACCESS DENIED]`` log marker so
+    operators can grep for it in production. Other codes drop through as a
+    regular ERROR-level log.
+    """
+    global _last_error_code, _last_error_message
+    code: str | None = None
+    msg = str(err)
+    if isinstance(err, ClientError):
+        code = (err.response or {}).get("Error", {}).get("Code")
+    elif isinstance(err, EndpointConnectionError):
+        code = "EndpointConnectionError"
+    _last_error_code = code
+    _last_error_message = msg
+    if code == "AccessDenied":
+        log.error(
+            "[S3 ACCESS DENIED] action=%s bucket=%s — IAM is missing the required action. "
+            "Apply docs/aws-iam-policy.json. Detail: %s",
+            action, bucket_name(), msg,
+        )
+    else:
+        log.error("S3 %s failed (code=%s): %s", action, code, msg)
+
 
 def get_client():
     global _client
@@ -46,7 +83,7 @@ def generate_upload_url(object_key: str, content_type: str = "application/octet-
         )
         return {"upload_url": url, "object_key": object_key, "expires_in": expiration()}
     except (ClientError, EndpointConnectionError) as e:
-        log.error("S3 presigned PUT failed: %s", e)
+        _record_failure(e, "presigned PUT")
         return None
 
 
@@ -63,7 +100,7 @@ def generate_download_url(object_key: str, filename: str | None = None) -> str |
         )
         return url
     except (ClientError, EndpointConnectionError) as e:
-        log.error("S3 presigned GET failed: %s", e)
+        _record_failure(e, "presigned GET")
         return None
 
 
@@ -95,13 +132,18 @@ def get_object_bytes(object_key: str) -> bytes | None:
         resp = get_client().get_object(Bucket=bucket_name(), Key=object_key)
         return resp["Body"].read()
     except (ClientError, EndpointConnectionError) as e:
-        log.error("S3 get_object failed: %s", e)
+        _record_failure(e, "get_object")
         return None
 
 
-
 def put_object_bytes(object_key: str, body: bytes, content_type: str = "application/octet-stream") -> bool:
-    """Server-side direct upload (used as proxy when browser-direct PUT is blocked by CORS)."""
+    """Server-side direct upload (used as proxy when browser-direct PUT is blocked by CORS).
+
+    On failure, ``last_error_info()`` returns the AWS error code + message so
+    callers can react to specific conditions (most importantly raising an
+    admin alert when IAM is mis-configured and we get ``AccessDenied``).
+    """
+    global _last_error_code, _last_error_message
     try:
         get_client().put_object(
             Bucket=bucket_name(),
@@ -110,9 +152,13 @@ def put_object_bytes(object_key: str, body: bytes, content_type: str = "applicat
             ContentType=content_type,
             ServerSideEncryption="AES256",
         )
+        # Reset the last-error sentinel on a successful call so stale alerts
+        # don't fire after the IAM mis-configuration is fixed.
+        _last_error_code = None
+        _last_error_message = None
         return True
     except (ClientError, EndpointConnectionError) as e:
-        log.error("S3 put_object failed: %s", e)
+        _record_failure(e, "put_object")
         return False
 
 

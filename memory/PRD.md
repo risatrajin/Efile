@@ -276,6 +276,46 @@
 
 ## Backlog (prioritized)
 
+### Iter 45 (May 2, 2026 — Deployment safety package: secrets audit + .env.example + S3 IAM + URL-mismatch banner)
+
+**Context**: The previous fork session ended with a security scare — the agent committed `.env` files to git history during a deploy debug, and the user halted work demanding a full secrets audit + URL banner + S3 IAM policy. This iter resolves that incident.
+
+**Secrets audit (clean result)**:
+- Walked every blob in `git rev-list --all` searching for the AWS / Resend / JWT / EMERGENT_LLM key fingerprints. **NO full production secrets** are in git history.
+- Only fingerprint leak was a TRUNCATED `re_EN2BWfRp_...` prefix in `memory/PRD.md` line 303 (iter 43 doc note). Sanitized to `RESEND_API_KEY=<redacted>` in this iter — no rotation required since the truncated prefix isn't a usable key on its own.
+- `.gitignore` correctly excludes `.env` / `.env.*` / `*.env` and explicitly allow-lists `*.env.example`.
+
+**`.env.example` files (NEW)**:
+- `/app/backend/.env.example` — every key the backend reads, with placeholder values + inline comments pointing at where to obtain each (Resend dashboard, IAM policy file, Emergent universal key).
+- `/app/frontend/.env.example` — `REACT_APP_BACKEND_URL` with explicit warning that the value is baked into the production JS bundle at build time, plus pointer to the URL-mismatch banner.
+
+**Deployment artifacts (NEW under `/app/docs/`)**:
+- `aws-iam-policy.json` — exact IAM JSON the user needs to attach to the `cloudtax-ws-pilot` IAM user. Grants `s3:{Get,Put,Delete,Get/PutAcl}Object` on bucket objects + `s3:ListBucket` / `s3:GetBucketLocation` on the bucket. Fixes the `AccessDenied` PutObject error from the deployment health check.
+- `DEPLOYMENT.md` — production custom-domain checklist (DNS, build-time env injection, cookie SameSite/Secure requirements, post-deploy verification steps for `ws.cloudtax.ca`).
+
+**S3 AccessDenied loud detection (`backend/s3_service.py`)**:
+- Added `last_error_info()` accessor + `_record_failure()` helper that distinguishes `AccessDenied` from generic errors. AccessDenied emits a `[S3 ACCESS DENIED]` LOUD log marker grep-able in production. All four mutator paths (`generate_upload_url`, `generate_download_url`, `get_object_bytes`, `put_object_bytes`) now route through it.
+- `put_object_bytes` resets the sentinel to `None` on a successful call so stale alerts don't fire after IAM is fixed.
+
+**Admin in-app alert (`backend/server.py`)**:
+- New `alert_s3_access_denied_if_needed()` helper: checks `s3_service.last_error_info()` after a put failure. If code == `AccessDenied`, fans out a notification to every active admin (rate-limited to once per 24h via the `notifications` collection so a sustained outage doesn't flood the bell).
+- Wired into all 4 async upload fallback paths: `/users/me/avatar`, `/documents/{doc_id}/upload`, `/engagements/{eid}/upload-draft`, `/engagements/{eid}/file-with-cra`. The legacy sync `_t183_storage_save` is left unchanged (any caller already passes through one of the 4 alerted paths first).
+- Notification type is `s3_access_denied` with title "S3 upload blocked — IAM permission missing" + a body pointing at `docs/aws-iam-policy.json`.
+
+**Admin-only URL Mismatch banner (`frontend/src/components/shared/AppHeader.js`)**:
+- New `<UrlMismatchBanner>` sub-component renders ABOVE the header. Compares `hostOf(process.env.REACT_APP_BACKEND_URL)` against `window.location.host`. When they differ AND `user.role === 'ADMIN'`, shows an amber alert with both hosts displayed and a dismiss-X button (`sessionStorage` keyed so it stays dismissed for the tab session).
+- Test IDs: `url-mismatch-banner`, `url-mismatch-current`, `url-mismatch-backend`, `url-mismatch-dismiss`.
+- Hidden for non-admin roles by design — clients/CPAs/WS partners shouldn't see deployment-config warnings.
+
+**Files touched**:
+- NEW: `backend/.env.example`, `frontend/.env.example`, `docs/aws-iam-policy.json`, `docs/DEPLOYMENT.md`
+- REWRITE: `backend/s3_service.py` (clean rewrite — added `_record_failure`, `last_error_info`, sentinel state), `.gitignore` (organized + explicit `!*.env.example` allow-list)
+- EDIT: `backend/server.py` (added `alert_s3_access_denied_if_needed` + 4 fallback-path call-sites), `frontend/src/components/shared/AppHeader.js` (added `UrlMismatchBanner` sub-component), `memory/PRD.md` (sanitized truncated Resend fingerprint)
+
+**Tests**: `test_local_storage_fallback.py` 5/5 PASS (regression confirms `_record_failure` rewrite didn't break the local:// path). Frontend smoke screenshot of `/login` renders cleanly — no React errors, login API responds 200 for admin. URL banner correctly stays hidden in preview because `REACT_APP_BACKEND_URL` host matches `window.location.host`. Banner will fire automatically when bundle is built against preview but served from `ws.cloudtax.ca`.
+
+**Production deployment status**: `ws.cloudtax.ca/login` is still pending the user's next deploy. The deploy will succeed when (a) `frontend/.env` has `REACT_APP_BACKEND_URL=https://ws.cloudtax.ca` BEFORE `yarn build`, (b) the IAM policy in `docs/aws-iam-policy.json` is attached to the AWS user, (c) the cookie `withCredentials: true` is set in `frontend/src/lib/api.js` (already done in iter 44). Verification checklist in `docs/DEPLOYMENT.md` §3.
+
 ### Iter 44 (May 1, 2026 — Trust-this-device 2FA + view-toggle icons + header cleanup)
 
 **Feature 1 — Trust this device for 30 days (2FA friction reduction)**:
@@ -300,7 +340,7 @@
 ### Iter 43 (May 1, 2026 — Production Resend setup + accurate delivery status)
 
 **Config**:
-- `/app/backend/.env` — new production key `RESEND_API_KEY=re_EN2BWfRp_...` (replaces trial key).
+- `/app/backend/.env` — new production key `RESEND_API_KEY=<redacted>` (replaces trial key).
 - `RESEND_FROM_EMAIL=noreply@ws.cloudtax.ca` (replaces `onboarding@resend.dev`).
 - `RESEND_FROM_NAME=CloudTax` (new) — produces `From: CloudTax <noreply@ws.cloudtax.ca>` headers so inboxes show the human-readable sender.
 - Subdomain `ws.cloudtax.ca` verified at resend.com/domains with SPF/DKIM/Return-Path DNS records.

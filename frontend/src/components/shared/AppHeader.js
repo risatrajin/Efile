@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
-import { LogOut, Settings, Home } from "lucide-react";
+import { LogOut, Settings, Home, AlertTriangle, X } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 import AccessibilityMenu from "./AccessibilityMenu";
 import MessagesInboxButton from "./MessagesInboxButton";
@@ -13,6 +13,78 @@ function dashboardPathFor(role) {
   if (role === "CPA") return "/cpa/files";
   if (role === "ADMIN") return "/admin/dashboard";
   return "/";
+}
+
+function hostOf(url) {
+  if (!url) return "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Admin-only banner that fires when the JS bundle was built for one backend
+ * URL but is now being served from a different host. The most common cause
+ * is a deploy that promoted a `preview.emergentagent.com` build to a custom
+ * domain (e.g. ws.cloudtax.ca) without rebuilding with the prod
+ * REACT_APP_BACKEND_URL. Without this banner the breakage is silent: every
+ * /api call gets blocked by the browser's same-origin / CORS rules, and
+ * users see "Invalid email or password" or generic 401s.
+ */
+function UrlMismatchBanner({ role }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem("ct_url_mismatch_dismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const { backendHost, currentHost, mismatch } = useMemo(() => {
+    const bh = hostOf(process.env.REACT_APP_BACKEND_URL);
+    const ch = (typeof window !== "undefined" && window.location) ? window.location.host : "";
+    return { backendHost: bh, currentHost: ch, mismatch: !!(bh && ch && bh !== ch) };
+  }, []);
+  if (role !== "ADMIN" || !mismatch || dismissed) return null;
+  return (
+    <div
+      data-testid="url-mismatch-banner"
+      role="alert"
+      style={{
+        background: "#fff4e5",
+        borderBottom: "1px solid #f5b56b",
+        color: "#7a4a00",
+        padding: "8px 16px",
+        fontSize: 13,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <AlertTriangle size={16} />
+      <div style={{ flex: 1, lineHeight: 1.4 }}>
+        <strong>URL mismatch detected.</strong>{" "}
+        This UI is loaded from <code data-testid="url-mismatch-current">{currentHost}</code>{" "}
+        but its bundle was built against <code data-testid="url-mismatch-backend">{backendHost}</code>.
+        API calls may fail. Rebuild the frontend with the correct
+        {" "}<code>REACT_APP_BACKEND_URL</code> before deploying — see{" "}
+        <code>docs/DEPLOYMENT.md</code>.
+      </div>
+      <button
+        type="button"
+        data-testid="url-mismatch-dismiss"
+        aria-label="Dismiss URL mismatch warning"
+        onClick={() => {
+          try { sessionStorage.setItem("ct_url_mismatch_dismissed", "1"); } catch { /* ignore */ }
+          setDismissed(true);
+        }}
+        style={{ background: "transparent", border: 0, cursor: "pointer", color: "#7a4a00", padding: 4 }}
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
 }
 
 export default function AppHeader({ tabs = [], unreadByKey = {} }) {
@@ -40,7 +112,9 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   const visibleTabs = (tabs || []).filter((t) => t.key !== "dashboard");
 
   return (
-    <header className="app-header" data-testid="app-header">
+    <>
+      <UrlMismatchBanner role={user?.role} />
+      <header className="app-header" data-testid="app-header">
       <div className="app-header-inner">
         <Link
           to="/"
@@ -148,5 +222,6 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
         </div>
       </div>
     </header>
+    </>
   );
 }

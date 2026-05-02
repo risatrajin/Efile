@@ -213,6 +213,30 @@ async def notify_admins(title: str, message: str, type_: str, engagement_id: str
         await notify(a["id"], title, message, type_, engagement_id)
 
 
+async def alert_s3_access_denied_if_needed() -> None:
+    """If the most recent S3 mutation failed with ``AccessDenied``, raise an
+    in-app admin alert — but rate-limit to once per 24h so a sustained outage
+    doesn't flood the bell. The notification deep-links into Admin Settings
+    where the IAM JSON snippet lives.
+    """
+    code, msg = s3_service.last_error_info()
+    if code != "AccessDenied":
+        return
+    db = get_db()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    recent = await db.notifications.find_one({"type": "s3_access_denied", "created_at": {"$gt": cutoff}})
+    if recent:
+        return
+    await notify_admins(
+        "S3 upload blocked — IAM permission missing",
+        "An upload was saved to local disk because AWS denied s3:PutObject. "
+        "Apply the IAM policy at docs/aws-iam-policy.json to restore S3 storage. "
+        f"Bucket: {os.environ.get('S3_BUCKET_NAME', '')}.",
+        "s3_access_denied",
+    )
+    log.warning("Surfaced s3_access_denied admin alert (last_error=%s)", msg)
+
+
 PERMISSION_KEYS = [
     "view_clients", "onboard_clients", "assign_cpa", "reassign_cpa",
     "send_reminders", "send_messages", "view_docs", "move_clients",
@@ -898,6 +922,7 @@ async def upload_my_avatar(file: UploadFile = File(...), user: dict = Depends(ge
             f.write(body)
         object_key = f"local://{local_path}"
         log.warning("S3 avatar upload failed for %s — stored locally at %s", user["id"], local_path)
+        await alert_s3_access_denied_if_needed()
 
     # Public-ish URL routed through our backend (always served via /api so RBAC stays consistent).
     # Append a version param so client-side caches always see the latest upload as a fresh URL.
@@ -2305,6 +2330,7 @@ async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict
             f.write(body)
         object_key = f"local://{local_path}"
         log.warning("S3 upload failed for %s — stored locally at %s", doc_id, local_path)
+        await alert_s3_access_denied_if_needed()
 
     now = datetime.now(timezone.utc)
     file_id = str(uuid.uuid4())
@@ -3390,6 +3416,7 @@ async def upload_draft_pdf(eid: str, file: UploadFile = File(...), instructions:
         with open(local_path, "wb") as f:
             f.write(body)
         object_key = f"local://{local_path}"
+        await alert_s3_access_denied_if_needed()
 
     # Find or create the T2_DRAFT document for this engagement
     now = datetime.now(timezone.utc)
@@ -3870,6 +3897,7 @@ async def file_with_cra(
             with open(local_path, "wb") as f:
                 f.write(body)
             object_key = f"local://{local_path}"
+            await alert_s3_access_denied_if_needed()
         persisted_docs.append({
             "object_key": object_key,
             "storage": storage,

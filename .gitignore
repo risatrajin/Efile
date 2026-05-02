@@ -1,16 +1,29 @@
--e 
-# Credential files (never commit these — but .env IS committed because the
-# Emergent deployment process auto-rewrites it with production values).
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
+# ---------- Environment & secrets ----------
 .env
 .env.*
 *.env
+!*.env.example
 credentials.json
 *.pem
 *.key
 .credentials
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---------- Node ----------
+node_modules/
+yarn-error.log
+yarn.lock
+
+# ---------- Local fallbacks ----------
+backend/.local_storage/
+
+# ---------- Build artifacts ----------
+build/
+dist/
+.coverage
+.DS_Store
