@@ -41,9 +41,19 @@ app = FastAPI(title="CloudTax WS Pilot API", version="1.0.0")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
+# Comma-separated list of additional CORS origins to allow. Set at deploy
+# time so production (custom domain) and the Emergent auto-generated
+# `<job>.emergent.host` backend can co-exist: the browser loads the page
+# from the custom domain but the frontend bundle calls emergent.host,
+# meaning the ``Origin: https://ws.cloudtax.ca`` header must be accepted.
+_raw_extra = os.environ.get("ALLOWED_ORIGINS", "")
+_extra_origins = [o.strip() for o in _raw_extra.split(",") if o.strip()]
+_cors_origins = list(dict.fromkeys([FRONTEND_URL, "http://localhost:3000", *_extra_origins]))
+logging.getLogger("cloudtax").info("CORS allow_origins: %s", _cors_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
