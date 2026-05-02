@@ -15,7 +15,7 @@
 - **Frontend**: React 18 + React Router 6 + Axios + Lucide icons + Tailwind
 - **Backend**: FastAPI + Motor (async Mongo) + PyJWT + bcrypt + boto3 + emergentintegrations
 - **Database**: MongoDB 7
-- **Storage**: AWS S3 (ca-central-1, presigned PUT direct from browser, SSE-AES256)
+- **Storage**: AWS S3 (ca-west-1, presigned PUT direct from browser, SSE-AES256)
 - **Email**: AWS SES transactional (invite, filing, missing-docs, deferred-doc reminders)
 - **AI**: Claude Sonnet 4.5 via Emergent Universal Key (document parsing)
 - **Realtime**: Server-Sent Events (SSE) for chat

@@ -15,7 +15,7 @@ If it doesn't, document upload silently falls back to local disk
 ### How to apply
 ```bash
 aws iam put-user-policy \
-  --user-name cloudtax-ws-pilot \
+  --user-name cloudtax-ws-pilot-prod \
   --policy-name CloudTaxS3Access \
   --policy-document file://docs/aws-iam-policy.json
 ```
@@ -57,7 +57,7 @@ When promoting the app to a custom domain:
    - Admin sees no red URL Mismatch banner in the AppHeader.
    - Upload any document on a test engagement → check backend logs for
      `[S3 ACCESS DENIED]`. If absent and the file appears in
-     `https://cloudtax-ws-pilot.s3.ca-central-1.amazonaws.com/...`,
+     `https://cloudtax-ws-pilot-portal-live-533677966472-ca-west-1-an.s3.ca-west-1.amazonaws.com/...`,
      prod S3 is healthy.
 
 ## 4. Resend email deliverability

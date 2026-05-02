@@ -12,7 +12,7 @@
         "s3:PutObjectAcl"
       ],
       "Resource": [
-        "arn:aws:s3:::cloudtax-ws-pilot/*"
+        "arn:aws:s3:::cloudtax-ws-pilot-portal-live-533677966472-ca-west-1-an/*"
       ]
     },
     {
@@ -23,7 +23,7 @@
         "s3:GetBucketLocation"
       ],
       "Resource": [
-        "arn:aws:s3:::cloudtax-ws-pilot"
+        "arn:aws:s3:::cloudtax-ws-pilot-portal-live-533677966472-ca-west-1-an"
       ]
     }
   ]
