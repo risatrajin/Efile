@@ -28,10 +28,11 @@ export default function ForgotPassword() {
 
   return (
     <div className="login-shell">
-      <div className="login-card card animate-in">
-        <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
+      <div className="login-inner">
+        <img src="/cloud-tax-logo.svg" alt="CloudTax" className="auth-logo" />
+        <div className="login-card card animate-in">
         <div className="muted" style={{ fontSize: 12, marginBottom: 24 }}>Reset your password</div>
-        <h2 className="section-title">Forgot password</h2>
+        <h2 className="auth-heading" data-testid="forgot-heading">Forgot password</h2>
 
         {!submitted && (
           <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
@@ -127,6 +128,7 @@ export default function ForgotPassword() {
             </Link>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
@@ -162,9 +164,10 @@ export function ResetPassword() {
   if (done) {
     return (
       <div className="login-shell">
-        <div className="login-card card">
-          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
-          <h2 className="section-title" style={{ marginTop: 20 }}>Password reset</h2>
+        <div className="login-inner">
+          <img src="/cloud-tax-logo.svg" alt="CloudTax" className="auth-logo" />
+          <div className="login-card card">
+          <h2 className="auth-heading" style={{ marginTop: 20 }}>Password reset</h2>
           <p className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
             Your password has been updated. You can now sign in with your new password.
           </p>
@@ -176,6 +179,7 @@ export function ResetPassword() {
           >
             Sign in
           </button>
+          </div>
         </div>
       </div>
     );
@@ -183,9 +187,10 @@ export function ResetPassword() {
 
   return (
     <div className="login-shell">
-      <div className="login-card card animate-in">
-        <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block", marginBottom: 20 }} />
-        <h2 className="section-title" style={{ marginTop: 20 }}>Set a new password</h2>
+      <div className="login-inner">
+        <img src="/cloud-tax-logo.svg" alt="CloudTax" className="auth-logo" />
+        <div className="login-card card animate-in">
+        <h2 className="auth-heading" style={{ marginTop: 20 }}>Set a new password</h2>
         <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
           {!initialToken && (
             <div className="field">
@@ -232,6 +237,7 @@ export function ResetPassword() {
             <Link to="/login" className="link-underline">Back to sign in</Link>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

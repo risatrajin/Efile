@@ -498,7 +498,21 @@ h2.section-title, .section-title {
   background: var(--bg-primary);
   padding: 40px 20px;
 }
+/* Column wrapper that stacks the logo OUTSIDE the card (top-center) and the
+   card itself. Only used on the auth pages (Login / Forgot / Set / Reset). */
+.login-inner {
+  display: flex; flex-direction: column; align-items: center;
+  width: 420px; max-width: 100%;
+}
+/* 20px logo ONLY on auth pages — AppHeader and all portal pages keep their
+   own logo sizing (24px). */
+.auth-logo { height: 20px; width: auto; display: block; margin-bottom: 28px; }
+/* 30px headings for the three auth screens (Welcome back / Forgot password /
+   Set your password). Overrides the default .brand-xl (32px) and
+   .section-title inside these screens. */
+.auth-heading { font-family: var(--font-serif); font-size: 30px; font-weight: 400; letter-spacing: -0.5px; line-height: 1.15; margin: 0 0 4px; }
 .login-card { width: 420px; max-width: 100%; }
+.login-inner .login-card { width: 100%; }
 .brand-xl { font-family: var(--font-serif); font-size: 32px; font-weight: 400; letter-spacing: -0.5px; margin-bottom: 4px; }
 
 /* ===== Animations ===== */
