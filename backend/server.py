@@ -46,6 +46,7 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 # `<job>.emergent.host` backend can co-exist: the browser loads the page
 # from the custom domain but the frontend bundle calls emergent.host,
 # meaning the ``Origin: https://ws.cloudtax.ca`` header must be accepted.
+# NOTE: this block is required for the ws.cloudtax.ca custom-domain deploy.
 _raw_extra = os.environ.get("ALLOWED_ORIGINS", "")
 _extra_origins = [o.strip() for o in _raw_extra.split(",") if o.strip()]
 _cors_origins = list(dict.fromkeys([FRONTEND_URL, "http://localhost:3000", *_extra_origins]))
