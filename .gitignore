@@ -1,8 +1,6 @@
 -e 
-# Environment and credential files
-.env
-.env.*
-*.env
+# Credential files (never commit these — but .env IS committed because the
+# Emergent deployment process auto-rewrites it with production values).
 credentials.json
 *.pem
 *.key
