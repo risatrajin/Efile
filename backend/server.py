@@ -41,6 +41,16 @@ app = FastAPI(title="CloudTax WS Pilot API", version="1.0.0")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
+# When true, auth endpoints that handle email delivery will surface the
+# ACTUAL reset/OTP tokens in their response body as a preview-only
+# convenience so that dev/QA environments without working SMTP can still
+# complete the flow. This MUST be false in production — otherwise anyone
+# who knows a user's email can request a reset and read the token off the
+# response payload, defeating email verification entirely. Controlled by
+# the ``SHOW_DEV_FALLBACK_TOKENS`` env var (defaults to false). Set to
+# ``true`` only on dev/preview stacks.
+SHOW_DEV_FALLBACK_TOKENS = os.environ.get("SHOW_DEV_FALLBACK_TOKENS", "").lower() in ("1", "true", "yes")
+
 # Comma-separated list of additional CORS origins to allow. Set at deploy
 # time so production (custom domain) and the Emergent auto-generated
 # `<job>.emergent.host` backend can co-exist: the browser loads the page
@@ -423,16 +433,20 @@ async def login(body: LoginIn, request: Request, response: Response):
         except Exception as e:
             log.warning("send_otp_code (login) failed: %s", e)
         log.info("2FA login challenge issued: %s code=%s sent=%s", user["email"], code, sent_via_email)
-        return {
+        resp = {
             "two_factor_required": True,
             "challenge_id": challenge_id,
             "sent_via_email": sent_via_email,
-            # Sandbox / unconfigured fallback: surface the OTP so test users without inbox access can sign in.
-            "debug_otp": None if sent_via_email else code,
             "email": user["email"],
             "expires_in_sec": OTP_TTL_MIN * 60,
             "resend_after_sec": OTP_RESEND_COOLDOWN_SEC,
         }
+        # Dev/preview only: when the env flag is on AND the email didn't
+        # actually go out, surface the code so QA on non-SMTP stacks can
+        # still sign in. Never enabled in prod.
+        if SHOW_DEV_FALLBACK_TOKENS and not sent_via_email:
+            resp["debug_otp"] = code
+        return resp
 
     token = create_access_token(user["id"], user["email"], user["role"])
     set_auth_cookie(response, token)
@@ -479,14 +493,16 @@ async def enable_2fa_init(user: dict = Depends(get_current_user)):
     except Exception as e:
         log.warning("send_otp_code (enable_2fa) failed: %s", e)
     log.info("2FA enable challenge issued: %s code=%s sent=%s", user["email"], code, sent_via_email)
-    return {
+    resp = {
         "ok": True,
         "challenge_id": challenge_id,
         "sent_via_email": sent_via_email,
-        "debug_otp": None if sent_via_email else code,
         "expires_in_sec": OTP_TTL_MIN * 60,
         "resend_after_sec": OTP_RESEND_COOLDOWN_SEC,
     }
+    if SHOW_DEV_FALLBACK_TOKENS and not sent_via_email:
+        resp["debug_otp"] = code
+    return resp
 
 
 @api.post("/auth/2fa/resend")
@@ -603,17 +619,18 @@ async def set_password(body: SetPasswordIn):
 
 @api.post("/auth/forgot-password")
 async def forgot_password(body: ForgotPasswordIn):
-    """Issue a 30-min password-reset token. Always returns ok=True to avoid leaking
-    which emails are registered. When the email IS registered we attempt to send via
-    SES; if SES is unavailable / sandbox-restricted we surface the reset_link directly
-    in the response so the user can complete the flow without inbox access.
+    """Issue a 30-min password-reset token. Always returns ok=True to avoid
+    leaking which emails are registered. The reset link is delivered via
+    email ONLY — it is NEVER returned in the response body. Exposing the
+    token here would defeat email-based verification; anyone who knows a
+    user's email could request a reset and read the token off the payload.
     """
     db = get_db()
     email = body.email.lower().strip()
     user = await db.users.find_one({"email": email})
     if not user or not user.get("is_active", True):
         # Generic OK so we don't disclose account existence.
-        return {"ok": True, "sent_via_email": False, "reset_link": None}
+        return {"ok": True, "sent_via_email": False}
 
     token = new_invite_token()
     await db.password_reset_tokens.insert_one({
@@ -631,10 +648,14 @@ async def forgot_password(body: ForgotPasswordIn):
         result = ses_service.send_password_reset(user["email"], user.get("name") or "there", reset_link)
         sent_via_email = bool(result.get("success"))
     except Exception as e:
-        log.warning("send_password_reset failed (likely SES sandbox): %s", e)
-    log.info("Password reset issued: %s -> %s (sent=%s)", email, reset_link, sent_via_email)
-    # Always return the link as a sandbox-safe fallback the UI can show inline.
-    return {"ok": True, "sent_via_email": sent_via_email, "reset_link": reset_link}
+        log.warning("send_password_reset failed: %s", e)
+    log.info("Password reset issued: email=%s sent=%s", email, sent_via_email)
+    resp = {"ok": True, "sent_via_email": sent_via_email}
+    # Dev/preview only: expose the link inline when SMTP is unavailable so
+    # QA on non-email stacks can still test the flow. NEVER in prod.
+    if SHOW_DEV_FALLBACK_TOKENS and not sent_via_email:
+        resp["reset_link"] = reset_link
+    return resp
 
 
 @api.post("/auth/reset-password")
@@ -4417,7 +4438,19 @@ def _serialize_msg(m: dict, sender: dict | None) -> dict:
     out = {k: v for k, v in m.items() if k != "_id"}
     if isinstance(out.get("created_at"), datetime):
         out["created_at"] = out["created_at"].isoformat()
-    out["sender"] = {"id": sender["id"], "name": sender["name"], "role": sender["role"]} if sender else None
+    if sender:
+        out["sender"] = {
+            "id": sender["id"],
+            "name": sender.get("name"),
+            "role": sender.get("role"),
+            "email": sender.get("email"),
+            # When the sender is a delegate rather than the primary client,
+            # surface the relationship ("Bookkeeper" / "Spouse" / …) so the
+            # chat UI can label them distinctly in multi-party threads.
+            "delegate_relationship": sender.get("delegate_relationship"),
+        }
+    else:
+        out["sender"] = None
     return out
 
 
@@ -4537,6 +4570,16 @@ async def list_messages(eid: str, user: dict = Depends(get_current_user)):
     senders = {}
     async for u in db.users.find({"id": {"$in": sender_ids}}, {"_id": 0, "password_hash": 0}):
         senders[u["id"]] = u
+    # Pull delegate relationships for this engagement so non-primary-client
+    # participants (bookkeeper / spouse / …) get a distinct sender label
+    # in multi-party threads.
+    rel_map: dict[str, str] = {}
+    async for d in db.delegates.find({"engagement_id": eid, "status": "active"}, {"_id": 0, "user_id": 1, "relationship": 1}):
+        if d.get("user_id") and d.get("relationship"):
+            rel_map[d["user_id"]] = d["relationship"]
+    for uid, u in senders.items():
+        if uid in rel_map:
+            u["delegate_relationship"] = rel_map[uid]
     return [_serialize_msg(r, senders.get(r["sender_id"])) for r in rows]
 
 
@@ -4572,6 +4615,12 @@ async def send_message(eid: str, body: MessageIn, user: dict = Depends(get_curre
     }
     await db.messages.insert_one(row)
     sender = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    # Enrich with delegate relationship for this engagement (bookkeeper /
+    # spouse / …) so chat UIs can label multi-party senders distinctly.
+    if sender:
+        d = await db.delegates.find_one({"engagement_id": eid, "user_id": user["id"], "status": "active"}, {"_id": 0, "relationship": 1})
+        if d and d.get("relationship"):
+            sender["delegate_relationship"] = d["relationship"]
     serialized = _serialize_msg(row, sender)
     # Notify the other party via in-app + email (email suppressed when the
     # recipient is actively watching the conversation over SSE).

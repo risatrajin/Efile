@@ -286,7 +286,7 @@ export default function WsOnboardingDetail() {
                 </button>
                 {resentLink && (
                   <div data-testid="resent-invite-link" style={{ marginTop: 10, padding: 10, background: "#e3f2fd", borderRadius: 8 }}>
-                    <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Email sent. If sandboxed, copy this link:</div>
+                    <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Invitation sent. Copy this link if needed:</div>
                     <code style={{ display: "block", padding: 8, background: "#fff", borderRadius: 6, fontSize: 10, wordBreak: "break-all" }}>{resentLink}</code>
                     <button
                       onClick={() => navigator.clipboard.writeText(resentLink)}

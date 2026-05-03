@@ -50,12 +50,19 @@ def _record_failure(err: Exception, action: str) -> None:
 def get_client():
     global _client
     if _client is None:
+        region = os.environ["AWS_REGION"]
+        # ``ca-west-1`` (and other post-2019 regions) only accept Signature
+        # Version 4 requests scoped to the regional endpoint. Using the
+        # default endpoint produces an ``IllegalLocationConstraintException``
+        # on PUT. Force both the regional endpoint and virtual-host addressing
+        # style so presigned URLs inherit the correct signature target.
         _client = boto3.client(
             "s3",
-            region_name=os.environ["AWS_REGION"],
+            region_name=region,
+            endpoint_url=f"https://s3.{region}.amazonaws.com",
             aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
             aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-            config=Config(signature_version="s3v4"),
+            config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
         )
     return _client
 

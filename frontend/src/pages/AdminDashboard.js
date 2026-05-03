@@ -82,7 +82,7 @@ function AddCpaModal({ onClose, onDone }) {
         </div>
         {link ? (
           <div className="stack-md">
-            <div className="muted" style={{ fontSize: 13 }}>Invitation created. Share this link if SES is in sandbox:</div>
+            <div className="muted" style={{ fontSize: 13 }}>Invitation sent. You can copy this link and share it directly if needed:</div>
             <code style={{ display: "block", padding: 12, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all" }} data-testid="cpa-invite-link">{link}</code>
             <button onClick={onClose} className="btn btn-primary w-full" data-testid="add-cpa-done">Done</button>
           </div>

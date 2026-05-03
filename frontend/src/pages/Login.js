@@ -167,7 +167,7 @@ export default function Login() {
             <p className="muted" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
               {otpState.sentViaEmail
                 ? <>We sent a 6-digit code to <strong>{otpState.email}</strong>. It expires in 5 minutes.</>
-                : <>Email delivery is currently unavailable — use the code shown below to continue. (Sandbox fallback)</>}
+                : <>We couldn&rsquo;t deliver the verification email. Tap <em>Resend code</em> below, or contact support@cloudtax.ca if the issue persists.</>}
             </p>
             <form onSubmit={onSubmitOtp} className="stack-md" style={{ marginTop: 16 }}>
               <div className="field">
@@ -217,7 +217,7 @@ export default function Login() {
                   </span>
                 </span>
               </label>
-              {!otpState.sentViaEmail && otpState.debugOtp && (
+              {!otpState.sentViaEmail && otpState.debugOtp && process.env.NODE_ENV !== "production" && (
                 <div
                   style={{
                     background: "var(--bg-subtle)",
@@ -229,7 +229,7 @@ export default function Login() {
                   data-testid="login-otp-fallback"
                 >
                   <div className="tertiary" style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>
-                    SANDBOX FALLBACK CODE
+                    DEV ONLY — NOT SHOWN IN PRODUCTION
                   </div>
                   <code style={{ fontSize: 18, fontWeight: 700, letterSpacing: 6 }} data-testid="login-otp-fallback-code">
                     {otpState.debugOtp}

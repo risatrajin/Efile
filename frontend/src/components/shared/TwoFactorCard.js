@@ -156,7 +156,7 @@ export default function TwoFactorCard({ me, onChange, embedded = false }) {
           <p style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>
             {challenge.sentViaEmail
               ? <>We sent a 6-digit code to <strong>{me?.email}</strong>. Enter it below to enable 2FA.</>
-              : <>Email delivery is currently unavailable — use the sandbox code below.</>}
+              : <>We couldn&rsquo;t deliver the verification email. Try again in a moment, or contact support@cloudtax.ca if the issue persists.</>}
           </p>
           <div className="field">
             <label className="field-label">Verification code</label>
@@ -173,7 +173,7 @@ export default function TwoFactorCard({ me, onChange, embedded = false }) {
               autoFocus
             />
           </div>
-          {!challenge.sentViaEmail && challenge.debugOtp && (
+          {!challenge.sentViaEmail && challenge.debugOtp && process.env.NODE_ENV !== "production" && (
             <div
               style={{
                 background: "var(--bg-subtle)",
@@ -183,7 +183,7 @@ export default function TwoFactorCard({ me, onChange, embedded = false }) {
               data-testid="two-factor-fallback"
             >
               <div className="tertiary" style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>
-                SANDBOX FALLBACK CODE
+                DEV ONLY — NOT SHOWN IN PRODUCTION
               </div>
               <code style={{ fontSize: 18, fontWeight: 700, letterSpacing: 6 }}>{challenge.debugOtp}</code>
             </div>

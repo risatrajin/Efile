@@ -23,7 +23,7 @@ function InviteModal({ onClose, onDone }) {
         <h2 className="section-title">Invite user</h2>
         {link ? (
           <div className="stack-md mt-4">
-            <p className="muted" style={{ fontSize: 13 }}>Invitation email sent (if AWS SES is out of sandbox). Share this link if needed:</p>
+            <p className="muted" style={{ fontSize: 13 }}>Invitation email sent. You can copy this link and share it directly if needed:</p>
             <code style={{ display: "block", padding: 12, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all" }} data-testid="invite-link">{link}</code>
             <button className="btn btn-primary" onClick={onClose} data-testid="invite-close">Done</button>
           </div>

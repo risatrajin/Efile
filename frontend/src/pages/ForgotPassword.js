@@ -79,49 +79,11 @@ export default function ForgotPassword() {
               }}
               data-testid="forgot-success-msg"
             >
-              If <strong>{email}</strong> matches an account, we've started a password reset.
-              {sentViaEmail
-                ? " Check your inbox for the reset link."
-                : " Email delivery is currently unavailable — use the link below to continue."}
-            </div>
-
-            {resetLink && (
-              <div
-                style={{
-                  background: "var(--bg-subtle)",
-                  border: "1px dashed var(--border-default)",
-                  borderRadius: 10,
-                  padding: 14,
-                }}
-                data-testid="forgot-fallback"
-              >
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: 0.5, marginBottom: 8 }}>
-                  RESET LINK (FALLBACK)
-                </div>
-                <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--text-secondary)", marginBottom: 10 }}>
-                  Click below to set a new password. This link expires in 30 minutes.
-                </div>
-                <Link
-                  to={resetLink.replace(/^.*\/reset-password/, "/reset-password")}
-                  className="btn btn-primary w-full"
-                  data-testid="forgot-fallback-cta"
-                >
-                  Open reset page
-                </Link>
-                <code
-                  style={{
-                    display: "block",
-                    marginTop: 10,
-                    fontSize: 10,
-                    color: "var(--text-tertiary)",
-                    wordBreak: "break-all",
-                  }}
-                  data-testid="forgot-fallback-link"
-                >
-                  {resetLink}
-                </code>
+              If <strong>{email}</strong> matches an account, we've sent a password reset link to that inbox. The link expires in 30 minutes.
+              <div style={{ marginTop: 8, fontSize: 12 }}>
+                Didn&rsquo;t receive it? Check your spam folder, or contact <a href="mailto:support@cloudtax.ca" className="link-underline">support@cloudtax.ca</a>.
               </div>
-            )}
+            </div>
 
             <Link to="/login" className="btn btn-secondary w-full" data-testid="forgot-back-login">
               Back to sign in

@@ -552,6 +552,12 @@ export default function ClientPortal() {
   const [authBusy, setAuthBusy] = useState(false);
   const [forceUploadMode, setForceUploadMode] = useState(false);
   const [delegateContext, setDelegateContext] = useState(null);
+  // True once the FIRST /engagements response has come back (success OR error).
+  // Gates the empty-state render so the "engagement is being set up" card
+  // doesn't flash for a fraction of a second on initial page load before the
+  // real engagement data arrives. Only after ``loaded`` is true do we trust
+  // ``eng === null`` to mean "no active engagement" rather than "still fetching".
+  const [loaded, setLoaded] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -571,6 +577,7 @@ export default function ClientPortal() {
         setQuestions(q.data);
       }
     } catch (x) { setErr(fmtError(x)); }
+    finally { setLoaded(true); }
   };
   useEffect(() => { loadAll(); }, []);
   // Poll engagement every 20s so the client sees a fresh ReviewDecisionCard
@@ -700,10 +707,42 @@ export default function ClientPortal() {
     } catch (x) { setErr(fmtError(x)); }
   };
 
-  // Empty state
+  // Compose a friendly greeting name. Prefer the dedicated ``first_name``
+  // field when present (so "Dr. John Smith" → "John"), and fall back to
+  // the full name with title-tokens stripped so we never render a standalone
+  // "Welcome, Dr." when the display name starts with a salutation.
+  const greetingName = (() => {
+    if (!user) return "";
+    if (user.first_name) return user.first_name;
+    const raw = (user.name || "").trim();
+    if (!raw) return "";
+    const TITLES = new Set(["dr.", "dr", "mr.", "mr", "mrs.", "mrs", "ms.", "ms", "miss", "prof.", "prof"]);
+    const tokens = raw.split(/\s+/);
+    const first = tokens[0] || "";
+    if (TITLES.has(first.toLowerCase())) return tokens[1] || "";
+    return first;
+  })();
+  // Loading skeleton — shown while the FIRST /engagements fetch is in-flight.
+  // Prevents the "engagement is being set up" empty state from flashing for
+  // a split second before the real engagement data arrives on page load.
+  if (!loaded) return (
+    <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="portal-loading">
+      <div style={{ height: 28, width: 220, background: "var(--bg-subtle)", borderRadius: 6, marginBottom: 8 }} />
+      <div style={{ height: 14, width: 360, background: "var(--bg-subtle)", borderRadius: 6, opacity: 0.6 }} />
+      <div className="card" style={{ marginTop: 4 }}>
+        <div style={{ height: 14, width: "80%", background: "var(--bg-subtle)", borderRadius: 6, marginBottom: 10, opacity: 0.6 }} />
+        <div style={{ height: 14, width: "60%", background: "var(--bg-subtle)", borderRadius: 6, opacity: 0.6 }} />
+      </div>
+    </div>
+  );
+
+  // Empty state — only after the API has confirmed there is no active
+  // engagement (``loaded === true`` AND ``eng`` is null/ONBOARDING).
   if (!eng || eng.status === "ONBOARDING") return (
     <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="empty-state">
-      <h1 className="page-title">Welcome, {user?.name?.split(" ")[0]}</h1>
+      <h1 className="page-title">
+        {greetingName ? `Welcome, ${greetingName}` : "Welcome"}
+      </h1>
       <p className="muted" style={{ fontSize: 13 }}>Your CloudTax × Wealthsimple corporate tax engagement is being set up.</p>
       <div className="card">
         <p className="muted" style={{ fontSize: 13, lineHeight: 1.7 }}>
