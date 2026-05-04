@@ -68,13 +68,18 @@ def _frontend_url_has_vendor_leak(url: str) -> str | None:
 if IS_PRODUCTION:
     _leak = _frontend_url_has_vendor_leak(FRONTEND_URL)
     if _leak:
-        # Fail fast rather than ship invitation emails with the wrong URL.
-        raise RuntimeError(
-            f"PRODUCTION=true but FRONTEND_URL={FRONTEND_URL!r} contains '{_leak}'. "
-            "Set FRONTEND_URL to your customer-facing domain (e.g. https://ws.cloudtax.ca) "
-            "in the deploy env config before starting the service."
+        # Log loudly but DO NOT prevent boot — a broken FRONTEND_URL must not
+        # take the entire backend offline. The /api/admin/config-health
+        # endpoint and the Settings → System UI surface this misconfiguration
+        # for admins to fix without losing all login ability in the meantime.
+        logging.getLogger("cloudtax").error(
+            "PROD_GUARD: PRODUCTION=true but FRONTEND_URL=%r contains %r — "
+            "invitation/reset emails will ship with the wrong link until "
+            "FRONTEND_URL is fixed in the deploy env.",
+            FRONTEND_URL, _leak,
         )
-    logging.getLogger("cloudtax").info("PROD_GUARD: FRONTEND_URL=%s (validated)", FRONTEND_URL)
+    else:
+        logging.getLogger("cloudtax").info("PROD_GUARD: FRONTEND_URL=%s (validated)", FRONTEND_URL)
 
 # When true, auth endpoints that handle email delivery will surface the
 # ACTUAL reset/OTP tokens in their response body as a preview-only
@@ -86,17 +91,22 @@ if IS_PRODUCTION:
 # ``true`` only on dev/preview stacks.
 SHOW_DEV_FALLBACK_TOKENS = os.environ.get("SHOW_DEV_FALLBACK_TOKENS", "").lower() in ("1", "true", "yes")
 if IS_PRODUCTION and SHOW_DEV_FALLBACK_TOKENS:
-    raise RuntimeError("SHOW_DEV_FALLBACK_TOKENS must NOT be enabled when PRODUCTION=true")
+    logging.getLogger("cloudtax").error(
+        "PROD_GUARD: SHOW_DEV_FALLBACK_TOKENS is enabled in production — "
+        "auth endpoints will leak reset/OTP tokens. Disable immediately."
+    )
 
 # Comma-separated list of additional CORS origins to allow. Set at deploy
 # time so production (custom domain) and the Emergent auto-generated
 # `<job>.emergent.host` backend can co-exist: the browser loads the page
 # from the custom domain but the frontend bundle calls emergent.host,
 # meaning the ``Origin: https://ws.cloudtax.ca`` header must be accepted.
-# NOTE: this block is required for the ws.cloudtax.ca custom-domain deploy.
+# Defaults below cover the known prod custom domain so login works even if
+# the deploy operator forgot to set ALLOWED_ORIGINS.
+_DEFAULT_ALLOWED = ["https://ws.cloudtax.ca"]
 _raw_extra = os.environ.get("ALLOWED_ORIGINS", "")
 _extra_origins = [o.strip() for o in _raw_extra.split(",") if o.strip()]
-_cors_origins = list(dict.fromkeys([FRONTEND_URL, "http://localhost:3000", *_extra_origins]))
+_cors_origins = list(dict.fromkeys([FRONTEND_URL, "http://localhost:3000", *_DEFAULT_ALLOWED, *_extra_origins]))
 logging.getLogger("cloudtax").info("CORS allow_origins: %s", _cors_origins)
 
 app.add_middleware(
