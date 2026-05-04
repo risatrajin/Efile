@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { api, fmtError, fmtDate } from "../lib/api";
+import { vendorLeakMarker } from "../lib/linkSafety";
 import AppHeader from "../components/shared/AppHeader";
-import { Plus } from "lucide-react";
+import { AlertTriangle, Plus } from "lucide-react";
 
 function InviteModal({ onClose, onDone }) {
   const [form, setForm] = useState({ email: "", name: "", role: "CPA", phone: "" });
@@ -17,6 +18,7 @@ function InviteModal({ onClose, onDone }) {
     } catch (e) { setErr(fmtError(e)); }
     finally { setBusy(false); }
   };
+  const leak = vendorLeakMarker(link);
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -24,7 +26,18 @@ function InviteModal({ onClose, onDone }) {
         {link ? (
           <div className="stack-md mt-4">
             <p className="muted" style={{ fontSize: 13 }}>Invitation email sent. You can copy this link and share it directly if needed:</p>
-            <code style={{ display: "block", padding: 12, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all" }} data-testid="invite-link">{link}</code>
+            {leak && (
+              <div
+                data-testid="invite-link-vendor-warning"
+                style={{ background: "#ffebee", border: "1px solid #ffcdd2", color: "#a10f0f", borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.55, display: "flex", gap: 8, alignItems: "flex-start" }}
+              >
+                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <strong>Do not share this link.</strong> It points at a non-production host (<code>{leak}</code>). Ask your deploy operator to set <code>FRONTEND_URL</code> to the customer-facing domain and redeploy — then re-send the invitation. See Settings → System for details.
+                </div>
+              </div>
+            )}
+            <code style={{ display: "block", padding: 12, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 11, wordBreak: "break-all", opacity: leak ? 0.55 : 1 }} data-testid="invite-link">{link}</code>
             <button className="btn btn-primary" onClick={onClose} data-testid="invite-close">Done</button>
           </div>
         ) : (

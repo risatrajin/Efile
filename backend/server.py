@@ -41,6 +41,41 @@ app = FastAPI(title="CloudTax WS Pilot API", version="1.0.0")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
+# PROD_GUARD: detects deploy environments that are NOT production dev/preview.
+# When this flag is on, ``FRONTEND_URL`` must be a clean production URL —
+# any value containing vendor-specific substrings (preview / emergent /
+# localhost) is treated as a misconfiguration and the service refuses to
+# start, so invitation emails and password-reset links can never silently
+# ship with preview URLs. Set ``PRODUCTION=true`` in the prod deploy env.
+IS_PRODUCTION = os.environ.get("PRODUCTION", "").lower() in ("1", "true", "yes")
+
+# Substrings that are NEVER allowed in a production FRONTEND_URL — these
+# would result in invite / reset links pointing at a vendor/preview host.
+_VENDOR_HOST_MARKERS = ("emergent", "preview.", "localhost", "127.0.0.1", "0.0.0.0", ".onrender.com", ".vercel.app")
+
+
+def _frontend_url_has_vendor_leak(url: str) -> str | None:
+    """Return the offending marker if ``url`` looks like a vendor / preview
+    host rather than a customer-owned production URL. Used by the startup
+    guard + the admin health endpoint."""
+    lower = (url or "").lower()
+    for marker in _VENDOR_HOST_MARKERS:
+        if marker in lower:
+            return marker
+    return None
+
+
+if IS_PRODUCTION:
+    _leak = _frontend_url_has_vendor_leak(FRONTEND_URL)
+    if _leak:
+        # Fail fast rather than ship invitation emails with the wrong URL.
+        raise RuntimeError(
+            f"PRODUCTION=true but FRONTEND_URL={FRONTEND_URL!r} contains '{_leak}'. "
+            "Set FRONTEND_URL to your customer-facing domain (e.g. https://ws.cloudtax.ca) "
+            "in the deploy env config before starting the service."
+        )
+    logging.getLogger("cloudtax").info("PROD_GUARD: FRONTEND_URL=%s (validated)", FRONTEND_URL)
+
 # When true, auth endpoints that handle email delivery will surface the
 # ACTUAL reset/OTP tokens in their response body as a preview-only
 # convenience so that dev/QA environments without working SMTP can still
@@ -50,6 +85,8 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 # the ``SHOW_DEV_FALLBACK_TOKENS`` env var (defaults to false). Set to
 # ``true`` only on dev/preview stacks.
 SHOW_DEV_FALLBACK_TOKENS = os.environ.get("SHOW_DEV_FALLBACK_TOKENS", "").lower() in ("1", "true", "yes")
+if IS_PRODUCTION and SHOW_DEV_FALLBACK_TOKENS:
+    raise RuntimeError("SHOW_DEV_FALLBACK_TOKENS must NOT be enabled when PRODUCTION=true")
 
 # Comma-separated list of additional CORS origins to allow. Set at deploy
 # time so production (custom domain) and the Emergent auto-generated
@@ -4343,6 +4380,30 @@ async def export_csv(user: dict = Depends(require_role("ADMIN"))):
 @api.get("/health")
 async def health():
     return {"ok": True, "service": "cloudtax-pilot"}
+
+
+@api.get("/admin/config-health")
+async def admin_config_health(user: dict = Depends(get_current_user)):
+    """Admin-only config inspection. Returns the URL the backend will bake
+    into invite / reset / notification emails right now, plus any vendor-host
+    leak that's been detected. Useful for verifying a deploy BEFORE actually
+    inviting a real client. Never exposes secrets.
+    """
+    if user["role"] != "ADMIN":
+        raise HTTPException(403, "Admin only")
+    leak = _frontend_url_has_vendor_leak(FRONTEND_URL)
+    resend_key = os.environ.get("RESEND_API_KEY", "")
+    return {
+        "frontend_url": FRONTEND_URL,
+        "frontend_url_vendor_leak": leak,                    # None means clean; marker string means leak
+        "production_mode": IS_PRODUCTION,
+        "show_dev_fallback_tokens": SHOW_DEV_FALLBACK_TOKENS,
+        "cors_allow_origins": _cors_origins,
+        "resend_configured": bool(resend_key),
+        "resend_from": os.environ.get("RESEND_FROM_EMAIL", ""),
+        "s3_region": os.environ.get("AWS_REGION", ""),
+        "s3_bucket": os.environ.get("S3_BUCKET_NAME", ""),
+    }
 
 
 # ==================== Messaging ====================

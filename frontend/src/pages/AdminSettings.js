@@ -1165,7 +1165,61 @@ const TABS = [
   { key: "doc-templates", label: "Document templates" },
   { key: "display", label: "Display" },
   { key: "roles", label: "Roles & Permissions" },
+  { key: "system", label: "System" },
 ];
+
+function SystemTab() {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    (async () => {
+      try { const { data } = await api.get("/admin/config-health"); setData(data); }
+      catch (e) { setErr(fmtError(e)); }
+    })();
+  }, []);
+  if (err) return <div className="card alert-risk" data-testid="system-tab-err">{err}</div>;
+  if (!data) return <div className="card">Loading system status…</div>;
+  const leak = data.frontend_url_vendor_leak;
+  const ok = !leak && data.production_mode && !data.show_dev_fallback_tokens && data.resend_configured;
+  const row = (label, value, good) => (
+    <div className="flex items-center" style={{ justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+      <span className="muted" style={{ fontSize: 13 }}>{label}</span>
+      <span style={{ fontSize: 13, fontFamily: good === undefined ? undefined : "var(--font-mono, monospace)", color: good === false ? "#a10f0f" : good === true ? "#1b5e20" : "var(--text-primary)", fontWeight: good === undefined ? 400 : 500 }}>
+        {String(value ?? "—")}
+      </span>
+    </div>
+  );
+  return (
+    <div className="stack-md" data-testid="system-tab">
+      <div className="card" style={{ background: ok ? "#e8f5e9" : leak ? "#ffebee" : "#fff8e1", borderColor: ok ? "#c8e6c9" : leak ? "#ffcdd2" : "#ffecb3" }} data-testid="system-tab-banner">
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: ok ? "#1b5e20" : leak ? "#a10f0f" : "#6d4c00" }}>
+          {ok ? "Production-ready configuration" : leak ? `URL misconfiguration — "${leak}" detected in FRONTEND_URL` : "Preview / non-production mode"}
+        </div>
+        <div style={{ fontSize: 12, lineHeight: 1.55, color: ok ? "#2e7d32" : leak ? "#7a1a1a" : "#6d4c00" }}>
+          {leak
+            ? <>Invitation and password-reset emails will contain URLs pointing at <code>{data.frontend_url}</code>. Set <code>FRONTEND_URL</code> to your customer-facing domain (e.g. <code>https://ws.cloudtax.ca</code>) and <code>PRODUCTION=true</code> in the deploy env, then redeploy.</>
+            : ok
+              ? <>All outbound emails will use <code>{data.frontend_url}</code>. Resend is configured. Debug fallbacks are disabled.</>
+              : <>This stack is not flagged as production. Outbound emails will still use <code>{data.frontend_url}</code>, but safety checks are relaxed — expected on preview / dev environments.</>}
+        </div>
+      </div>
+      <div className="card">
+        <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Runtime configuration</h2>
+        {row("Customer-facing URL", data.frontend_url, leak ? false : true)}
+        {row("Vendor-host leak", leak || "none", leak ? false : true)}
+        {row("Production mode", data.production_mode ? "enabled" : "disabled", data.production_mode)}
+        {row("Dev fallback tokens", data.show_dev_fallback_tokens ? "EXPOSED (disable in prod!)" : "hidden", !data.show_dev_fallback_tokens)}
+        {row("Resend email delivery", data.resend_configured ? `configured (${data.resend_from || "no from"})` : "NOT configured", data.resend_configured)}
+        {row("S3 region", data.s3_region)}
+        {row("S3 bucket", data.s3_bucket)}
+        {row("CORS origins", (data.cors_allow_origins || []).join(", "))}
+      </div>
+      <p className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+        This page shows exactly what the backend will use when generating invitation links, password-reset emails, and CORS responses. Share this with the deploy operator when debugging URL or email delivery issues.
+      </p>
+    </div>
+  );
+}
 
 export default function AdminSettings() {
   const { user, setUser } = useAuth();
@@ -1222,6 +1276,7 @@ export default function AdminSettings() {
           {tab === "doc-templates" && <DocTemplatesTab />}
           {tab === "display" && <DisplayTab />}
           {tab === "roles" && <RolesTab />}
+          {tab === "system" && <SystemTab />}
         </div>
 
         <div style={{ height: 60 }} />
