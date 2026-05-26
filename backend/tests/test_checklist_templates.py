@@ -12,7 +12,7 @@ BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 
 @pytest.fixture(scope="module")
 def admin_token():
-    r = requests.post(f"{BASE}/api/auth/login", json={"email": "nim@cloudtax.ca", "password": "CloudTax2026!"}, timeout=20)
+    r = requests.post(f"{BASE}/api/auth/login", json={"email": "nim@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}, timeout=20)
     assert r.status_code == 200
     return r.json()["token"]
 
@@ -184,7 +184,7 @@ class TestCpaReviewTemplate:
         # WS partner should NOT be able to edit the CPA review template.
         r = requests.post(
             f"{BASE}/api/auth/login",
-            json={"email": "rajin@cloudtax.ca", "password": "CloudTax2026!"},
+            json={"email": "rajin@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")},
             timeout=20,
         )
         if r.status_code != 200 or r.json().get("two_factor_required"):

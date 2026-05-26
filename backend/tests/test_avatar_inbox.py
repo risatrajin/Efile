@@ -17,7 +17,7 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 def _png_bytes(width: int = 4, height: int = 4) -> bytes:

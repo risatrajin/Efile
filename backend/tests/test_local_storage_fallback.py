@@ -28,7 +28,7 @@ BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 def admin_token():
     r = requests.post(
         f"{BASE}/api/auth/login",
-        json={"email": "nim@cloudtax.ca", "password": "CloudTax2026!"},
+        json={"email": "nim@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")},
         timeout=20,
     )
     assert r.status_code == 200, r.text

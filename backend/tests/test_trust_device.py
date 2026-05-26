@@ -37,7 +37,6 @@ def _login(session: requests.Session) -> dict:
     r = session.post(
         f"{BASE_URL}/api/auth/login",
         json={"email": EMAIL, "password": PASSWORD},
-        verify=False,
         timeout=10,
     )
     assert r.status_code == 200, r.text
@@ -48,7 +47,6 @@ def _verify(session: requests.Session, challenge: str, code: str, trust: bool) -
     r = session.post(
         f"{BASE_URL}/api/auth/2fa/verify-login",
         json={"challenge_id": challenge, "code": code, "trust_device": trust},
-        verify=False,
         timeout=10,
     )
     assert r.status_code == 200, r.text
@@ -91,8 +89,7 @@ def test_list_and_delete_trusted_device():
     # List
     r = requests.get(
         f"{BASE_URL}/api/auth/trusted-devices",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     )
     assert r.status_code == 200
     devices = r.json()["devices"]
@@ -102,8 +99,7 @@ def test_list_and_delete_trusted_device():
     # Delete
     r2 = requests.delete(
         f"{BASE_URL}/api/auth/trusted-devices/{dev['id']}",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     )
     assert r2.status_code == 200
     # Re-login → 2FA required again
@@ -123,8 +119,7 @@ def test_revoke_all():
     # Revoke all
     r = requests.post(
         f"{BASE_URL}/api/auth/trusted-devices/revoke-all",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     )
     assert r.status_code == 200
     assert r.json()["revoked"] >= 1

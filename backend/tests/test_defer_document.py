@@ -12,14 +12,13 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.pr
 # This client (drbala) already has 3 deferred docs in the pilot DB — seeded
 # by the previous session. Perfect for a read-only regression.
 CLIENT_EMAIL = "drbala@yopmail.com"
-CLIENT_PASSWORD = "CloudTax2026!"
+CLIENT_PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 def test_client_docs_list_returns_deferred_at_for_pending_rows():
     tok_r = requests.post(
         f"{BASE_URL}/api/auth/login",
-        json={"email": CLIENT_EMAIL, "password": CLIENT_PASSWORD},
-        verify=False, timeout=10,
+        json={"email": CLIENT_EMAIL, "password": CLIENT_PASSWORD}, timeout=10,
     )
     if tok_r.status_code != 200 or "token" not in tok_r.json():
         import pytest
@@ -28,16 +27,14 @@ def test_client_docs_list_returns_deferred_at_for_pending_rows():
 
     engs = requests.get(
         f"{BASE_URL}/api/engagements",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     ).json()
     assert engs, "expected at least one engagement for drbala"
     eid = engs[0]["id"]
 
     docs = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     ).json()
     assert isinstance(docs, list)
     # At least one doc with deferred_at set

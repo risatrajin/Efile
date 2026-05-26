@@ -4,7 +4,7 @@ import requests
 import pytest
 
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.preview.emergentagent.com").rstrip("/")
-PWD = "CloudTax2026!"
+PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 def login(email):

@@ -14,7 +14,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or open("/app/frontend/.env").read().split("REACT_APP_BACKEND_URL=")[1].split()[0]).rstrip("/")
 API = BASE_URL + "/api"
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 MONGO_URL = open("/app/backend/.env").read().split("MONGO_URL=")[1].split()[0].strip().strip('"')
 DB_NAME = open("/app/backend/.env").read().split("DB_NAME=")[1].split()[0].strip().strip('"')
 

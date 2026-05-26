@@ -13,7 +13,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 ADMIN = "admin@cloudtax.ca"
 CPA = "pallavi@cloudtax.ca"

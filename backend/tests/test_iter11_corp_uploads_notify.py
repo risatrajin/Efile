@@ -30,7 +30,7 @@ def _read_frontend_env():
 BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or _read_frontend_env() or "").rstrip("/")
 assert BASE_URL, "REACT_APP_BACKEND_URL not configured"
 API = BASE_URL + "/api"
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 def _login(email):

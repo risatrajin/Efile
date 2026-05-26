@@ -9,9 +9,9 @@ if not BASE_URL:
     BASE_URL = "http://localhost:8001"
 
 ADMIN_EMAIL = "admin@cloudtax.ca"
-ADMIN_PWD = "CloudTax2026!"
+ADMIN_PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 NON_ADMIN_EMAIL = "kaur@example.com"  # REFERRED, low impact
-NON_ADMIN_PWD = "CloudTax2026!"
+NON_ADMIN_PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 @pytest.fixture(scope="module")

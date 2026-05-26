@@ -18,7 +18,14 @@ def iso(dt):
     return dt.astimezone(timezone.utc)
 
 
-def mk_user(email, name, role, phone=None, password="CloudTax2026!"):
+# The seed password is read from ``ADMIN_PASSWORD`` (or its alias
+# ``SEED_PASSWORD``) so production seeds never use the hardcoded sentinel.
+# Local dev gets the documented sentinel for convenience.
+_SEED_PWD = os.environ.get("SEED_PASSWORD") or os.environ.get("ADMIN_PASSWORD") or "CloudTax2026!"
+
+
+def mk_user(email, name, role, phone=None, password=None):
+    password = password or _SEED_PWD
     return {
         "id": str(uuid.uuid4()),
         "email": email.lower(),

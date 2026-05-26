@@ -20,7 +20,7 @@ import requests
 
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 ADMIN_EMAIL = "nim@cloudtax.ca"
-PWD = "CloudTax2026!"
+PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 @pytest.fixture(scope="module")

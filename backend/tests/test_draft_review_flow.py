@@ -31,7 +31,7 @@ def _read_frontend_env_url() -> str:
 
 BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or _read_frontend_env_url()).rstrip("/")
 assert BASE_URL, "REACT_APP_BACKEND_URL not set in env or /app/frontend/.env"
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 ADMIN = "admin@cloudtax.ca"
 CPA = "terryann@cloudtax.ca"  # Thompson's assigned CPA

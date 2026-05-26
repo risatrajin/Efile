@@ -322,7 +322,8 @@ export default function WsDashboard() {
       const onboarding = data.filter((e) => e.status === "ONBOARDING");
       const map = {};
       await Promise.all(onboarding.map(async (e) => {
-        try { const { data: p } = await api.get(`/engagements/${e.id}/onboarding-progress`); map[e.id] = p; } catch { /* ignore */ }
+        try { const { data: p } = await api.get(`/engagements/${e.id}/onboarding-progress`); map[e.id] = p; }
+        catch (err) { console.debug("[WsDashboard] onboarding-progress for", e.id, "failed:", err?.response?.status); }
       }));
       setProgressMap(map);
     } catch (x) { setErr(fmtError(x)); }
@@ -331,7 +332,8 @@ export default function WsDashboard() {
 
   const setViewPersist = (v) => {
     setView(v);
-    try { localStorage.setItem("ct_ws_dash_view", v); } catch { /* ignore */ }
+    try { localStorage.setItem("ct_ws_dash_view", v); }
+    catch (e) { console.debug("[WsDashboard] persist view failed:", e); }
   };
 
   const moveToCloudtax = async (eng) => {

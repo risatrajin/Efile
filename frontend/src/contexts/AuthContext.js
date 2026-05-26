@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { api, fmtError } from "../lib/api";
 import { getToken, setToken, clearToken } from "../lib/tokenStorage";
 
@@ -75,8 +75,14 @@ export function AuthProvider({ children }) {
     setUser(false);
   };
 
+  // Memoise so consumers don't re-render on every AuthProvider parent render.
+  const value = useMemo(
+    () => ({ user, booting, login, verifyLoginOtp, logout, setUser }),
+    [user, booting]
+  );
+
   return (
-    <AuthCtx.Provider value={{ user, booting, login, verifyLoginOtp, logout, setUser }}>
+    <AuthCtx.Provider value={value}>
       {children}
     </AuthCtx.Provider>
   );

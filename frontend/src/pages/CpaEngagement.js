@@ -524,7 +524,11 @@ function T183ManagementCard({ eng, t183, onChanged }) {
       const blobUrl = URL.createObjectURL(resp.data);
       window.open(blobUrl, "_blank");
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-    } catch (_) { /* swallow */ }
+    } catch (e) {
+      // Non-fatal — the inline preview is a convenience; the main download
+      // link continues to work. Log for ops.
+      console.debug("[CpaEngagement] inline T183 preview failed:", e);
+    }
   };
 
   return (
@@ -681,7 +685,13 @@ export default function CpaEngagement() {
     try {
       const t = await api.get(`/engagements/${eid}/t183`);
       setT183(t.data);
-    } catch (_) { /* ignore */ }
+    } catch (e) {
+      // 404 is expected when no T183 has been generated yet; only log
+      // unexpected statuses so genuine server errors surface in ops.
+      if (e?.response?.status && e.response.status !== 404) {
+        console.debug("[CpaEngagement] loadT183 failed:", e.response.status, e);
+      }
+    }
   };
   useEffect(() => { load(); }, [eid]);
 

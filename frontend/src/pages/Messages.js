@@ -46,7 +46,7 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
     try {
       await api.patch("/messages/read", { engagement_id: engagementId });
       onUnreadChange && onUnreadChange();
-    } catch { /* ignore */ }
+    } catch (e) { console.debug("[Messages] markRead failed:", e?.response?.status); }
   }, [engagementId, onUnreadChange]);
 
   useEffect(() => { if (!engagementId) return; setErr(""); load().then(markRead); }, [engagementId, load, markRead]);
@@ -67,7 +67,7 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
         setMsgs((prev) => prev.some((x) => x.id === m.id) ? prev : [...prev, m]);
         scrollToBottom();
         if (m.sender?.id !== user?.id) markRead();
-      } catch { /* ignore */ }
+      } catch (e) { console.debug("[Messages] SSE parse failed:", e); }
     });
     es.onerror = () => { /* let it auto-retry */ };
     return () => { es && es.close(); };

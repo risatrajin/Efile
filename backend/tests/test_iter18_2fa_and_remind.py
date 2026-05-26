@@ -10,9 +10,9 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.pr
 API = f"{BASE_URL}/api"
 
 KAUR_EMAIL = "kaur@example.com"
-KAUR_PWD = "CloudTax2026!"
+KAUR_PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 PALLAVI_EMAIL = "pallavi@cloudtax.ca"
-PALLAVI_PWD = "CloudTax2026!"
+PALLAVI_PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 def _login(email, password):

@@ -12,7 +12,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 TPL_PATH = "/app/backend/templates/t183-25e.pdf"
 
 # Real PNG (200x60 transparent with a black horizontal line) generated via PIL

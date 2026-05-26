@@ -16,11 +16,11 @@ import zipfile
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.preview.emergentagent.com").rstrip("/")
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 def _login(email):
-    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": PASSWORD}, verify=False, timeout=15)
+    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": PASSWORD}, timeout=15)
     assert r.status_code == 200, r.text
     return r.json().get("token")
 
@@ -31,8 +31,7 @@ def _admin_login():
     import re, time
     r = requests.post(
         f"{BASE_URL}/api/auth/login",
-        json={"email": "nim@cloudtax.ca", "password": PASSWORD},
-        verify=False, timeout=15,
+        json={"email": "nim@cloudtax.ca", "password": PASSWORD}, timeout=15,
     )
     d = r.json()
     if d.get("token"):
@@ -55,8 +54,7 @@ def _admin_login():
         raise RuntimeError("No OTP in logs")
     v = requests.post(
         f"{BASE_URL}/api/auth/2fa/verify-login",
-        json={"challenge_id": d["challenge_id"], "code": code},
-        verify=False, timeout=10,
+        json={"challenge_id": d["challenge_id"], "code": code}, timeout=10,
     ).json()
     return v["token"]
 
@@ -69,8 +67,7 @@ def test_download_all_returns_zip_for_drbala_engagement():
 
     engs = requests.get(
         f"{BASE_URL}/api/engagements",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     ).json()
     assert engs, "expected at least one engagement for drbala"
     eid = engs[0]["id"]
@@ -81,8 +78,7 @@ def test_download_all_returns_zip_for_drbala_engagement():
 
     r = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents/download-all",
-        headers={"Authorization": f"Bearer {admin_tok}"},
-        verify=False, timeout=30,
+        headers={"Authorization": f"Bearer {admin_tok}"}, timeout=30,
     )
     # If no files uploaded yet → 404 is correct behavior. We assert the
     # endpoint responds sanely for either case.
@@ -106,8 +102,7 @@ def test_download_all_rejects_ws_partners():
     # Find any engagement the partner can see (they create onboarding ones)
     engs = requests.get(
         f"{BASE_URL}/api/engagements",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     ).json()
     if not engs:
         import pytest
@@ -115,8 +110,7 @@ def test_download_all_rejects_ws_partners():
     eid = engs[0]["id"]
     r = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents/download-all",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     )
     assert r.status_code == 403, r.text
 

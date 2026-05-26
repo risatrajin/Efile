@@ -7,8 +7,8 @@ import requests
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
-ADMIN = {"email": "admin@cloudtax.ca", "password": "CloudTax2026!"}
-CPA = {"email": "pallavi@cloudtax.ca", "password": "CloudTax2026!"}
+ADMIN = {"email": "admin@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
+CPA = {"email": "pallavi@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 
 
 def _login(creds):

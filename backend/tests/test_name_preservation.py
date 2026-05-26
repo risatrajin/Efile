@@ -11,15 +11,14 @@ import uuid
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.preview.emergentagent.com").rstrip("/")
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 WS_EMAIL = "rajin@cloudtax.ca"
 
 
 def _ws_token():
     r = requests.post(
         f"{BASE_URL}/api/auth/login",
-        json={"email": WS_EMAIL, "password": PASSWORD},
-        verify=False, timeout=10,
+        json={"email": WS_EMAIL, "password": PASSWORD}, timeout=10,
     )
     assert r.status_code == 200, r.text
     return r.json()["token"]
@@ -29,8 +28,7 @@ def _delete_engagement(tok, eid):
     try:
         requests.delete(
             f"{BASE_URL}/api/engagements/{eid}",
-            headers={"Authorization": f"Bearer {tok}"},
-            verify=False, timeout=5,
+            headers={"Authorization": f"Bearer {tok}"}, timeout=5,
         )
     except Exception:
         pass
@@ -49,16 +47,14 @@ def test_multi_word_first_name_preserved_on_create():
             "corp_name": "Test Medical PC",
             "province": "ON",
             "tier": "STANDARD",
-        },
-        verify=False, timeout=10,
+        }, timeout=10,
     )
     assert r.status_code == 200, r.text
     eid = r.json()["id"]
     try:
         g = requests.get(
             f"{BASE_URL}/api/engagements/{eid}",
-            headers={"Authorization": f"Bearer {tok}"},
-            verify=False, timeout=10,
+            headers={"Authorization": f"Bearer {tok}"}, timeout=10,
         ).json()
         c = g.get("client", {})
         assert c.get("first_name") == "Dr Bala", c
@@ -82,8 +78,7 @@ def test_patch_preserves_multi_word_names():
             "corp_name": "Jane MPC",
             "province": "ON",
             "tier": "STANDARD",
-        },
-        verify=False, timeout=10,
+        }, timeout=10,
     )
     eid = r.json()["id"]
     try:
@@ -98,14 +93,12 @@ def test_patch_preserves_multi_word_names():
                 "corp_name": "Jane MPC",
                 "province": "ON",
                 "tier": "STANDARD",
-            },
-            verify=False, timeout=10,
+            }, timeout=10,
         )
         assert p.status_code == 200, p.text
         g = requests.get(
             f"{BASE_URL}/api/engagements/{eid}",
-            headers={"Authorization": f"Bearer {tok}"},
-            verify=False, timeout=10,
+            headers={"Authorization": f"Bearer {tok}"}, timeout=10,
         ).json()
         c = g.get("client", {})
         assert c.get("first_name") == "Van Der", c
@@ -128,15 +121,13 @@ def test_single_word_name_still_works():
             "corp_name": "Alex Corp",
             "province": "ON",
             "tier": "STANDARD",
-        },
-        verify=False, timeout=10,
+        }, timeout=10,
     )
     eid = r.json()["id"]
     try:
         g = requests.get(
             f"{BASE_URL}/api/engagements/{eid}",
-            headers={"Authorization": f"Bearer {tok}"},
-            verify=False, timeout=10,
+            headers={"Authorization": f"Bearer {tok}"}, timeout=10,
         ).json()
         c = g.get("client", {})
         assert c.get("first_name") == "Alex"

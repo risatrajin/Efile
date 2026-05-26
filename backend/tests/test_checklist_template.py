@@ -13,7 +13,7 @@ import pytest
 
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 assert BASE, "REACT_APP_BACKEND_URL must be set"
-PWD = "CloudTax2026!"
+PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 DEFAULT_TEMPLATE_LABELS = [
     "Client consented to pilot",

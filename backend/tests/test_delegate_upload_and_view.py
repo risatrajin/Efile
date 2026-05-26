@@ -21,12 +21,12 @@ import uuid
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.preview.emergentagent.com").rstrip("/")
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 PRIMARY_EMAIL = "drbala@yopmail.com"
 
 
 def _login(email):
-    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": PASSWORD}, verify=False, timeout=15)
+    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": PASSWORD}, timeout=15)
     return r.json().get("token") if r.status_code == 200 else None
 
 
@@ -38,16 +38,14 @@ def _ensure_delegate():
 
     eid = requests.get(
         f"{BASE_URL}/api/engagements",
-        headers={"Authorization": f"Bearer {primary}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {primary}"}, timeout=10,
     ).json()[0]["id"]
 
     email = f"delg-perms-{uuid.uuid4().hex[:8]}@yopmail.com"
     r = requests.post(
         f"{BASE_URL}/api/engagements/{eid}/delegates",
         headers={"Authorization": f"Bearer {primary}"},
-        json={"email": email, "name": "Perm Tester", "relationship": "bookkeeper"},
-        verify=False, timeout=10,
+        json={"email": email, "name": "Perm Tester", "relationship": "bookkeeper"}, timeout=10,
     )
     assert r.status_code == 200, r.text
     payload = r.json()
@@ -56,8 +54,7 @@ def _ensure_delegate():
         token = payload["invite_link"].rsplit("token=", 1)[-1]
         requests.post(
             f"{BASE_URL}/api/auth/set-password",
-            json={"token": token, "password": PASSWORD},
-            verify=False, timeout=10,
+            json={"token": token, "password": PASSWORD}, timeout=10,
         )
     delg = _login(email)
     assert delg, "delegate login failed"
@@ -71,7 +68,7 @@ def test_delegate_can_upload_and_view():
     # 1) List docs
     docs = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents",
-        headers=H, verify=False, timeout=10,
+        headers=H, timeout=10,
     ).json()
     assert isinstance(docs, list) and len(docs) >= 1, docs
 
@@ -83,8 +80,7 @@ def test_delegate_can_upload_and_view():
     r = requests.post(
         f"{BASE_URL}/api/documents/{target['id']}/upload-url",
         headers={**H, "Content-Type": "application/json"},
-        json={"content_type": "text/plain", "file_name": "delg.txt"},
-        verify=False, timeout=10,
+        json={"content_type": "text/plain", "file_name": "delg.txt"}, timeout=10,
     )
     assert r.status_code == 200, r.text
     assert r.json().get("upload_url")
@@ -93,7 +89,7 @@ def test_delegate_can_upload_and_view():
     files = {"file": ("delg.txt", b"delegate upload payload", "text/plain")}
     r = requests.post(
         f"{BASE_URL}/api/documents/{target['id']}/upload",
-        headers=H, files=files, verify=False, timeout=15,
+        headers=H, files=files, timeout=15,
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -103,7 +99,7 @@ def test_delegate_can_upload_and_view():
     # Refetch — confirm the file landed in files[]
     docs2 = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents",
-        headers=H, verify=False, timeout=10,
+        headers=H, timeout=10,
     ).json()
     target2 = next(d for d in docs2 if d["id"] == target["id"])
     assert any(f["id"] == body["file_id"] for f in (target2.get("files") or []))
@@ -111,7 +107,7 @@ def test_delegate_can_upload_and_view():
     # 4) download-url — must succeed for delegate
     r = requests.get(
         f"{BASE_URL}/api/documents/{target['id']}/download-url",
-        headers=H, verify=False, timeout=10,
+        headers=H, timeout=10,
     )
     assert r.status_code == 200, r.text
     assert r.json().get("download_url")
@@ -119,21 +115,21 @@ def test_delegate_can_upload_and_view():
     # 5) Per-file download — must succeed
     r = requests.get(
         f"{BASE_URL}/api/documents/{target['id']}/files/{body['file_id']}/download",
-        headers=H, verify=False, timeout=15,
+        headers=H, timeout=15,
     )
     assert r.status_code == 200, r.text
 
     # 6) Legacy doc-level download (local fallback) — must succeed
     r = requests.get(
         f"{BASE_URL}/api/documents/{target['id']}/download",
-        headers=H, verify=False, timeout=15,
+        headers=H, timeout=15,
     )
     assert r.status_code == 200, r.text
 
     # 7) Bulk ZIP download — must succeed
     r = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents/download-all",
-        headers=H, verify=False, timeout=30,
+        headers=H, timeout=30,
     )
     assert r.status_code == 200, r.text
     assert r.headers.get("content-type", "").startswith("application/zip")
@@ -142,16 +138,14 @@ def test_delegate_can_upload_and_view():
     r = requests.post(
         f"{BASE_URL}/api/engagements/{eid}/t183/sign",
         headers={**H, "Content-Type": "application/json"},
-        json={"signature": "data:image/png;base64,iVBORw0KGgo=", "signer_name": "Perm Tester"},
-        verify=False, timeout=10,
+        json={"signature": "data:image/png;base64,iVBORw0KGgo=", "signer_name": "Perm Tester"}, timeout=10,
     )
     assert r.status_code == 403, r.text
 
     # Cleanup — revoke the delegate so subsequent runs can re-create
     requests.delete(
         f"{BASE_URL}/api/delegates/{delegate_id}",
-        headers={"Authorization": f"Bearer {primary}"},
-        verify=False, timeout=5,
+        headers={"Authorization": f"Bearer {primary}"}, timeout=5,
     )
 
 
@@ -161,22 +155,22 @@ def test_primary_client_paths_unchanged_after_delegate_fix():
     primary = _login(PRIMARY_EMAIL)
     H = {"Authorization": f"Bearer {primary}"}
     eid = requests.get(
-        f"{BASE_URL}/api/engagements", headers=H, verify=False, timeout=10,
+        f"{BASE_URL}/api/engagements", headers=H, timeout=10,
     ).json()[0]["id"]
     docs = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents",
-        headers=H, verify=False, timeout=10,
+        headers=H, timeout=10,
     ).json()
     target = next((d for d in docs if d.get("files")), None)
     assert target
     fid = target["files"][0]["id"]
     r = requests.get(
         f"{BASE_URL}/api/documents/{target['id']}/files/{fid}/download",
-        headers=H, verify=False, timeout=15,
+        headers=H, timeout=15,
     )
     assert r.status_code == 200, r.text
     r = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents/download-all",
-        headers=H, verify=False, timeout=30,
+        headers=H, timeout=30,
     )
     assert r.status_code == 200

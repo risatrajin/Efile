@@ -25,7 +25,7 @@ API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "admin@cloudtax.ca"
 CPA_EMAIL = "pallavi@cloudtax.ca"
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
 
 def _login(session: requests.Session, email: str) -> dict:

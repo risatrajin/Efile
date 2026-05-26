@@ -19,7 +19,7 @@ if not BASE_URL:
     except Exception:
         pass
 
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 THOMPSON_EID = "cc22901b-b6a2-4997-b84a-a7bfc2b307f0"
 
 

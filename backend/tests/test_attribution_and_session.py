@@ -14,12 +14,12 @@ import uuid
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://health-wealth-tax.preview.emergentagent.com").rstrip("/")
-PASSWORD = "CloudTax2026!"
+PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 PRIMARY_EMAIL = "drbala@yopmail.com"
 
 
 def _login(email):
-    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": PASSWORD}, verify=False, timeout=15)
+    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": PASSWORD}, timeout=15)
     return r.json().get("token") if r.status_code == 200 else None
 
 
@@ -28,8 +28,7 @@ def _make_delegate(primary_tok, eid, relationship="bookkeeper"):
     r = requests.post(
         f"{BASE_URL}/api/engagements/{eid}/delegates",
         headers={"Authorization": f"Bearer {primary_tok}"},
-        json={"email": email, "name": "Sam Bookkeeper", "relationship": relationship},
-        verify=False, timeout=10,
+        json={"email": email, "name": "Sam Bookkeeper", "relationship": relationship}, timeout=10,
     )
     assert r.status_code == 200, r.text
     payload = r.json()
@@ -37,8 +36,7 @@ def _make_delegate(primary_tok, eid, relationship="bookkeeper"):
         token = payload["invite_link"].rsplit("token=", 1)[-1]
         requests.post(
             f"{BASE_URL}/api/auth/set-password",
-            json={"token": token, "password": PASSWORD},
-            verify=False, timeout=10,
+            json={"token": token, "password": PASSWORD}, timeout=10,
         )
     delg_tok = _login(email)
     return delg_tok, payload["delegate"]["id"], email
@@ -47,8 +45,7 @@ def _make_delegate(primary_tok, eid, relationship="bookkeeper"):
 def _pick_pending_doc(tok, eid):
     docs = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents",
-        headers={"Authorization": f"Bearer {tok}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {tok}"}, timeout=10,
     ).json()
     return next(d for d in docs if d["status"] in ("PENDING", "UPLOADED"))
 
@@ -58,7 +55,7 @@ def _upload(tok, doc_id, body=b"hi", name="x.txt"):
     r = requests.post(
         f"{BASE_URL}/api/documents/{doc_id}/upload",
         headers={"Authorization": f"Bearer {tok}"},
-        files=files, verify=False, timeout=15,
+        files=files, timeout=15,
     )
     assert r.status_code == 200, r.text
     return r.json()
@@ -68,8 +65,7 @@ def test_primary_client_upload_attribution():
     primary = _login(PRIMARY_EMAIL)
     eid = requests.get(
         f"{BASE_URL}/api/engagements",
-        headers={"Authorization": f"Bearer {primary}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {primary}"}, timeout=10,
     ).json()[0]["id"]
     doc = _pick_pending_doc(primary, eid)
     res = _upload(primary, doc["id"], b"primary upload")
@@ -77,8 +73,7 @@ def test_primary_client_upload_attribution():
 
     docs2 = requests.get(
         f"{BASE_URL}/api/engagements/{eid}/documents",
-        headers={"Authorization": f"Bearer {primary}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {primary}"}, timeout=10,
     ).json()
     target = next(d for d in docs2 if d["id"] == doc["id"])
     f = next(f for f in target["files"] if f["id"] == fid)
@@ -92,8 +87,7 @@ def test_delegate_upload_attribution_carries_relationship():
     primary = _login(PRIMARY_EMAIL)
     eid = requests.get(
         f"{BASE_URL}/api/engagements",
-        headers={"Authorization": f"Bearer {primary}"},
-        verify=False, timeout=10,
+        headers={"Authorization": f"Bearer {primary}"}, timeout=10,
     ).json()[0]["id"]
 
     delg_tok, delg_id, _ = _make_delegate(primary, eid, relationship="bookkeeper")
@@ -103,8 +97,7 @@ def test_delegate_upload_attribution_carries_relationship():
         fid = res["file_id"]
         docs = requests.get(
             f"{BASE_URL}/api/engagements/{eid}/documents",
-            headers={"Authorization": f"Bearer {delg_tok}"},
-            verify=False, timeout=10,
+            headers={"Authorization": f"Bearer {delg_tok}"}, timeout=10,
         ).json()
         target = next(d for d in docs if d["id"] == doc["id"])
         f = next(f for f in target["files"] if f["id"] == fid)
@@ -115,8 +108,7 @@ def test_delegate_upload_attribution_carries_relationship():
     finally:
         requests.delete(
             f"{BASE_URL}/api/delegates/{delg_id}",
-            headers={"Authorization": f"Bearer {primary}"},
-            verify=False, timeout=5,
+            headers={"Authorization": f"Bearer {primary}"}, timeout=5,
         )
 
 
@@ -130,8 +122,7 @@ def test_auth_header_wins_over_cookie():
     partner_session = requests.Session()
     r = partner_session.post(
         f"{BASE_URL}/api/auth/login",
-        json={"email": "rajin@cloudtax.ca", "password": PASSWORD},
-        verify=False, timeout=15,
+        json={"email": "rajin@cloudtax.ca", "password": PASSWORD}, timeout=15,
     )
     assert r.status_code == 200
     # Mix the partner's cookies with the primary's bearer token
@@ -139,8 +130,7 @@ def test_auth_header_wins_over_cookie():
     me = requests.get(
         f"{BASE_URL}/api/auth/me",
         headers={"Authorization": f"Bearer {primary}"},
-        cookies=cookies,
-        verify=False, timeout=10,
+        cookies=cookies, timeout=10,
     )
     assert me.status_code == 200, me.text
     body = me.json()

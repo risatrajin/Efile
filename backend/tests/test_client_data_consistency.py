@@ -30,7 +30,7 @@ BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 def admin_token():
     r = requests.post(
         f"{BASE}/api/auth/login",
-        json={"email": "nim@cloudtax.ca", "password": "CloudTax2026!"},
+        json={"email": "nim@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")},
         timeout=20,
     )
     assert r.status_code == 200, r.text
@@ -44,7 +44,7 @@ def _h(t):
 def _ws_partner_token():
     r = requests.post(
         f"{BASE}/api/auth/login",
-        json={"email": "rajin@cloudtax.ca", "password": "CloudTax2026!"},
+        json={"email": "rajin@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")},
         timeout=20,
     )
     if r.status_code != 200 or r.json().get("two_factor_required"):
@@ -143,7 +143,7 @@ class TestAllViewsInSync:
 
         cpa_r = requests.post(
             f"{BASE}/api/auth/login",
-            json={"email": "pallavi@cloudtax.ca", "password": "CloudTax2026!"},
+            json={"email": "pallavi@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")},
             timeout=20,
         )
         if cpa_r.status_code == 200 and not cpa_r.json().get("two_factor_required"):

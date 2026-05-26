@@ -83,10 +83,15 @@ export default function WsFileDetail() {
       try {
         const { data: d } = await api.get(`/engagements/${eid}/documents/summary`);
         setDocs(d);
-      } catch {
-        try { const { data: d } = await api.get(`/engagements/${eid}/documents`); setDocs(d); } catch { /* ignore */ }
+      } catch (e1) {
+        // Fall back to the legacy non-summary endpoint when summary fails
+        // (some older engagements don't have a summary). Both failing is
+        // still non-fatal — surface in console for diagnosis.
+        try { const { data: d } = await api.get(`/engagements/${eid}/documents`); setDocs(d); }
+        catch (e2) { console.debug("[WsFileDetail] documents fetch failed:", e1, e2); }
       }
-      try { const { data: t } = await api.get(`/engagements/${eid}/time-entries`); setTime(t); } catch { /* expected for ws */ }
+      try { const { data: t } = await api.get(`/engagements/${eid}/time-entries`); setTime(t); }
+      catch (e) { console.debug("[WsFileDetail] time-entries fetch (expected for WS_PARTNER):", e?.response?.status); }
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);

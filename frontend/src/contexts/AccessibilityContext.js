@@ -48,8 +48,11 @@ export function AccessibilityProvider({ children }) {
   const set = useCallback((patch) => setState((s) => ({ ...s, ...patch })), []);
   const reset = useCallback(() => setState({ ...DEFAULTS }), []);
 
+  // Memoise so consumers don't re-render on parent renders.
+  const value = useMemo(() => ({ ...state, set, reset }), [state, set, reset]);
+
   return (
-    <A11yContext.Provider value={{ ...state, set, reset }}>
+    <A11yContext.Provider value={value}>
       {children}
     </A11yContext.Provider>
   );
