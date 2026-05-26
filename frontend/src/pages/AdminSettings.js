@@ -1217,6 +1217,93 @@ function SystemTab() {
       <p className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
         This page shows exactly what the backend will use when generating invitation links, password-reset emails, and CORS responses. Share this with the deploy operator when debugging URL or email delivery issues.
       </p>
+      <LaunchCleanupCard />
+    </div>
+  );
+}
+
+function LaunchCleanupCard() {
+  // One-shot cleanup before going live. Confirmation string must be typed
+  // verbatim — guards against accidental clicks. Surfaces wipe counts so
+  // the operator can audit exactly what was deleted.
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [wipeS3, setWipeS3] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [result, setResult] = useState(null);
+  const phrase = "WIPE EVERYTHING EXCEPT ADMINS";
+
+  const run = async () => {
+    setBusy(true); setErr(""); setResult(null);
+    try {
+      const { data } = await api.post("/admin/prepare-for-launch", {
+        confirmation: confirm,
+        enforce_2fa_on_admins: true,
+        wipe_s3_objects: wipeS3,
+      });
+      setResult(data);
+    } catch (e) { setErr(fmtError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card" style={{ borderColor: "#ffcdd2", background: "#fff7f7" }} data-testid="launch-cleanup-card">
+      <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: "#a10f0f" }}>Danger zone — prepare for launch</h2>
+      <p className="muted" style={{ fontSize: 12, lineHeight: 1.55 }}>
+        Wipes every user that is not an admin and ALL of their data — engagements, documents, messages, delegates, notifications, OTPs, sessions, login history. Also forces 2FA on all admins. This action cannot be undone.
+      </p>
+      {!open && !result && (
+        <button
+          className="btn btn-secondary btn-sm"
+          style={{ marginTop: 12, color: "#a10f0f", borderColor: "#ffcdd2" }}
+          onClick={() => setOpen(true)}
+          data-testid="launch-cleanup-open"
+        >Wipe demo data &amp; go live…</button>
+      )}
+      {open && !result && (
+        <div style={{ marginTop: 12 }}>
+          <div className="field">
+            <label className="field-label">Type <code>{phrase}</code> to confirm</label>
+            <input
+              className="input"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoFocus
+              data-testid="launch-cleanup-confirm-input"
+            />
+          </div>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, marginTop: 8 }}>
+            <input type="checkbox" checked={wipeS3} onChange={(e) => setWipeS3(e.target.checked)} data-testid="launch-cleanup-wipe-s3" />
+            Also delete every object in the configured S3 bucket
+          </label>
+          {err && <div className="alert alert-risk" style={{ marginTop: 10, fontSize: 12 }}>{err}</div>}
+          <div className="flex gap-2" style={{ marginTop: 12 }}>
+            <button
+              className="btn btn-primary btn-sm"
+              style={{ background: "#a10f0f", borderColor: "#a10f0f" }}
+              disabled={busy || confirm !== phrase}
+              onClick={run}
+              data-testid="launch-cleanup-execute"
+            >{busy ? <span className="spinner" /> : "Execute wipe"}</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => { setOpen(false); setConfirm(""); }} disabled={busy}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {result && (
+        <div style={{ marginTop: 12, background: "#e8f5e9", border: "1px solid #c8e6c9", padding: 12, borderRadius: 10, fontSize: 12, lineHeight: 1.55 }} data-testid="launch-cleanup-result">
+          <div style={{ fontWeight: 600, color: "#1b5e20", marginBottom: 6 }}>Cleanup complete</div>
+          <div><strong>Executed by:</strong> {result.executed_by}</div>
+          <div><strong>Survivors:</strong> {(result.survivors || []).join(", ")}</div>
+          <div style={{ marginTop: 6 }}><strong>Wiped:</strong></div>
+          <ul style={{ paddingLeft: 18, margin: 0 }}>
+            {Object.entries(result.wiped || {}).map(([k, v]) => (
+              <li key={k}><code>{k}</code>: {v}</li>
+            ))}
+          </ul>
+          {result.s3_wipe && <div style={{ marginTop: 6 }}><strong>S3 wipe:</strong> <code>{JSON.stringify(result.s3_wipe)}</code></div>}
+        </div>
+      )}
     </div>
   );
 }

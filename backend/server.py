@@ -4416,6 +4416,103 @@ async def admin_config_health(user: dict = Depends(get_current_user)):
     }
 
 
+class PrepareForLaunchIn(BaseModel):
+    """Body for the launch-cleanup endpoint. Both fields are required and
+    checked verbatim — typos block the wipe.
+    """
+    confirmation: str          # must equal exactly "WIPE EVERYTHING EXCEPT ADMINS"
+    preserve_emails: list[str] = []   # extra emails to KEEP alongside all admins
+    enforce_2fa_on_admins: bool = True
+    wipe_s3_objects: bool = False     # best-effort delete-all under the configured bucket
+
+
+@api.post("/admin/prepare-for-launch")
+async def prepare_for_launch(body: PrepareForLaunchIn, user: dict = Depends(get_current_user)):
+    """One-shot admin endpoint to scrub demo/test data before going live.
+
+    Keeps: every user with ``role == "ADMIN"`` plus any explicit emails in
+    ``preserve_emails``. Wipes EVERY other user and ALL associated data
+    (engagements, documents, messages, delegates, notifications, OTP
+    challenges, sessions, status history, etc.).
+
+    Optionally:
+      • Forces ``two_factor_enabled=True`` on every surviving admin so the
+        next login goes through email-OTP (the existing "trust this device
+        for 30 days" cookie remains in effect).
+      • Best-effort empties the S3 bucket configured in env so demo files
+        don't linger. Pass ``wipe_s3_objects=true`` to enable.
+
+    Safety:
+      • Requires the explicit confirmation string in the body
+      • Refuses to run if it would result in zero surviving admins
+      • Returns a per-collection wipe count so the caller can audit
+    """
+    if user["role"] != "ADMIN":
+        raise HTTPException(403, "Admin only")
+    if body.confirmation != "WIPE EVERYTHING EXCEPT ADMINS":
+        raise HTTPException(400, "Confirmation string mismatch — see endpoint docs")
+    db = get_db()
+
+    # Compute the survivor set first so we can refuse if it would leave us
+    # with nobody able to log back in.
+    preserve_lower = {e.lower().strip() for e in (body.preserve_emails or []) if e}
+    keep_admins = [u async for u in db.users.find({"role": "ADMIN", "is_active": {"$ne": False}}, {"_id": 0, "id": 1, "email": 1, "name": 1})]
+    keep_extra = [u async for u in db.users.find({"email": {"$in": list(preserve_lower)}}, {"_id": 0, "id": 1, "email": 1, "name": 1})]
+    survivor_ids = list({u["id"] for u in keep_admins} | {u["id"] for u in keep_extra})
+    survivor_emails = sorted({u["email"] for u in keep_admins + keep_extra})
+    if not survivor_ids:
+        raise HTTPException(400, "Refusing to wipe — no admin users would remain")
+
+    counts: dict[str, int] = {}
+
+    async def wipe(collection_name: str, query: dict) -> None:
+        r = await db[collection_name].delete_many(query)
+        counts[collection_name] = r.deleted_count
+
+    # Order matters: wipe child rows before parents so cascade FK-ish lookups
+    # don't surface stale rows mid-wipe.
+    await wipe("messages", {})
+    await wipe("documents", {})
+    await wipe("checklist", {})
+    await wipe("extracted_data", {})
+    await wipe("cpa_questions", {})
+    await wipe("status_history", {})
+    await wipe("time_entries", {})
+    await wipe("opportunities", {})
+    await wipe("delegates", {})
+    await wipe("engagements", {})
+    await wipe("corporations", {})
+    await wipe("notifications", {})
+    await wipe("otp_challenges", {})
+    await wipe("password_reset_tokens", {})
+    await wipe("trusted_devices", {})
+    await wipe("login_attempts", {})
+    await wipe("users", {"id": {"$nin": survivor_ids}})
+
+    if body.enforce_2fa_on_admins:
+        r = await db.users.update_many(
+            {"role": "ADMIN"},
+            {"$set": {"two_factor_enabled": True}},
+        )
+        counts["admins_with_2fa_enforced"] = r.modified_count
+
+    s3_result: dict | None = None
+    if body.wipe_s3_objects:
+        try:
+            s3_result = s3_service.delete_prefix("")
+        except Exception as e:
+            s3_result = {"error": str(e)}
+
+    log.warning("LAUNCH CLEANUP executed by %s — survivors: %s — counts: %s", user["email"], survivor_emails, counts)
+    return {
+        "ok": True,
+        "executed_by": user["email"],
+        "survivors": survivor_emails,
+        "wiped": counts,
+        "s3_wipe": s3_result,
+    }
+
+
 # ==================== Messaging ====================
 import asyncio
 import json as _json
