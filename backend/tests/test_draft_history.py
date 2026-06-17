@@ -85,7 +85,7 @@ def test_clean_engagement_has_empty_or_missing_history(cpa_session, client_sessi
     r = cpa_session.get(f"{BASE_URL}/api/engagements", timeout=60)
     if r.status_code != 200:
         # admin fallback
-        admin = _login("admin@cloudtax.ca")
+        admin = _login("nim@cloudtax.ca")
         r = admin.get(f"{BASE_URL}/api/engagements", timeout=60)
     assert r.status_code == 200
     engs = r.json() if isinstance(r.json(), list) else r.json().get("items", [])

@@ -12,7 +12,7 @@ if not BASE_URL:
     BASE_URL = "https://1d802cdd-7d7e-4551-9188-545b5d878d66.preview.emergentagent.com"
 
 # Test credentials from seed
-ADMIN_CREDS = {"email": "admin@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
+ADMIN_CREDS = {"email": "nim@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 CPA_CREDS = {"email": "pallavi@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 CPA2_CREDS = {"email": "terryann@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 WS_CREDS = {"email": "watson@partner.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
@@ -721,7 +721,7 @@ class TestUsers:
             f"{BASE_URL}/api/users/invite",
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
-                "email": "admin@cloudtax.ca",  # Already exists
+                "email": "nim@cloudtax.ca",  # Already exists
                 "name": "Duplicate",
                 "role": "CLIENT"
             }

@@ -21,7 +21,7 @@ def _login(email):
 
 @pytest.fixture(scope="module")
 def admin_token():
-    return _login("admin@cloudtax.ca")
+    return _login("nim@cloudtax.ca")
 
 
 @pytest.fixture(scope="module")

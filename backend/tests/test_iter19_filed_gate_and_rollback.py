@@ -23,7 +23,7 @@ BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or _read_frontend_env() or "
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = "admin@cloudtax.ca"
+ADMIN_EMAIL = "nim@cloudtax.ca"
 CPA_EMAIL = "pallavi@cloudtax.ca"
 PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 

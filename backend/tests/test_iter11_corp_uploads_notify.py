@@ -50,7 +50,7 @@ def _login(email):
 
 @pytest.fixture(scope="session")
 def admin():
-    return _login("admin@cloudtax.ca")
+    return _login("nim@cloudtax.ca")
 
 
 @pytest.fixture(scope="session")

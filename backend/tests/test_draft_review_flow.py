@@ -33,7 +33,7 @@ BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or _read_frontend_env_url())
 assert BASE_URL, "REACT_APP_BACKEND_URL not set in env or /app/frontend/.env"
 PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
-ADMIN = "admin@cloudtax.ca"
+ADMIN = "nim@cloudtax.ca"
 CPA = "terryann@cloudtax.ca"  # Thompson's assigned CPA
 CPA_OTHER = "pallavi@cloudtax.ca"
 WS = "watson@partner.ca"

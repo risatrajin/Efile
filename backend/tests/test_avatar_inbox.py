@@ -45,7 +45,7 @@ def _login(email: str) -> requests.Session:
 
 @pytest.fixture(scope="module")
 def admin():
-    return _login("admin@cloudtax.ca")
+    return _login("nim@cloudtax.ca")
 
 
 @pytest.fixture(scope="module")

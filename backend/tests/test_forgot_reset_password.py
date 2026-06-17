@@ -8,7 +8,7 @@ if not BASE_URL:
     # Fallback only in test execution to avoid hard crash if env missing.
     BASE_URL = "http://localhost:8001"
 
-ADMIN_EMAIL = "admin@cloudtax.ca"
+ADMIN_EMAIL = "nim@cloudtax.ca"
 ADMIN_PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 NON_ADMIN_EMAIL = "kaur@example.com"  # REFERRED, low impact
 NON_ADMIN_PWD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")

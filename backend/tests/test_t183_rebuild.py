@@ -156,7 +156,7 @@ class TestT183Position:
 
     def test_position_requires_upload(self, cpa_token, ws_token):
         # Find a fresh engagement w/o upload (use Liu)
-        admin = login("admin@cloudtax.ca")
+        admin = login("nim@cloudtax.ca")
         items = requests.get(f"{API}/engagements", headers=auth_h(admin), timeout=15).json()
         items = items if isinstance(items, list) else items.get("items") or []
         fresh = None

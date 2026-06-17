@@ -33,7 +33,7 @@ BASE = (os.environ.get("REACT_APP_BACKEND_URL") or _env_url()).rstrip("/")
 assert BASE, "REACT_APP_BACKEND_URL not set"
 PW = "CloudTax2026!"
 
-ADMIN = "admin@cloudtax.ca"
+ADMIN = "nim@cloudtax.ca"
 CPA_TERRY = "terryann@cloudtax.ca"
 CPA_PALLAVI = "pallavi@cloudtax.ca"
 WS = "watson@partner.ca"

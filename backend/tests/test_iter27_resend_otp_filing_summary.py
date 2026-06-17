@@ -15,7 +15,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 
-ADMIN = "admin@cloudtax.ca"
+ADMIN = "nim@cloudtax.ca"
 CPA = "pallavi@cloudtax.ca"
 ENG_ID = "62e8e7e2-cbc1-4dbb-8392-ffd0553a4b65"  # Risat Rajin: t183_signed_at=true (per handoff)
 
@@ -62,7 +62,7 @@ class TestOtp2FA:
         assert "challenge_id" in b
         assert b["expires_in_sec"] == 300
         assert b["resend_after_sec"] == 30
-        # Trial Resend can't deliver to admin@cloudtax.ca, so debug_otp is surfaced
+        # Trial Resend can't deliver to nim@cloudtax.ca, so debug_otp is surfaced
         assert b.get("sent_via_email") in (True, False)
         if not b["sent_via_email"]:
             assert b.get("debug_otp") and len(b["debug_otp"]) == 6 and b["debug_otp"].isdigit()

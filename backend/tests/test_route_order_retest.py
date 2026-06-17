@@ -16,7 +16,7 @@ def login(email):
 @pytest.fixture(scope="module")
 def tokens():
     return {
-        "admin": login("admin@cloudtax.ca"),
+        "admin": login("nim@cloudtax.ca"),
         "cpa": login("pallavi@cloudtax.ca"),
         "ws": login("watson@partner.ca"),
         "client": login("chen@example.com"),

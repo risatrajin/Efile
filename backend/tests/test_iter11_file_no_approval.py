@@ -46,7 +46,7 @@ def _run(coro):
 
 def test_file_with_cra_succeeds_without_client_approval(db):
     cpa = login("terryann@cloudtax.ca")
-    admin = login("admin@cloudtax.ca")
+    admin = login("nim@cloudtax.ca")
 
     # Find Ahmed engagement (IN_REVIEW + approved + t183 signed) — we'll temporarily strip approval
     eng = _run(db.engagements.find_one({"id": "d81902dc-5262-4435-8af1-19065ad1a3cc"}))
