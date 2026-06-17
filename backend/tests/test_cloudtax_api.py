@@ -56,7 +56,7 @@ class TestAuth:
         assert data["user"]["role"] == "CPA"
         print(f"CPA login success: {data['user']['name']}")
     
-    def test_login_ws_partner_success(self):
+    def test_login_partner_success(self):
         """POST /api/auth/login with Partner credentials"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json=WS_CREDS)
         assert response.status_code == 200
@@ -181,7 +181,7 @@ class TestRBAC:
         assert isinstance(engagements, list)
         print(f"CPA sees {len(engagements)} engagements (filtered by assigned_cpa_id)")
     
-    def test_ws_partner_cannot_access_documents(self, ws_token, admin_token):
+    def test_partner_cannot_access_documents(self, ws_token, admin_token):
         """Partner cannot access GET /api/engagements/{id}/documents (403)"""
         # First get an engagement ID as admin
         admin_resp = requests.get(

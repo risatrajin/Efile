@@ -248,7 +248,7 @@ class TestDeleteDraft:
         r = client_inprep_s.delete(f"{BASE_URL}/api/engagements/{eid}/draft", timeout=15)
         assert r.status_code == 403, f"client should be 403, got {r.status_code} {r.text}"
 
-    def test_delete_draft_forbidden_for_ws_partner(self, cpa_s, ws_s, client_inprep_s):
+    def test_delete_draft_forbidden_for_partner(self, cpa_s, ws_s, client_inprep_s):
         eng = _client_engagement(client_inprep_s)
         eid = eng["id"]
         # ensure draft exists

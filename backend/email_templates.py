@@ -374,7 +374,7 @@ def _tpl_cpa_client_assigned(d: dict):
     name = d.get("client_name") or "a client"
     corp = d.get("corporation_name") or "—"
     tier = d.get("tier") or "Standard"
-    ws = d.get("ws_advisor_name") or "Ownr team"
+    ws = d.get("partner_advisor_name") or "Ownr team"
     link = d.get("link") or f"{_frontend_url()}/cpa/files"
     body = (
         _h1(f"New client assigned: {name}")
@@ -464,7 +464,7 @@ def _tpl_admin_new_referral(d: dict):
     client = d.get("client_name") or "a client"
     corp = d.get("corporation_name") or "—"
     tier = d.get("tier") or "Standard"
-    ws = d.get("ws_advisor_name") or "Ownr"
+    ws = d.get("partner_advisor_name") or "Ownr"
     link = d.get("link") or f"{_frontend_url()}/admin/dashboard"
     body = (
         _h1(f"New client referred by Ownr: {client}")

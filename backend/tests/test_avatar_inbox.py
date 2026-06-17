@@ -168,7 +168,7 @@ class TestMessagesInbox:
             me = client.get(f"{BASE_URL}/api/auth/me").json()
             assert rows[0]["client"]["id"] == me["id"]
 
-    def test_ws_partner_forbidden(self, ws):
+    def test_partner_forbidden(self, ws):
         r = ws.get(f"{BASE_URL}/api/messages/inbox")
         assert r.status_code == 403
 

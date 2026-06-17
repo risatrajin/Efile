@@ -1,4 +1,4 @@
-"""Iter 48: invite email template — CloudTax + Wealthsimple logo + first_name preservation.
+"""Iter 48: invite email template — CloudTax logo + first_name preservation.
 
 Covers:
  - ``_resolve_first_name`` precedence (first_name > name-first-token > empty)
@@ -6,7 +6,7 @@ Covers:
    template (client / CPA / Partner)
  - staff invites (no first_name) fall back to the first whitespace token of ``name``
  - no name at all → greeting omits the trailing comma
- - combined CloudTax+Wealthsimple logo PNG is referenced in the email HTML
+ - the CloudTax logo PNG is referenced in operator (client) email HTML
 """
 from email_templates import (
     _resolve_first_name,
@@ -78,6 +78,6 @@ def test_combined_logo_is_referenced_in_email_html():
         "corporation_name": "X",
         "link": "https://x/y",
     })
-    assert "cloudtax-wealthsimple-logo@2x.png" in html
-    # alt text carries the partnership branding even for image-blocked clients
-    assert 'alt="CloudTax + Wealthsimple"' in html
+    assert "cloud-tax-logo@2x.png" in html
+    # alt text carries the operator brand even for image-blocked clients
+    assert 'alt="CloudTax"' in html

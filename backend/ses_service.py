@@ -55,7 +55,7 @@ async def send_invite_async(to_email: str, name: str, invite_link: str, role: st
     role_l = (role or "").lower()
     template = (
         "welcome_cpa" if role_l == "cpa"
-        else ("welcome_ws" if role_l in ("ws_partner", "partner", "ws") else "welcome_client")
+        else ("welcome_ws" if role_l in ("partner",) else "welcome_client")
     )
     payload = {"name": name, "link": invite_link}
     if first_name:
@@ -70,7 +70,7 @@ def send_invite(to_email: str, name: str, invite_link: str, role: str, first_nam
     role_l = (role or "").lower()
     template = (
         "welcome_cpa" if role_l == "cpa"
-        else ("welcome_ws" if role_l in ("ws_partner", "partner", "ws") else "welcome_client")
+        else ("welcome_ws" if role_l in ("partner",) else "welcome_client")
     )
     payload = {"name": name, "link": invite_link}
     if first_name:

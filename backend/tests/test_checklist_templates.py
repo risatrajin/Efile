@@ -180,7 +180,7 @@ class TestCpaReviewTemplate:
         row = next(e for e in engs if e["id"] == eng_id)
         requests.delete(f"{BASE}/api/users/{row['client']['id']}?permanent=true", headers=_h(admin_token), timeout=20)
 
-    def test_rbac_ws_partner_blocked(self, admin_token):
+    def test_rbac_partner_blocked(self, admin_token):
         # Partner should NOT be able to edit the CPA review template.
         r = requests.post(
             f"{BASE}/api/auth/login",

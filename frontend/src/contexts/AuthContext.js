@@ -4,18 +4,8 @@ import { getToken, setToken, clearToken } from "../lib/tokenStorage";
 
 const AuthCtx = createContext(null);
 
-// Phase 1.5 transition: collapse WS_PARTNER/PARTNER to one canonical role so
-// every role check (roleHome, Protected, ===) accepts either value while the
-// rename is in flight. Canonical is WS_PARTNER in stages A-B; flips in stage C.
-const PARTNER_ROLE_ALIASES = ["WS_PARTNER", "PARTNER"];
-const normalizeUser = (u) =>
-  u && typeof u === "object" && PARTNER_ROLE_ALIASES.includes(u.role)
-    ? { ...u, role: "PARTNER" }   // canonical flipped to PARTNER in Stage C; WS_PARTNER still accepted
-    : u;
-
 export function AuthProvider({ children }) {
-  const [user, setUserRaw] = useState(null);   // null = checking, false = unauth'd, object = auth'd
-  const setUser = (u) => setUserRaw(typeof u === "function" ? (prev) => normalizeUser(u(prev)) : normalizeUser(u));
+  const [user, setUser] = useState(null);   // null = checking, false = unauth'd, object = auth'd
   const [booting, setBooting] = useState(true);
 
   useEffect(() => {

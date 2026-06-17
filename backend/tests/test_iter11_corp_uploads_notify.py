@@ -189,10 +189,10 @@ class TestCpaAssignmentNotifications:
         pallavi_id = self._find_cpa_id(admin, "pallavi@cloudtax.ca")
         assert terry_id and pallavi_id, "could not resolve CPA ids"
 
-        # Pick an eng where ws_advisor_id is set and assigned_cpa_id != terry_id
+        # Pick an eng where partner_advisor_id is set and assigned_cpa_id != terry_id
         target = None
         for e in engs:
-            if e.get("ws_advisor_id") and e.get("assigned_cpa_id") != terry_id:
+            if e.get("partner_advisor_id") and e.get("assigned_cpa_id") != terry_id:
                 target = e
                 break
         if not target:
@@ -229,7 +229,7 @@ class TestCpaAssignmentNotifications:
     def test_no_notification_when_cpa_unchanged(self, admin, ws):
         r = admin.get(f"{API}/engagements", timeout=20)
         engs = r.json()
-        target = next((e for e in engs if e.get("assigned_cpa_id") and e.get("ws_advisor_id")), None)
+        target = next((e for e in engs if e.get("assigned_cpa_id") and e.get("partner_advisor_id")), None)
         if not target:
             pytest.skip("no eng with cpa+ws assigned")
         eid = target["id"]
@@ -333,7 +333,7 @@ class TestMultiFileUploads:
         # legacy fields synced to latest remaining (the 3rd upload still exists)
         assert doc.get("file_name") in ("iter11_test_1.pdf", "iter11_test_2.pdf")
 
-    def test_ws_partner_cannot_delete_file(self, ws):
+    def test_partner_cannot_delete_file(self, ws):
         doc_id = getattr(TestMultiFileUploads, "_doc_id", None)
         file_ids = getattr(TestMultiFileUploads, "_file_ids", None)
         if not (doc_id and file_ids):

@@ -58,7 +58,7 @@ def client_token():
 # ==================== GET /partner/checklist-template ====================
 
 class TestChecklistTemplateAccess:
-    def test_get_as_ws_partner_returns_default_6_items(self, ws_token):
+    def test_get_as_partner_returns_default_6_items(self, ws_token):
         r = requests.get(f"{BASE}/api/partner/checklist-template", headers=_h(ws_token), timeout=20)
         assert r.status_code == 200, r.text
         data = r.json()

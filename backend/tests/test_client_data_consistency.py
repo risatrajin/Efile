@@ -41,7 +41,7 @@ def _h(t):
     return {"Authorization": f"Bearer {t}"}
 
 
-def _ws_partner_token():
+def _partner_token():
     r = requests.post(
         f"{BASE}/api/auth/login",
         json={"email": "rajin@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")},
@@ -136,7 +136,7 @@ class TestAllViewsInSync:
         if rows:
             pytest.skip(f"DB has {len(rows)} active engagements; this invariant test requires a clean slate")
 
-        ws_tok = _ws_partner_token()
+        ws_tok = _partner_token()
         if ws_tok:
             ws_rows = requests.get(f"{BASE}/api/engagements", headers=_h(ws_tok), timeout=20).json()
             assert ws_rows == []

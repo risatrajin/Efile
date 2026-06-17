@@ -97,7 +97,7 @@ def test_download_all_returns_zip_for_drbala_engagement():
     assert all("/" in n for n in names), names
 
 
-def test_download_all_rejects_ws_partners():
+def test_download_all_rejects_partners():
     tok = _login("rajin@cloudtax.ca")
     # Find any engagement the partner can see (they create onboarding ones)
     engs = requests.get(

@@ -45,15 +45,6 @@ function RootRedirect() {
   if (user === false) return <Navigate to="/login" replace />;
   return <Navigate to={roleHome(user.role)} replace />;
 }
-
-// Phase 1.5 transition: redirect the old /ws/* routes to their /partner/*
-// equivalents so existing bookmarks and in-flight links keep working. Dropped
-// in Stage D once no old links are expected.
-function LegacyWsRedirect() {
-  const { pathname, search } = useLocation();
-  return <Navigate to={pathname.replace(/^\/ws\//, "/partner/") + search} replace />;
-}
-
 // ---------- Dynamic browser-tab title ----------
 // Runs on every route change. Maps the current pathname to a human label and
 // sets ``document.title = "<label> | CloudTax's Portal"``. Falls back to the
@@ -122,8 +113,6 @@ export default function App() {
           {/* Onboarding is CloudTax-only now; partners are view-only. ADMIN guard, not just hidden UI. */}
           <Route path="/partner/onboarding/:eid" element={<Protected roles={["ADMIN"]}><WsOnboardingDetail /></Protected>} />
           <Route path="/partner/file/:eid" element={<Protected roles={["PARTNER", "ADMIN"]}><WsFileDetail /></Protected>} />
-          {/* Legacy /ws/* -> /partner/* so old bookmarks and in-flight links still land. */}
-          <Route path="/ws/*" element={<LegacyWsRedirect />} />
 
           <Route path="/cpa/files" element={<Protected roles={["CPA", "ADMIN"]}><CpaFiles /></Protected>} />
           <Route path="/cpa/engagement/:eid" element={<Protected roles={["CPA", "ADMIN"]}><CpaEngagement /></Protected>} />
