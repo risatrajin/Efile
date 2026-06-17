@@ -79,7 +79,7 @@ export default function EngagementNotes({ eid, title = "Tax situation / Notes", 
   return (
     <div className="card" data-testid="engagement-notes">
       <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>{title}</h2>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Visible to Ownr, the assigned CPA, and Admins. Not visible to clients.</p>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Visible to the partner, the assigned CPA, and Admins. Not visible to clients.</p>
 
       {/* Compose — sits ABOVE the feed so the newest note is saved at the top of the list. */}
       <div style={{
