@@ -65,7 +65,6 @@ function labelForPath(pathname) {
   if (pathname.startsWith("/portal/account")) return "Account";
   // Partner
   if (pathname === "/partner/dashboard") return "Client Pipeline";
-  if (pathname.startsWith("/partner/onboarding/")) return "Onboarding";
   if (pathname.startsWith("/partner/file/")) return "Client file";
   // CPA
   if (pathname === "/cpa/files") return "My files";
@@ -73,6 +72,7 @@ function labelForPath(pathname) {
   if (pathname.startsWith("/cpa/messages")) return "Messages";
   // Admin
   if (pathname === "/admin/dashboard") return "Dashboard";
+  if (pathname.startsWith("/admin/onboarding/")) return "Onboarding";
   if (pathname.startsWith("/admin/client/")) return "Client";
   if (pathname === "/admin/users") return "Users";
   if (pathname === "/admin/settings") return "Settings";
@@ -110,9 +110,10 @@ export default function App() {
           </Route>
 
           <Route path="/partner/dashboard" element={<Protected roles={["PARTNER"]}><WsDashboard /></Protected>} />
-          {/* Onboarding is CloudTax-only now; partners are view-only. ADMIN guard, not just hidden UI. */}
-          <Route path="/partner/onboarding/:eid" element={<Protected roles={["ADMIN"]}><WsOnboardingDetail /></Protected>} />
           <Route path="/partner/file/:eid" element={<Protected roles={["PARTNER", "ADMIN"]}><WsFileDetail /></Protected>} />
+
+          {/* Onboarding is CloudTax-only now; partners are view-only. ADMIN guard, not just hidden UI. */}
+          <Route path="/admin/onboarding/:eid" element={<Protected roles={["ADMIN"]}><WsOnboardingDetail /></Protected>} />
 
           <Route path="/cpa/files" element={<Protected roles={["CPA", "ADMIN"]}><CpaFiles /></Protected>} />
           <Route path="/cpa/engagement/:eid" element={<Protected roles={["CPA", "ADMIN"]}><CpaEngagement /></Protected>} />

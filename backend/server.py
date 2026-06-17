@@ -1828,7 +1828,11 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         "notes": body.notes,
         "corporation_id": corp_id,
         "assigned_cpa_id": None,
-        "partner_advisor_id": user["id"],
+        # No per-client partner ownership: every partner sees ALL clients
+        # (view-only). When ADMIN onboards there is no partner to attribute, so
+        # leave this None. The partner read guard in get_engagement_or_404 is a
+        # `pass` (partners see all), so None hides nothing from any partner view.
+        "partner_advisor_id": None,
         "pre_filing_checklist": await _checklist_from_template(),
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),

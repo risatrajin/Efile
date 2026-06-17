@@ -118,7 +118,7 @@ export default function WsOnboardingDetail() {
     setBusy(true); setErr("");
     try {
       await api.post(`/engagements/${eid}/submit`);
-      navigate("/partner/dashboard");
+      navigate("/admin/dashboard");
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
   };
@@ -134,7 +134,7 @@ export default function WsOnboardingDetail() {
 
   if (!eng || !form) return (
     <div className="app-root">
-      <AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} />
+      <AppHeader tabs={[{ key: "dashboard", to: "/admin/dashboard", label: "Dashboard" }]} />
       <div className="page-wide">Loading…</div>
     </div>
   );
@@ -147,10 +147,10 @@ export default function WsOnboardingDetail() {
 
   return (
     <div className="app-root">
-      <AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} />
+      <AppHeader tabs={[{ key: "dashboard", to: "/admin/dashboard", label: "Dashboard" }]} />
       <div className="page-wide stack-lg" data-testid="partner-onboarding-detail" style={{ maxWidth: 1200 }}>
-        <Link to="/partner/dashboard" className="muted flex items-center gap-2" style={{ width: "fit-content", fontSize: 13, textDecoration: "none" }} data-testid="back-onboarding">
-          <ArrowLeft size={14} /> Onboarding
+        <Link to="/admin/dashboard" className="muted flex items-center gap-2" style={{ width: "fit-content", fontSize: 13, textDecoration: "none" }} data-testid="back-onboarding">
+          <ArrowLeft size={14} /> Dashboard
         </Link>
         {err && <div className="alert alert-risk">{err}</div>}
 
@@ -222,7 +222,7 @@ export default function WsOnboardingDetail() {
                   </div>
                 </div>
                 <div className="field">
-                  <label className="field-label">WS Advisor</label>
+                  <label className="field-label">Advisor</label>
                   <div style={{ position: "relative" }}>
                     <input className="input" value={user?.name || ""} disabled data-testid="f-advisor" style={{ background: "var(--bg-subtle)", paddingRight: 40 }} />
                     <Lock size={14} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }} />
@@ -273,7 +273,7 @@ export default function WsOnboardingDetail() {
               <div className="stack-sm" style={{ fontSize: 13 }}>
                 <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">Status</span><span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`} data-testid="submission-status">{ready ? "Ready" : "Draft"}</span></div>
                 <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">Added</span><span style={{ fontWeight: 500 }}>{fmtDate(eng.created_at)}</span></div>
-                <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">WS Advisor</span><span style={{ fontWeight: 500 }}>{user?.name}</span></div>
+                <div className="list-row" style={{ padding: "10px 0" }}><span className="muted">Advisor</span><span style={{ fontWeight: 500 }}>{user?.name}</span></div>
               </div>
               <div style={{ borderTop: "1px solid var(--border-default)", marginTop: 12, paddingTop: 12 }}>
                 <button
