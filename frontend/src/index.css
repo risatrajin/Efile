@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 /* === CloudTax portal design system === */
 
 /* Accessibility scaling — applied via <html> classes from AccessibilityContext.
@@ -81,8 +82,10 @@ html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;u
   --radius-pill: 8px;
   --shadow-none: none;
 
-  --font-serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  /* Project-wide font: Inter (all portals). Both tokens point to Inter so the
+     former serif headings now render in Inter too. */
+  --font-serif: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
 /* === Ownr partner portal — purple primary action color ===
@@ -99,6 +102,11 @@ html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;u
      #fff with a --border-default outline, so cards lift off the grey. */
   --bg-primary: #ffffff;
   --bg-subtle: #f5f5f7;
+  /* Cool border greys so every partner surface (file detail cards, dividers,
+     header) matches the dashboard instead of the warm CloudTax greys. */
+  --border-default: #e5e5e7;
+  --border-subtle: #f0f0f2;
+  --border-strong: #d4d4d8;
 }
 .ownr-portal .btn-primary:hover { background: var(--accent-dark-hover); }
 /* Partner cards: drop the border (stroke), lift with a subtle 1px shadow
@@ -116,9 +124,9 @@ html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;u
 }
 .ownr-portal .stat-card {
   background: var(--bg-card);
-  /* Stroke a touch darker than the #F5F5F7 column tone, for subtle definition
-     on the white page — partner portal only. */
-  border: 1px solid #e5e5e7;
+  /* --border-default is #E5E5E7 in the partner scope — a touch darker than the
+     #F5F5F7 columns, for subtle definition on the white page. */
+  border: 1px solid var(--border-default);
   border-radius: 12px;
   padding: 18px 20px;
 }
