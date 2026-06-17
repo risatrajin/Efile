@@ -77,7 +77,9 @@ export default function WsDashboard() {
   const { user } = useAuth();
   const [engs, setEngs] = useState([]);
   const [err, setErr] = useState("");
-  const [view, setView] = useState(() => localStorage.getItem("ct_ws_dash_view") || "kanban");
+  // Read the new key first, fall back to the legacy key so a partner mid-session
+  // keeps their view toggle through the rename. Writes go to the new key only.
+  const [view, setView] = useState(() => localStorage.getItem("ct_partner_dash_view") || localStorage.getItem("ct_ws_dash_view") || "kanban");
 
   const load = async () => {
     try {
@@ -89,11 +91,11 @@ export default function WsDashboard() {
 
   const setViewPersist = (v) => {
     setView(v);
-    try { localStorage.setItem("ct_ws_dash_view", v); }
+    try { localStorage.setItem("ct_partner_dash_view", v); }
     catch (e) { console.debug("[WsDashboard] persist view failed:", e); }
   };
 
-  const openFile = (eid) => navigate(`/ws/file/${eid}`);
+  const openFile = (eid) => navigate(`/partner/file/${eid}`);
 
   // Stats derived entirely from the already-loaded engagement list.
   const thisYear = new Date().getFullYear();
@@ -105,8 +107,8 @@ export default function WsDashboard() {
     { key: "filed_year", label: "Filed this year", value: filedEngs.filter((e) => e.filing_date && new Date(e.filing_date).getFullYear() === thisYear).length },
   ];
 
-  const tabs = [{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }];
-  const rootClass = "app-root" + (user?.role === "WS_PARTNER" ? " ownr-portal" : "");
+  const tabs = [{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }];
+  const rootClass = "app-root" + (user?.role === "PARTNER" ? " ownr-portal" : "");
 
   return (
     <div className={rootClass}>
@@ -117,7 +119,7 @@ export default function WsDashboard() {
             <h1 className="page-title">Client pipeline</h1>
             <p className="muted" style={{ fontSize: 13 }}>Track your clients through the filing process</p>
           </div>
-          <ViewToggle value={view} onChange={setViewPersist} testid="ws-view-toggle" />
+          <ViewToggle value={view} onChange={setViewPersist} testid="partner-view-toggle" />
         </div>
 
         <div className="partner-stats" data-testid="partner-stats">
@@ -131,7 +133,7 @@ export default function WsDashboard() {
 
         {err && <div className="alert alert-risk">{err}</div>}
         {view === "kanban" ? (
-          <div className="kanban" style={{ gridTemplateColumns: "repeat(5, minmax(220px, 1fr))" }} data-testid="ws-kanban">
+          <div className="kanban" style={{ gridTemplateColumns: "repeat(5, minmax(220px, 1fr))" }} data-testid="partner-kanban">
             {COLUMNS.map((col) => {
               const items = engs.filter((e) => e.status === col.key);
               const isReferred = col.key === "REFERRED";
@@ -168,9 +170,9 @@ export default function WsDashboard() {
         ) : (
           <EngagementTable
             engagements={engs}
-            role="WS_PARTNER"
+            role="PARTNER"
             onRowClick={(e) => openFile(e.id)}
-            testid="ws-engagement-table"
+            testid="partner-engagement-table"
             stageOptions={[
               { key: "all", label: "All stages" },
               { key: "REFERRED", label: "Referred" },

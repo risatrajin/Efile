@@ -3,7 +3,7 @@
 Covers:
  - ``_resolve_first_name`` precedence (first_name > name-first-token > empty)
  - multi-word first_name (e.g. "Dr Bala") survives intact in every welcome
-   template (client / CPA / WS partner)
+   template (client / CPA / Partner)
  - staff invites (no first_name) fall back to the first whitespace token of ``name``
  - no name at all → greeting omits the trailing comma
  - combined CloudTax+Wealthsimple logo PNG is referenced in the email HTML

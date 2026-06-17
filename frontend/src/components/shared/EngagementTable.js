@@ -22,13 +22,13 @@ const TIER_OPTIONS = [
 ];
 
 /**
- * Shared table view for engagement lists. Used by Admin + WS Partner dashboards
+ * Shared table view for engagement lists. Used by Admin + Partner dashboards
  * as an alternative to the kanban board.
  *
  * Props:
  *  - engagements: array of enriched engagements (with .client, .corporation, .assigned_cpa)
  *  - onRowClick: (engagement) => void
- *  - role: "ADMIN" | "WS_PARTNER" | "CPA" — controls a couple of columns
+ *  - role: "ADMIN" | "PARTNER" | "CPA" — controls a couple of columns
  *  - testid: data-testid for the table
  *  - showSearchFilter: whether to render the search + filter toolbar (default true)
  *  - stageOptions: optional override for the stage filter dropdown

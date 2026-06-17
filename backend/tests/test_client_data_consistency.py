@@ -15,7 +15,7 @@ Fixes locked in:
 3. Deactivating or removing a CPA nulls out their ``assigned_cpa_id`` on
    every engagement so the pipeline no longer attributes work to a
    removed member.
-4. All three roles (ADMIN / WS_PARTNER / CPA) converge on the same filter
+4. All three roles (ADMIN / PARTNER / CPA) converge on the same filter
    through the shared list endpoint.
 """
 import os

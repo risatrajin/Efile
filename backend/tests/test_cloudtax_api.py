@@ -57,12 +57,12 @@ class TestAuth:
         print(f"CPA login success: {data['user']['name']}")
     
     def test_login_ws_partner_success(self):
-        """POST /api/auth/login with WS partner credentials"""
+        """POST /api/auth/login with Partner credentials"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json=WS_CREDS)
         assert response.status_code == 200
         data = response.json()
-        assert data["user"]["role"] == "WS_PARTNER"
-        print(f"WS Partner login success: {data['user']['name']}")
+        assert data["user"]["role"] == "PARTNER"
+        print(f"Partner login success: {data['user']['name']}")
     
     def test_login_client_success(self):
         """POST /api/auth/login with client credentials"""
@@ -182,7 +182,7 @@ class TestRBAC:
         print(f"CPA sees {len(engagements)} engagements (filtered by assigned_cpa_id)")
     
     def test_ws_partner_cannot_access_documents(self, ws_token, admin_token):
-        """WS partner cannot access GET /api/engagements/{id}/documents (403)"""
+        """Partner cannot access GET /api/engagements/{id}/documents (403)"""
         # First get an engagement ID as admin
         admin_resp = requests.get(
             f"{BASE_URL}/api/engagements",
@@ -194,13 +194,13 @@ class TestRBAC:
         
         eng_id = engagements[0]["id"]
         
-        # Try to access documents as WS partner
+        # Try to access documents as Partner
         response = requests.get(
             f"{BASE_URL}/api/engagements/{eng_id}/documents",
             headers={"Authorization": f"Bearer {ws_token}"}
         )
         assert response.status_code == 403
-        print("WS partner correctly denied access to documents (403)")
+        print("Partner correctly denied access to documents (403)")
     
     def test_client_sees_only_own_engagement_with_tier_redacted(self, client_token):
         """CLIENT sees only own engagement with tier redacted to null"""
@@ -637,7 +637,7 @@ class TestMetrics:
         print(f"Pilot metrics: total_clients={data['total_clients']}, pipeline={data['pipeline']}")
     
     def test_pilot_metrics_ws(self, ws_token):
-        """GET /api/metrics/pilot accessible by WS partner"""
+        """GET /api/metrics/pilot accessible by Partner"""
         response = requests.get(
             f"{BASE_URL}/api/metrics/pilot",
             headers={"Authorization": f"Bearer {ws_token}"}

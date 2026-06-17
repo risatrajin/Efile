@@ -53,7 +53,7 @@ def decode_token(token: str) -> dict:
 # carried in a JWT. Canonical is WS_PARTNER in stages A-B and flips to PARTNER
 # in stage C; deleting this block is stage D.
 PARTNER_ROLE_ALIASES = {"WS_PARTNER", "PARTNER"}
-CANONICAL_PARTNER_ROLE = "WS_PARTNER"
+CANONICAL_PARTNER_ROLE = "PARTNER"  # flipped in Stage C; WS_PARTNER kept as alias until Stage D
 
 
 def normalize_role(role):

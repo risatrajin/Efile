@@ -9,7 +9,7 @@ import UserAvatar from "./UserAvatar";
 
 function dashboardPathFor(role) {
   if (role === "CLIENT") return "/portal";
-  if (role === "WS_PARTNER") return "/ws/dashboard";
+  if (role === "PARTNER") return "/partner/dashboard";
   if (role === "CPA") return "/cpa/files";
   if (role === "ADMIN") return "/admin/dashboard";
   return "/";
@@ -122,7 +122,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
           data-testid="brand-logo"
           style={{ display: "inline-flex", alignItems: "center", marginRight: 8 }}
         >
-          {user?.role === "WS_PARTNER"
+          {user?.role === "PARTNER"
             ? <img src="/ownr-logo.svg" alt="Ownr" style={{ height: 24, width: "auto", display: "block" }} />
             : <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block" }} />}
         </Link>

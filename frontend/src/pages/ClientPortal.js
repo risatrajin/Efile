@@ -210,7 +210,7 @@ function DocItem({ doc, onUpload, onDefer, onRemove, onRemoveFile, busy, onView,
                         : role === "CLIENT" ? "Client"
                         : role === "CPA" ? "CPA"
                         : role === "ADMIN" ? "Admin"
-                        : role === "WS_PARTNER" ? "Partner"
+                        : role === "PARTNER" ? "Partner"
                         : "";
                       return tag ? <> · {tag}</> : null;
                     })()}

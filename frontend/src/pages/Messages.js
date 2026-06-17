@@ -138,7 +138,7 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
       case "CLIENT":     return { label: "Client",    bg: "#d7d4cf", fg: "#3a3a3a" }; // neutral gray
       case "CPA":        return { label: "CPA",       bg: "#c8dbef", fg: "#0d3a66" }; // brand blue
       case "ADMIN":      return { label: "Admin",     bg: "#8f8c87", fg: "#fff" };    // darker neutral
-      case "WS_PARTNER": return { label: "Ownr", bg: "#1a1a1a", fg: "#fff" };
+      case "PARTNER": return { label: "Ownr", bg: "#1a1a1a", fg: "#fff" };
       default:           return { label: s.role || "", bg: "#ebe7e0", fg: "#3a3a3a" };
     }
   };

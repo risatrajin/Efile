@@ -6,7 +6,7 @@ Spec recap:
 - GET  /api/users/{uid}/avatar — streams image, 404 when none.
 - DELETE /api/users/me/avatar — removes; subsequent GET returns 404.
 - GET  /api/messages/inbox — Admin: all non-ONBOARDING engagements.
-  CPA: only assigned. CLIENT: only own. WS_PARTNER: 403.
+  CPA: only assigned. CLIENT: only own. PARTNER: 403.
 """
 import io
 import os

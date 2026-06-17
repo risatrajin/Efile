@@ -168,7 +168,7 @@ class CreateEngagementIn(BaseModel):
 
 
 class WsOnboardingIn(BaseModel):
-    """Lightweight create-or-update used by the WS partner during onboarding."""
+    """Lightweight create-or-update used by the Partner during onboarding."""
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     client_email: Optional[EmailStr] = None
@@ -319,7 +319,7 @@ def default_permissions_for(role: str) -> dict:
     if role == "CPA":
         on = {"view_clients", "send_reminders", "send_messages", "view_docs", "view_cpa_hours"}
         return {k: (k in on) for k in PERMISSION_KEYS}
-    if role == "WS_PARTNER":
+    if role == "PARTNER":
         # Ownr partners are view-only. CloudTax (ADMIN) does all onboarding,
         # CPA assignment, stage moves, and settings. The permission KEYS stay
         # intact so ADMIN keeps them; partners just get read access.
@@ -338,8 +338,8 @@ async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
         return strip_id(eng)
     if role == "CPA" and eng.get("assigned_cpa_id") != user["id"]:
         raise HTTPException(403, "Not your engagement")
-    if role == "WS_PARTNER" and eng.get("ws_advisor_id") != user["id"]:
-        # WS partners can see all pilot engagements per spec; relax filter
+    if role == "PARTNER" and eng.get("partner_advisor_id") != user["id"]:
+        # Partners can see all pilot engagements per spec; relax filter
         pass
     if role == "CLIENT":
         corp = await db.corporations.find_one({"id": eng["corporation_id"]})
@@ -355,7 +355,7 @@ async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
 
 
 def redact_for_ws(eng: dict) -> dict:
-    # WS partners never see CPA's internal notes or extracted financial data.
+    # Partners never see CPA's internal notes or extracted financial data.
     # They CAN see their own onboarding notes (partner_notes).
     eng = dict(eng)
     eng.pop("notes", None)
@@ -734,7 +734,7 @@ async def reset_password(body: SetPasswordIn):
 # ==================== Users (Admin) ====================
 
 @api.get("/users")
-async def list_users(user: dict = Depends(require_role("ADMIN", "CPA", "WS_PARTNER"))):
+async def list_users(user: dict = Depends(require_role("ADMIN", "CPA", "PARTNER"))):
     db = get_db()
     role = user["role"]
     # Base filter: exclude soft-deleted / deactivated rows (is_active=False) so
@@ -753,7 +753,7 @@ async def list_users(user: dict = Depends(require_role("ADMIN", "CPA", "WS_PARTN
 @api.post("/users/invite")
 async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADMIN"))):
     db = get_db()
-    if body.role not in ("CLIENT", "CPA", "WS_PARTNER", "ADMIN"):
+    if body.role not in ("CLIENT", "CPA", "PARTNER", "ADMIN"):
         raise HTTPException(400, "Invalid role")
     email_lc = (body.email or "").strip().lower()
     if not email_lc or "@" not in email_lc:
@@ -770,10 +770,10 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
         # CLIENT → staff upgrade path. If the admin is adding a non-CLIENT
         # role for an existing client account, upgrade the record instead of
         # rejecting. This supports the real-world case where a referred
-        # physician later becomes a CPA / WS partner / admin. We preserve
+        # physician later becomes a CPA / Partner / admin. We preserve
         # their id + engagement history and simply flip role + permissions.
         if ex_role == "CLIENT" and body.role != "CLIENT":
-            default_display = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(body.role, body.role)
+            default_display = {"ADMIN": "Admin", "CPA": "CPA", "PARTNER": "Partner"}.get(body.role, body.role)
             await db.users.update_one(
                 {"id": existing["id"]},
                 {"$set": {
@@ -817,7 +817,7 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
                 "Client accounts are managed from the client record — please use a different email for staff."
             )
         else:
-            role_label = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(ex_role, ex_role or "member")
+            role_label = {"ADMIN": "Admin", "CPA": "CPA", "PARTNER": "Partner"}.get(ex_role, ex_role or "member")
             detail = (
                 f"This email is already in use by an active {role_label} ({ex_name}). "
                 "Check the Roles & Permissions table above or use a different address."
@@ -836,7 +836,7 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
     })
     if reactivate:
         uid = reactivate["id"]
-        default_display = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner", "CLIENT": "Client"}.get(body.role, body.role)
+        default_display = {"ADMIN": "Admin", "CPA": "CPA", "PARTNER": "Partner", "CLIENT": "Client"}.get(body.role, body.role)
         temp_pass = uuid.uuid4().hex
         await db.users.update_one(
             {"id": uid},
@@ -890,7 +890,7 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
     uid = str(uuid.uuid4())
     temp_pass = uuid.uuid4().hex  # random placeholder
     # Default display_role from canonical role
-    default_display = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner", "CLIENT": "Client"}.get(body.role, body.role)
+    default_display = {"ADMIN": "Admin", "CPA": "CPA", "PARTNER": "Partner", "CLIENT": "Client"}.get(body.role, body.role)
     await db.users.insert_one({
         "id": uid,
         "email": email_lc,
@@ -1290,7 +1290,7 @@ async def list_team(user: dict = Depends(require_role("ADMIN"))):
         if not u.get("permissions"):
             u["permissions"] = default_permissions_for(u["role"])
         if not u.get("display_role"):
-            u["display_role"] = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(u["role"], u["role"])
+            u["display_role"] = {"ADMIN": "Admin", "CPA": "CPA", "PARTNER": "Partner"}.get(u["role"], u["role"])
         out.append(u)
     return out
 
@@ -1531,7 +1531,7 @@ async def _enrich_engagements(engs: list[dict]) -> list[dict]:
     corp_ids = list({e["corporation_id"] for e in engs})
     user_ids = set()
     for e in engs:
-        user_ids.update(filter(None, [e.get("assigned_cpa_id"), e.get("ws_advisor_id")]))
+        user_ids.update(filter(None, [e.get("assigned_cpa_id"), e.get("partner_advisor_id")]))
     corps = {c["id"]: c async for c in db.corporations.find({"id": {"$in": corp_ids}}, {"_id": 0})}
     for c in corps.values():
         user_ids.add(c.get("client_id"))
@@ -1545,7 +1545,7 @@ async def _enrich_engagements(engs: list[dict]) -> list[dict]:
         e["corporation"] = corp
         e["client"] = users.get(corp.get("client_id"))
         e["assigned_cpa"] = users.get(e.get("assigned_cpa_id"))
-        e["ws_advisor"] = users.get(e.get("ws_advisor_id"))
+        e["partner_advisor"] = users.get(e.get("partner_advisor_id"))
         # Quick progress
         counts = await db.documents.count_documents({"engagement_id": e["id"]})
         uploaded = await db.documents.count_documents({"engagement_id": e["id"], "status": {"$in": ["UPLOADED", "REVIEWED", "EXTRACTED"]}})
@@ -1612,7 +1612,7 @@ async def list_engagements(user: dict = Depends(get_current_user)):
             return False
         return True
     out = [e for e in out if _is_valid(e)]
-    if role == "WS_PARTNER":
+    if role == "PARTNER":
         out = [redact_for_ws(e) for e in out]
     if role == "CLIENT":
         out = [redact_for_client(e) for e in out]
@@ -1665,7 +1665,7 @@ async def create_engagement(body: CreateEngagementIn, user: dict = Depends(requi
         "created_at": datetime.now(timezone.utc),
     })
     eng_id = str(uuid.uuid4())
-    ws_advisor_id = user["id"] if user["role"] == "WS_PARTNER" else None
+    partner_advisor_id = user["id"] if user["role"] == "PARTNER" else None
     eng_doc = {
         "id": eng_id,
         "tier": body.tier,
@@ -1678,7 +1678,7 @@ async def create_engagement(body: CreateEngagementIn, user: dict = Depends(requi
         "notes": body.notes,
         "corporation_id": corp_id,
         "assigned_cpa_id": body.assigned_cpa_id,
-        "ws_advisor_id": ws_advisor_id,
+        "partner_advisor_id": partner_advisor_id,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
@@ -1706,12 +1706,12 @@ async def get_engagement(eid: str, user: dict = Depends(get_current_user)):
     e = out[0]
     if user["role"] == "CLIENT":
         e = redact_for_client(e)
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         e = redact_for_ws(e)
     return e
 
 
-# ---- WS partner onboarding flow ----
+# ---- Partner onboarding flow ----
 
 DEFAULT_PRE_FILING_CHECKLIST = [
     "Corporation info confirmed",
@@ -1828,7 +1828,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
         "notes": body.notes,
         "corporation_id": corp_id,
         "assigned_cpa_id": None,
-        "ws_advisor_id": user["id"],
+        "partner_advisor_id": user["id"],
         "pre_filing_checklist": await _checklist_from_template(),
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
@@ -1932,7 +1932,7 @@ async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depe
 
 
 # ==================== Engagement Notes (shared across roles) ====================
-# Free-form notes feed. WS partners, CPAs, and Admins can each append a note;
+# Free-form notes feed. Partners, CPAs, and Admins can each append a note;
 # all three roles see the full history (newest-first). Replaces the old
 # single-textarea ``partner_notes`` field with a timeline so context isn't
 # clobbered when handed off between roles.
@@ -1955,9 +1955,9 @@ def _legacy_partner_note(eng: dict) -> Optional[dict]:
         "id": f"legacy-{eng['id']}",
         "text": text,
         "at": when.isoformat() if isinstance(when, datetime) else when,
-        "author_id": eng.get("ws_partner_id"),
+        "author_id": eng.get("partner_id"),
         "author_name": "Ownr partner (legacy)",
-        "author_role": "WS_PARTNER",
+        "author_role": "PARTNER",
         "is_legacy": True,
     }
 
@@ -1993,7 +1993,7 @@ def _serialize_notes(eng: dict) -> list:
 @api.get("/engagements/{eid}/notes")
 async def list_engagement_notes(eid: str, user: dict = Depends(get_current_user)):
     eng = await get_engagement_or_404(eid, user)
-    if user["role"] not in ("WS_PARTNER", "CPA", "ADMIN"):
+    if user["role"] not in ("PARTNER", "CPA", "ADMIN"):
         raise HTTPException(403, "Only staff can read engagement notes")
     return {"items": _serialize_notes(eng)}
 
@@ -2002,7 +2002,7 @@ async def list_engagement_notes(eid: str, user: dict = Depends(get_current_user)
 async def append_engagement_note(eid: str, body: EngagementNoteIn, user: dict = Depends(get_current_user)):
     db = get_db()
     eng = await get_engagement_or_404(eid, user)
-    if user["role"] not in ("WS_PARTNER", "CPA", "ADMIN"):
+    if user["role"] not in ("PARTNER", "CPA", "ADMIN"):
         raise HTTPException(403, "Only staff can write engagement notes")
     text = (body.text or "").strip()
     if not text:
@@ -2149,8 +2149,8 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
                 if client:
                     await notify(client["id"], "T2 filed with CRA", f"{corp['name']} has been filed", "filing_complete", eid)
                     ses_service.send_filing_complete(client["email"], client["name"], corp["name"], f"{FRONTEND_URL}/portal/{eid}")
-            if eng.get("ws_advisor_id"):
-                await notify(eng["ws_advisor_id"], "Filing complete", f"{eng['id'][:8]} T2 filed with CRA", "filing_complete", eid)
+            if eng.get("partner_advisor_id"):
+                await notify(eng["partner_advisor_id"], "Filing complete", f"{eng['id'][:8]} T2 filed with CRA", "filing_complete", eid)
             await notify_admins("T2 filed with CRA", f"{(corp or {}).get('name') or eid[:8]} has been filed.", "filing_complete_admin", eid)
     if "cra_access_status" in updates and updates["cra_access_status"] == "ACCESS_VERIFIED":
         updates["cra_verified_at"] = now
@@ -2180,10 +2180,10 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
             "cpa_assigned",
             eid,
         )
-        # Notify the WS partner so they see progress
-        if eng.get("ws_advisor_id"):
+        # Notify the Partner so they see progress
+        if eng.get("partner_advisor_id"):
             await notify(
-                eng["ws_advisor_id"],
+                eng["partner_advisor_id"],
                 "CPA assigned to your client",
                 f"{cpa_label} is now the CPA on {client_label}.",
                 "ws_cpa_assigned",
@@ -2208,8 +2208,8 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
 @api.get("/engagements/{eid}/documents")
 async def list_documents(eid: str, user: dict = Depends(get_current_user)):
     await get_engagement_or_404(eid, user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot view documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot view documents")
     db = get_db()
     docs = [d async for d in db.documents.find({"engagement_id": eid}, {"_id": 0}).sort("sort_order", 1)]
     # Normalize legacy single-file docs into a files[] array for the frontend
@@ -2229,7 +2229,7 @@ async def list_documents(eid: str, user: dict = Depends(get_current_user)):
 
 @api.get("/engagements/{eid}/documents/summary")
 async def list_documents_summary(eid: str, user: dict = Depends(get_current_user)):
-    """Lightweight name+status list visible to WS partners (no download URLs, no S3 keys)."""
+    """Lightweight name+status list visible to Partners (no download URLs, no S3 keys)."""
     await get_engagement_or_404(eid, user)
     db = get_db()
     out = []
@@ -2248,8 +2248,8 @@ async def doc_upload_url(doc_id: str, body: dict, user: dict = Depends(get_curre
     if not doc:
         raise HTTPException(404, "Document not found")
     await get_engagement_or_404(doc["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot upload documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot upload documents")
     content_type = body.get("content_type", "application/octet-stream")
     file_name = body.get("file_name", "upload.bin")
     safe_name = "".join(c for c in file_name if c.isalnum() or c in "._-")[:80] or "file"
@@ -2347,8 +2347,8 @@ async def doc_remove_upload(doc_id: str, user: dict = Depends(get_current_user))
     if not doc:
         raise HTTPException(404, "Document not found")
     eng = await get_engagement_or_404(doc["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot remove documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot remove documents")
     if doc.get("status") not in ("UPLOADED", "REVIEWED", "EXTRACTED"):
         raise HTTPException(400, "Nothing to remove")
 
@@ -2388,8 +2388,8 @@ async def doc_upload_proxy(doc_id: str, file: UploadFile = File(...), user: dict
     if not doc:
         raise HTTPException(404, "Document not found")
     eng = await get_engagement_or_404(doc["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot upload documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot upload documents")
 
     body = await file.read()
     if not body:
@@ -2460,8 +2460,8 @@ async def doc_delete_one_file(doc_id: str, file_id: str, user: dict = Depends(ge
     if not doc:
         raise HTTPException(404, "Document not found")
     eng = await get_engagement_or_404(doc["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot delete documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot delete documents")
     files = list(doc.get("files") or [])
     target = next((f for f in files if f.get("id") == file_id), None)
     if not target:
@@ -2535,8 +2535,8 @@ async def doc_download_url(doc_id: str, user: dict = Depends(get_current_user)):
     if not doc:
         raise HTTPException(404, "Document not found")
     await get_engagement_or_404(doc["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot download documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot download documents")
     if not doc.get("object_key"):
         raise HTTPException(404, "No file uploaded for this document")
     # Local-fallback storage: hand back our own download endpoint
@@ -2556,8 +2556,8 @@ async def doc_download_local(doc_id: str, token: Optional[str] = None, user: dic
     if not doc:
         raise HTTPException(404, "Document not found")
     await get_engagement_or_404(doc["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot download documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot download documents")
     key = doc.get("object_key") or ""
     if not key.startswith("local://"):
         raise HTTPException(404, "Not a local file")
@@ -2600,8 +2600,8 @@ async def download_all_documents(eid: str, user: dict = Depends(get_current_user
     from datetime import datetime as _dt
 
     eng = await get_engagement_or_404(eid, user)
-    if user["role"] == "WS_PARTNER":
-        raise HTTPException(403, "WS partners cannot download documents")
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot download documents")
 
     db = get_db()
     corp = await db.corporations.find_one({"id": eng.get("corporation_id")}, {"_id": 0, "name": 1}) if eng.get("corporation_id") else None
@@ -2765,7 +2765,7 @@ async def defer_document(doc_id: str, user: dict = Depends(get_current_user)):
     if not doc:
         raise HTTPException(404, "Document not found")
     await get_engagement_or_404(doc["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         raise HTTPException(403, "Not permitted")
     await db.documents.update_one({"id": doc_id}, {"$set": {"deferred_at": datetime.now(timezone.utc)}})
     return {"ok": True}
@@ -2848,7 +2848,7 @@ async def remind_single_document(doc_id: str, user: dict = Depends(require_role(
 async def engagement_history(eid: str, user: dict = Depends(get_current_user)):
     db = get_db()
     await get_engagement_or_404(eid, user)
-    if user["role"] in ("CLIENT", "WS_PARTNER"):
+    if user["role"] in ("CLIENT", "PARTNER"):
         raise HTTPException(403, "Not permitted")
     rows = [r async for r in db.status_history.find({"engagement_id": eid}, {"_id": 0}).sort("created_at", -1)]
     user_ids = list({r["changed_by_id"] for r in rows if r.get("changed_by_id")})
@@ -2900,7 +2900,7 @@ async def extract_document(doc_id: str, user: dict = Depends(require_role("CPA",
 
 @api.get("/engagements/{eid}/extracted-data")
 async def list_extracted(eid: str, user: dict = Depends(get_current_user)):
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         raise HTTPException(403, "Not permitted")
     await get_engagement_or_404(eid, user)
     db = get_db()
@@ -2925,14 +2925,14 @@ async def list_opps(eid: str, user: dict = Depends(get_current_user)):
     await get_engagement_or_404(eid, user)
     db = get_db()
     q = {"engagement_id": eid}
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         q["shared_with_ws"] = True
     rows = [r async for r in db.opportunities.find(q, {"_id": 0}).sort("created_at", -1)]
     return rows
 
 
 @api.get("/opportunities/shared")
-async def shared_opps(user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def shared_opps(user: dict = Depends(require_role("PARTNER", "ADMIN"))):
     db = get_db()
     rows = [r async for r in db.opportunities.find({"shared_with_ws": True}, {"_id": 0}).sort("shared_at", -1)]
     # Attach client name + engagement id
@@ -2987,14 +2987,14 @@ async def update_opp(oid: str, body: UpdateOpportunityIn, user: dict = Depends(g
             raise HTTPException(403, "Only CPA/Admin can share opportunities")
         updates["shared_at"] = datetime.now(timezone.utc)
         eng = await db.engagements.find_one({"id": opp["engagement_id"]})
-        if eng and eng.get("ws_advisor_id"):
+        if eng and eng.get("partner_advisor_id"):
             corp = await db.corporations.find_one({"id": eng["corporation_id"]})
-            user_row = await db.users.find_one({"id": eng["ws_advisor_id"]}, {"_id": 0, "password_hash": 0})
+            user_row = await db.users.find_one({"id": eng["partner_advisor_id"]}, {"_id": 0, "password_hash": 0})
             if user_row:
                 await notify(user_row["id"], "Advisory opportunity", opp["title"], "opportunity_shared", eng["id"])
-                ses_service.send_opportunity(user_row["email"], corp["name"] if corp else "client", opp["title"], f"{FRONTEND_URL}/ws/dashboard")
-    if "ws_followed_up" in updates and user["role"] not in ("WS_PARTNER", "ADMIN"):
-        raise HTTPException(403, "Only WS partner can mark followed up")
+                ses_service.send_opportunity(user_row["email"], corp["name"] if corp else "client", opp["title"], f"{FRONTEND_URL}/partner/dashboard")
+    if "ws_followed_up" in updates and user["role"] not in ("PARTNER", "ADMIN"):
+        raise HTTPException(403, "Only Partner can mark followed up")
     await db.opportunities.update_one({"id": oid}, {"$set": updates})
     return await db.opportunities.find_one({"id": oid}, {"_id": 0})
 
@@ -3004,7 +3004,7 @@ async def update_opp(oid: str, body: UpdateOpportunityIn, user: dict = Depends(g
 @api.get("/engagements/{eid}/time-entries")
 async def list_time(eid: str, user: dict = Depends(get_current_user)):
     await get_engagement_or_404(eid, user)
-    if user["role"] in ("CLIENT", "WS_PARTNER"):
+    if user["role"] in ("CLIENT", "PARTNER"):
         raise HTTPException(403, "Not permitted")
     db = get_db()
     rows = [r async for r in db.time_entries.find({"engagement_id": eid}, {"_id": 0}).sort("date", -1)]
@@ -3033,7 +3033,7 @@ async def add_time(eid: str, body: TimeEntryIn, user: dict = Depends(require_rol
 @api.get("/engagements/{eid}/checklist")
 async def list_checklist(eid: str, user: dict = Depends(get_current_user)):
     await get_engagement_or_404(eid, user)
-    if user["role"] in ("CLIENT", "WS_PARTNER"):
+    if user["role"] in ("CLIENT", "PARTNER"):
         raise HTTPException(403, "Not permitted")
     db = get_db()
     rows = [r async for r in db.checklist.find({"engagement_id": eid}, {"_id": 0}).sort("sort_order", 1)]
@@ -3078,7 +3078,7 @@ class ChecklistTemplateIn(BaseModel):
 
 
 @api.get("/partner/checklist-template")
-async def get_checklist_template(user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def get_checklist_template(user: dict = Depends(require_role("PARTNER", "ADMIN"))):
     db = get_db()
     doc = await db.settings.find_one({"key": "checklist_template"}, {"_id": 0})
     if not doc:
@@ -4053,8 +4053,8 @@ async def file_with_cra(
     corp = await db.corporations.find_one({"id": eng["corporation_id"]})
     if corp:
         await notify(corp["client_id"], "Your T2 return has been filed", f"CRA confirmation {cra_confirmation.strip()}", "filed", eid)
-    if eng.get("ws_advisor_id"):
-        await notify(eng["ws_advisor_id"], "Filing complete", f"{(corp or {}).get('name') or eid[:8]} T2 filed with CRA", "filing_complete", eid)
+    if eng.get("partner_advisor_id"):
+        await notify(eng["partner_advisor_id"], "Filing complete", f"{(corp or {}).get('name') or eid[:8]} T2 filed with CRA", "filing_complete", eid)
     await notify_admins("T2 filed with CRA", f"{(corp or {}).get('name') or eid[:8]} has been filed.", "filing_complete_admin", eid)
     return {
         "ok": True,
@@ -4111,7 +4111,7 @@ async def read_all(user: dict = Depends(get_current_user)):
 # ==================== Metrics ====================
 
 @api.get("/metrics/pilot")
-async def pilot_metrics(user: dict = Depends(require_role("ADMIN", "WS_PARTNER"))):
+async def pilot_metrics(user: dict = Depends(require_role("ADMIN", "PARTNER"))):
     db = get_db()
     total = await db.engagements.count_documents({})
     filed = await db.engagements.count_documents({"status": "FILED"})
@@ -4293,7 +4293,7 @@ async def export_csv(user: dict = Depends(require_role("ADMIN"))):
 
     engs = [e async for e in db.engagements.find({}, {"_id": 0}).sort("referral_date", 1)]
     corp_ids = list({e["corporation_id"] for e in engs})
-    user_ids = list({uid for e in engs for uid in [e.get("assigned_cpa_id"), e.get("ws_advisor_id")] if uid})
+    user_ids = list({uid for e in engs for uid in [e.get("assigned_cpa_id"), e.get("partner_advisor_id")] if uid})
     corps = {c["id"]: c async for c in db.corporations.find({"id": {"$in": corp_ids}}, {"_id": 0})}
     user_ids += [c.get("client_id") for c in corps.values() if c.get("client_id")]
     users = {}
@@ -4302,7 +4302,7 @@ async def export_csv(user: dict = Depends(require_role("ADMIN"))):
 
     columns = [
         "client_name", "corporation", "tier", "original_tier", "tier_changed",
-        "current_status", "assigned_cpa", "ws_advisor",
+        "current_status", "assigned_cpa", "partner_advisor",
         "referral_date", "filing_date", "turnaround_days",
         "total_cpa_hours", "hours_by_category",
         "documents_requested", "documents_received", "documents_deferred",
@@ -4318,7 +4318,7 @@ async def export_csv(user: dict = Depends(require_role("ADMIN"))):
         corp = corps.get(e["corporation_id"]) or {}
         client = users.get(corp.get("client_id")) or {}
         cpa = users.get(e.get("assigned_cpa_id")) or {}
-        ws = users.get(e.get("ws_advisor_id")) or {}
+        ws = users.get(e.get("partner_advisor_id")) or {}
 
         # Hours
         hours_pipeline = [
@@ -4580,7 +4580,7 @@ class AttachUrlIn(BaseModel):
 @api.post("/engagements/{eid}/messages/attach-url")
 async def message_attach_url(eid: str, body: AttachUrlIn, user: dict = Depends(get_current_user)):
     await get_engagement_or_404(eid, user)
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         raise HTTPException(403, "Not permitted")
     safe = "".join(c for c in body.file_name if c.isalnum() or c in "._-")[:80] or "file"
     object_key = f"engagements/{eid}/messages/{uuid.uuid4().hex}_{safe}"
@@ -4597,7 +4597,7 @@ async def message_attach_download(mid: str, user: dict = Depends(get_current_use
     if not msg or not msg.get("attachment_url"):
         raise HTTPException(404, "Attachment not found")
     await get_engagement_or_404(msg["engagement_id"], user)
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         raise HTTPException(403, "Not permitted")
     url = s3_service.generate_download_url(msg["attachment_url"], msg.get("attachment_name"))
     if not url:
@@ -4631,10 +4631,10 @@ async def messages_inbox(user: dict = Depends(get_current_user)):
 
     ADMIN sees every engagement that has at least one message OR every active engagement (so
     they can pro-actively reach out). CPA → only their assigned engagements. CLIENT → their
-    own engagement. WS_PARTNER → 403 (partners are messaging-disabled per spec).
+    own engagement. PARTNER → 403 (partners are messaging-disabled per spec).
     """
     db = get_db()
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         raise HTTPException(403, "Not permitted")
 
     # Resolve which engagements this user is allowed to see
@@ -4734,7 +4734,7 @@ async def messages_inbox(user: dict = Depends(get_current_user)):
 async def list_messages(eid: str, user: dict = Depends(get_current_user)):
     db = get_db()
     await get_engagement_or_404(eid, user)
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         raise HTTPException(403, "Not permitted")
     rows = [r async for r in db.messages.find({"engagement_id": eid}, {"_id": 0}).sort("created_at", 1)]
     sender_ids = list({r["sender_id"] for r in rows})
@@ -4856,7 +4856,7 @@ async def stream_messages(eid: str, request: Request, token: Optional[str] = Non
     if not user:
         raise HTTPException(401, "User not found")
     await get_engagement_or_404(eid, user)
-    if user["role"] == "WS_PARTNER":
+    if user["role"] == "PARTNER":
         raise HTTPException(403, "Not permitted")
 
     from fastapi.responses import StreamingResponse

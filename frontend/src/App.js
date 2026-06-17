@@ -21,7 +21,7 @@ import AdminSettings from "./pages/AdminSettings";
 
 function roleHome(role) {
   if (role === "CLIENT") return "/portal";
-  if (role === "WS_PARTNER") return "/ws/dashboard";
+  if (role === "PARTNER") return "/partner/dashboard";
   if (role === "CPA") return "/cpa/files";
   if (role === "ADMIN") return "/admin/dashboard";
   return "/login";
@@ -46,6 +46,14 @@ function RootRedirect() {
   return <Navigate to={roleHome(user.role)} replace />;
 }
 
+// Phase 1.5 transition: redirect the old /ws/* routes to their /partner/*
+// equivalents so existing bookmarks and in-flight links keep working. Dropped
+// in Stage D once no old links are expected.
+function LegacyWsRedirect() {
+  const { pathname, search } = useLocation();
+  return <Navigate to={pathname.replace(/^\/ws\//, "/partner/") + search} replace />;
+}
+
 // ---------- Dynamic browser-tab title ----------
 // Runs on every route change. Maps the current pathname to a human label and
 // sets ``document.title = "<label> | CloudTax's Portal"``. Falls back to the
@@ -64,10 +72,10 @@ function labelForPath(pathname) {
   if (pathname === "/portal") return "Dashboard";
   if (pathname.startsWith("/portal/messages")) return "Messages";
   if (pathname.startsWith("/portal/account")) return "Account";
-  // WS partner
-  if (pathname === "/ws/dashboard") return "Client Pipeline";
-  if (pathname.startsWith("/ws/onboarding/")) return "Onboarding";
-  if (pathname.startsWith("/ws/file/")) return "Client file";
+  // Partner
+  if (pathname === "/partner/dashboard") return "Client Pipeline";
+  if (pathname.startsWith("/partner/onboarding/")) return "Onboarding";
+  if (pathname.startsWith("/partner/file/")) return "Client file";
   // CPA
   if (pathname === "/cpa/files") return "My files";
   if (pathname.startsWith("/cpa/engagement/")) return "Engagement";
@@ -110,10 +118,12 @@ export default function App() {
             <Route path="/portal/account" element={<AccountPage />} />
           </Route>
 
-          <Route path="/ws/dashboard" element={<Protected roles={["WS_PARTNER"]}><WsDashboard /></Protected>} />
+          <Route path="/partner/dashboard" element={<Protected roles={["PARTNER"]}><WsDashboard /></Protected>} />
           {/* Onboarding is CloudTax-only now; partners are view-only. ADMIN guard, not just hidden UI. */}
-          <Route path="/ws/onboarding/:eid" element={<Protected roles={["ADMIN"]}><WsOnboardingDetail /></Protected>} />
-          <Route path="/ws/file/:eid" element={<Protected roles={["WS_PARTNER", "ADMIN"]}><WsFileDetail /></Protected>} />
+          <Route path="/partner/onboarding/:eid" element={<Protected roles={["ADMIN"]}><WsOnboardingDetail /></Protected>} />
+          <Route path="/partner/file/:eid" element={<Protected roles={["PARTNER", "ADMIN"]}><WsFileDetail /></Protected>} />
+          {/* Legacy /ws/* -> /partner/* so old bookmarks and in-flight links still land. */}
+          <Route path="/ws/*" element={<LegacyWsRedirect />} />
 
           <Route path="/cpa/files" element={<Protected roles={["CPA", "ADMIN"]}><CpaFiles /></Protected>} />
           <Route path="/cpa/engagement/:eid" element={<Protected roles={["CPA", "ADMIN"]}><CpaEngagement /></Protected>} />

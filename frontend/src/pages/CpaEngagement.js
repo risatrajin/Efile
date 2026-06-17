@@ -1064,7 +1064,7 @@ export default function CpaEngagement() {
                                       : role === "CLIENT" ? "Client"
                                       : role === "CPA" ? "CPA"
                                       : role === "ADMIN" ? "Admin"
-                                      : role === "WS_PARTNER" ? "Partner"
+                                      : role === "PARTNER" ? "Partner"
                                       : "";
                                     return tag ? <> · {tag}</> : null;
                                   })()}
@@ -1327,7 +1327,7 @@ export default function CpaEngagement() {
                 <div><span className="muted">Phone: </span>{client.phone || "—"}</div>
                 <div><span className="muted">Province: </span>{corp.province}</div>
                 <div><span className="muted">Practice: </span>{corp.practice_type || "—"}</div>
-                <div><span className="muted">WS advisor: </span>{eng.ws_advisor?.name || "—"}</div>
+                <div><span className="muted">Partner advisor: </span>{eng.partner_advisor?.name || "—"}</div>
               </div>
               {Array.isArray(delegateList) && delegateList.length > 0 && (
                 <div
@@ -1419,7 +1419,7 @@ export default function CpaEngagement() {
           )}
         </div>
 
-        {/* Tax situation / Notes — shared with WS partner + Admin */}
+        {/* Tax situation / Notes — shared with Partner + Admin */}
         <EngagementNotes eid={eid} />
       </div>
 

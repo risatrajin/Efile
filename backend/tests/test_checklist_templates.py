@@ -181,14 +181,14 @@ class TestCpaReviewTemplate:
         requests.delete(f"{BASE}/api/users/{row['client']['id']}?permanent=true", headers=_h(admin_token), timeout=20)
 
     def test_rbac_ws_partner_blocked(self, admin_token):
-        # WS partner should NOT be able to edit the CPA review template.
+        # Partner should NOT be able to edit the CPA review template.
         r = requests.post(
             f"{BASE}/api/auth/login",
             json={"email": "rajin@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")},
             timeout=20,
         )
         if r.status_code != 200 or r.json().get("two_factor_required"):
-            pytest.skip("WS partner login unavailable / 2FA required")
+            pytest.skip("Partner login unavailable / 2FA required")
         ws_tok = r.json()["token"]
         r2 = requests.get(f"{BASE}/api/cpa/review-checklist-template", headers=_h(ws_tok), timeout=20)
         assert r2.status_code == 403

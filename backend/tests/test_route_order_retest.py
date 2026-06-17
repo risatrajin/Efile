@@ -52,7 +52,7 @@ def test_patch_users_me_as_cpa_returns_200(tokens):
     assert r.status_code == 200, r.text
 
 
-# PATCH /users/me must return 200 for WS partner
+# PATCH /users/me must return 200 for Partner
 def test_patch_users_me_as_ws_returns_200(tokens):
     r = requests.patch(
         f"{BASE}/api/users/me",

@@ -6,7 +6,7 @@ Covers:
 - POST /api/engagements/{eid}/upload-draft (IN_REVIEW with prior decision: clears it, status stays IN_REVIEW)
 - DELETE /api/engagements/{eid}/draft (CPA/ADMIN only; reverts IN_REVIEW -> IN_PREP)
 - DELETE returns 404 when no draft
-- DELETE forbidden for CLIENT / WS_PARTNER
+- DELETE forbidden for CLIENT / PARTNER
 - Regression: POST /api/engagements/{eid}/move-to-review still works
 - Regression: POST /api/engagements/{eid}/review-decision still works
 - Full E2E loop: CPA upload -> client issue -> CPA re-upload clears decision
@@ -255,7 +255,7 @@ class TestDeleteDraft:
         if not _engagement(cpa_s, eid).get("t2_draft_doc_id"):
             _upload_draft(cpa_s, eid)
         r = ws_s.delete(f"{BASE_URL}/api/engagements/{eid}/draft", timeout=15)
-        assert r.status_code == 403, f"WS partner should be 403, got {r.status_code} {r.text}"
+        assert r.status_code == 403, f"Partner should be 403, got {r.status_code} {r.text}"
 
     def test_admin_can_delete_draft(self, cpa_s, admin_s, client_inprep_s):
         eng = _client_engagement(client_inprep_s)

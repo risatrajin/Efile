@@ -118,7 +118,7 @@ export default function WsOnboardingDetail() {
     setBusy(true); setErr("");
     try {
       await api.post(`/engagements/${eid}/submit`);
-      navigate("/ws/dashboard");
+      navigate("/partner/dashboard");
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
   };
@@ -134,7 +134,7 @@ export default function WsOnboardingDetail() {
 
   if (!eng || !form) return (
     <div className="app-root">
-      <AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} />
+      <AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} />
       <div className="page-wide">Loading…</div>
     </div>
   );
@@ -147,9 +147,9 @@ export default function WsOnboardingDetail() {
 
   return (
     <div className="app-root">
-      <AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} />
-      <div className="page-wide stack-lg" data-testid="ws-onboarding-detail" style={{ maxWidth: 1200 }}>
-        <Link to="/ws/dashboard" className="muted flex items-center gap-2" style={{ width: "fit-content", fontSize: 13, textDecoration: "none" }} data-testid="back-onboarding">
+      <AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} />
+      <div className="page-wide stack-lg" data-testid="partner-onboarding-detail" style={{ maxWidth: 1200 }}>
+        <Link to="/partner/dashboard" className="muted flex items-center gap-2" style={{ width: "fit-content", fontSize: 13, textDecoration: "none" }} data-testid="back-onboarding">
           <ArrowLeft size={14} /> Onboarding
         </Link>
         {err && <div className="alert alert-risk">{err}</div>}
@@ -159,11 +159,11 @@ export default function WsOnboardingDetail() {
           <div className="flex items-start gap-4">
             <div className="avatar" style={{ width: 56, height: 56, fontSize: 16, background: "#dde8f7", color: "#1565c0" }}>{initials(fullName)}</div>
             <div>
-              <h1 style={{ fontSize: 28, fontWeight: 700 }} data-testid="ws-detail-name">{displayName}</h1>
+              <h1 style={{ fontSize: 28, fontWeight: 700 }} data-testid="partner-detail-name">{displayName}</h1>
               <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>{form.corp_name || "Corporation pending"}</p>
               <div className="flex items-center gap-2 mt-3">
                 {form.tier && <TierBadge tier={form.tier} />}
-                <span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`} data-testid="ws-detail-status-badge">{ready ? "Ready" : "Draft"}</span>
+                <span className={`badge ${ready ? "badge-complete" : "badge-neutral"}`} data-testid="partner-detail-status-badge">{ready ? "Ready" : "Draft"}</span>
               </div>
             </div>
           </div>

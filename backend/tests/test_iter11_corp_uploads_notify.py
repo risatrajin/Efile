@@ -201,7 +201,7 @@ class TestCpaAssignmentNotifications:
         prev_cpa = target.get("assigned_cpa_id")
         new_cpa = terry_id if prev_cpa != terry_id else pallavi_id
 
-        # Capture baseline notification count for ws partner
+        # Capture baseline notification count for partner
         ws_before = ws.get(f"{API}/notifications", timeout=20).json()
         cpa_before = cpa.get(f"{API}/notifications", timeout=20).json()
         ws_before_ids = {n.get("id") for n in ws_before}
@@ -339,7 +339,7 @@ class TestMultiFileUploads:
         if not (doc_id and file_ids):
             pytest.skip("upload test did not run")
         r = ws.delete(f"{API}/documents/{doc_id}/files/{file_ids[1]}", timeout=20)
-        assert r.status_code == 403, f"WS partner should be 403, got {r.status_code}"
+        assert r.status_code == 403, f"Partner should be 403, got {r.status_code}"
 
     def test_delete_last_file_reverts_to_pending(self, kaur):
         doc_id = getattr(TestMultiFileUploads, "_doc_id", None)

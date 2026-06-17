@@ -1,4 +1,4 @@
-"""Seed pilot data: 10 physicians, 2 CPAs, 2 WS partners, 10 engagements at various stages.
+"""Seed pilot data: 10 physicians, 2 CPAs, 2 partners, 10 engagements at various stages.
 
 Idempotent on re-run (skips if seed marker already exists).
 """
@@ -42,7 +42,7 @@ CPAS = [
     ("pallavi@cloudtax.ca", "Pallavi Sharma"),
     ("terryann@cloudtax.ca", "Terry-Ann Mitchell"),
 ]
-WS_PARTNERS = [
+PARTNERS = [
     ("watson@partner.ca", "Watson Smith"),
     ("kristin@partner.ca", "Kristin Fox"),
 ]
@@ -113,7 +113,7 @@ async def main():
     admin = await db.users.find_one({"role": "ADMIN"})
 
     cpa_users = [mk_user(e, n, "CPA") for e, n in CPAS]
-    ws_users = [mk_user(e, n, "WS_PARTNER") for e, n in WS_PARTNERS]
+    ws_users = [mk_user(e, n, "PARTNER") for e, n in PARTNERS]
     client_users = [mk_user(e, n, "CLIENT") for e, n, _, _ in PHYSICIANS]
 
     await db.users.insert_many(cpa_users + ws_users + client_users)
@@ -168,7 +168,7 @@ async def main():
             "notes": None,
             "corporation_id": corp_id,
             "assigned_cpa_id": cpa["id"] if status != "REFERRED" else None,
-            "ws_advisor_id": wsp["id"],
+            "partner_advisor_id": wsp["id"],
             "created_at": referral_date,
             "updated_at": now,
         }

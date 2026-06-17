@@ -6,7 +6,7 @@ import PasswordField from "../components/shared/PasswordField";
 
 function roleToHome(role) {
   if (role === "CLIENT") return "/portal";
-  if (role === "WS_PARTNER") return "/ws/dashboard";
+  if (role === "PARTNER") return "/partner/dashboard";
   if (role === "CPA") return "/cpa/files";
   if (role === "ADMIN") return "/admin/dashboard";
   return "/";

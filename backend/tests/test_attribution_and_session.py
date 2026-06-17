@@ -114,7 +114,7 @@ def test_delegate_upload_attribution_carries_relationship():
 
 def test_auth_header_wins_over_cookie():
     """Two simulated tabs: tab A logs in as the primary client, tab B logs in
-    as the WS partner. Tab A's request carries the partner's stale cookie BUT
+    as the Partner. Tab A's request carries the partner's stale cookie BUT
     the primary client's bearer token in the Authorization header. The
     backend must respect the bearer (per-tab identity), not the shared cookie.
     """

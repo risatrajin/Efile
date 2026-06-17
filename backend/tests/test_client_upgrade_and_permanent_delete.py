@@ -35,7 +35,7 @@ def _h(t):
 
 
 def _create_client(admin_token, email):
-    """Seed a CLIENT user directly via the engagement endpoint (WS Partner path).
+    """Seed a CLIENT user directly via the engagement endpoint (Partner path).
     Falls back to /users/invite with role=CLIENT as a quick seed."""
     r = requests.post(
         f"{BASE}/api/users/invite",

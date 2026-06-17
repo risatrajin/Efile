@@ -61,10 +61,10 @@ function notifPathFor(n, userRole) {
       return `/admin/client/${eid}`;
     case "CPA":
       return `/cpa/engagement/${eid}`;
-    case "WS_PARTNER":
+    case "PARTNER":
       // Partners are view-only — every notification opens the read-only file
       // detail. Onboarding is CloudTax-only, so there is no partner wizard link.
-      return `/ws/file/${eid}`;
+      return `/partner/file/${eid}`;
     case "CLIENT":
       if (n.type === "client_message" || n.type === "cpa_message") return "/portal/messages";
       return "/portal";

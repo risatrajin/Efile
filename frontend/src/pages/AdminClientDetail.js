@@ -415,7 +415,7 @@ export default function AdminClientDetail() {
             </div>
 
             <TaxSituationCard rows={noteRows} onSave={saveNotesFromRows} busy={busy} />
-            <EngagementNotes eid={eid} title="Notes feed (WS partner / CPA / Admin)" />
+            <EngagementNotes eid={eid} title="Notes feed (Partner / CPA / Admin)" />
 
             <DocumentsCard documents={documents} />
           </div>

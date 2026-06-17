@@ -12,7 +12,7 @@ const STATUS_BADGES = {
 const ROLE_BADGES = {
   ADMIN:      { bg: "#fce4ec", fg: "#ad1457", label: "Admin" },
   CPA:        { bg: "#ede7f6", fg: "#4527a0", label: "CPA" },
-  WS_PARTNER: { bg: "#e3f2fd", fg: "#0d47a1", label: "Partner" },
+  PARTNER: { bg: "#e3f2fd", fg: "#0d47a1", label: "Partner" },
   CLIENT:     { bg: "#eceff1", fg: "#37474f", label: "Client" },
 };
 
@@ -194,7 +194,7 @@ export default function UsersTable({ navigate }) {
           <option value="all">All roles</option>
           <option value="ADMIN">Admin</option>
           <option value="CPA">CPA</option>
-          <option value="WS_PARTNER">Partner</option>
+          <option value="PARTNER">Partner</option>
           <option value="CLIENT">Client</option>
         </select>
         <select className="select users-filter-status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-testid="users-status-filter">

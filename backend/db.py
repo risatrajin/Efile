@@ -21,7 +21,7 @@ async def create_indexes():
     await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
     await db.login_attempts.create_index("identifier")
     await db.engagements.create_index("assigned_cpa_id")
-    await db.engagements.create_index("ws_advisor_id")
+    await db.engagements.create_index("partner_advisor_id")
     await db.engagements.create_index("status")
     await db.documents.create_index("engagement_id")
     await db.opportunities.create_index("engagement_id")

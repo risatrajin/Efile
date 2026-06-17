@@ -10,7 +10,7 @@ const AuthCtx = createContext(null);
 const PARTNER_ROLE_ALIASES = ["WS_PARTNER", "PARTNER"];
 const normalizeUser = (u) =>
   u && typeof u === "object" && PARTNER_ROLE_ALIASES.includes(u.role)
-    ? { ...u, role: "WS_PARTNER" }
+    ? { ...u, role: "PARTNER" }   // canonical flipped to PARTNER in Stage C; WS_PARTNER still accepted
     : u;
 
 export function AuthProvider({ children }) {

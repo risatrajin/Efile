@@ -122,7 +122,7 @@ class TestReactivateSoftDeleted:
         # should preserve the original user id but apply the new role.
         r3 = requests.post(
             f"{BASE}/api/users/invite",
-            json={"email": email, "name": "Reactivated Person", "role": "WS_PARTNER"},
+            json={"email": email, "name": "Reactivated Person", "role": "PARTNER"},
             headers=_headers(admin_token),
             timeout=20,
         )
@@ -137,7 +137,7 @@ class TestReactivateSoftDeleted:
         assert r4.status_code == 200, r4.text
         match = next((u for u in r4.json() if u.get("email") == email), None)
         assert match is not None, "reactivated user should reappear in the team list"
-        assert match["role"] == "WS_PARTNER"
+        assert match["role"] == "PARTNER"
         assert match.get("is_active") is True
         assert match.get("reactivated_at")
         assert match["name"] == "Reactivated Person"

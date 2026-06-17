@@ -417,7 +417,7 @@ def _tpl_ws_intake_complete(d: dict):
     client = d.get("client_name") or "a client"
     corp = d.get("corporation_name") or "—"
     tier = d.get("tier") or "Standard"
-    link = d.get("link") or f"{_frontend_url()}/ws/dashboard"
+    link = d.get("link") or f"{_frontend_url()}/partner/dashboard"
     body = (
         _h1(f"Intake complete: {client}")
         + _p("All intake documents are in. Your CPA has moved the engagement into preparation.")
@@ -431,7 +431,7 @@ def _tpl_ws_filing_complete(d: dict):
     client = d.get("client_name") or "a client"
     conf = d.get("cra_confirmation") or "—"
     turnaround = d.get("turnaround_days")
-    link = d.get("link") or f"{_frontend_url()}/ws/dashboard"
+    link = d.get("link") or f"{_frontend_url()}/partner/dashboard"
     rows = [("Client", client), ("CRA confirmation", conf)]
     if turnaround is not None:
         rows.append(("Turnaround", f"{turnaround} day{'s' if turnaround != 1 else ''}"))
@@ -449,7 +449,7 @@ def _tpl_ws_opportunity(d: dict):
     title = d.get("opportunity_title") or "Advisory opportunity"
     cat = d.get("category") or "Opportunity"
     desc = d.get("description") or ""
-    link = d.get("link") or f"{_frontend_url()}/ws/dashboard"
+    link = d.get("link") or f"{_frontend_url()}/partner/dashboard"
     body = (
         _h1(f"Advisory opportunity: {client}")
         + _p("Our CPA identified an opportunity worth sharing with the Ownr advisory team.")

@@ -1,8 +1,8 @@
 """
-Iteration 5 — WS Partner checklist template & onboarding seeding.
+Iteration 5 — Partner checklist template & onboarding seeding.
 Endpoints under test:
-  - GET  /api/partner/checklist-template (WS_PARTNER+ADMIN allowed; CPA/CLIENT 403)
-  - PUT  /api/partner/checklist-template (WS_PARTNER persists; empty -> 400)
+  - GET  /api/partner/checklist-template (PARTNER+ADMIN allowed; CPA/CLIENT 403)
+  - PUT  /api/partner/checklist-template (PARTNER persists; empty -> 400)
   - POST /api/engagements/onboarding seeds pre_filing_checklist from current template
 Regression: existing engagement's pre_filing_checklist remains unchanged after PUT.
 """

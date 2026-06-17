@@ -314,7 +314,7 @@ const ROLE_PRESETS = {
   Manager: { canonical: "ADMIN",      perms: { view_clients: true, onboard_clients: true, assign_cpa: true, reassign_cpa: true, send_reminders: true, send_messages: true, view_docs: true, move_clients: true, workload: true, view_cpa_hours: true, export_data: true, settings: false, audit_logs: true, manage_roles: false } },
   Other:   { canonical: "ADMIN",      perms: { view_clients: true, onboard_clients: false, assign_cpa: false, reassign_cpa: false, send_reminders: false, send_messages: false, view_docs: true, move_clients: false, workload: false, view_cpa_hours: false, export_data: false, settings: false, audit_logs: false, manage_roles: false } },
   CPA:     { canonical: "CPA",        perms: { view_clients: true, onboard_clients: false, assign_cpa: false, reassign_cpa: false, send_reminders: true, send_messages: true, view_docs: true, move_clients: false, workload: false, view_cpa_hours: true, export_data: false, settings: false, audit_logs: false, manage_roles: false } },
-  Partner: { canonical: "WS_PARTNER", perms: { view_clients: true, onboard_clients: false, assign_cpa: false, reassign_cpa: false, send_reminders: false, send_messages: false, view_docs: true, move_clients: false, workload: false, view_cpa_hours: false, export_data: false, settings: false, audit_logs: false, manage_roles: false } },
+  Partner: { canonical: "PARTNER", perms: { view_clients: true, onboard_clients: false, assign_cpa: false, reassign_cpa: false, send_reminders: false, send_messages: false, view_docs: true, move_clients: false, workload: false, view_cpa_hours: false, export_data: false, settings: false, audit_logs: false, manage_roles: false } },
 };
 
 function AddMemberModal({ onClose, onDone }) {

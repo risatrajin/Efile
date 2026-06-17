@@ -3,14 +3,14 @@ import { api, fmtError } from "../../lib/api";
 import { Send, Clock } from "lucide-react";
 
 const ROLE_LABEL = {
-  WS_PARTNER: "Ownr",
+  PARTNER: "Ownr",
   CPA: "CPA",
   ADMIN: "Admin",
   CLIENT: "Client",
 };
 
 const ROLE_BG = {
-  WS_PARTNER: "#e3f2fd",
+  PARTNER: "#e3f2fd",
   CPA: "#e8f5e9",
   ADMIN: "#fff8e1",
 };

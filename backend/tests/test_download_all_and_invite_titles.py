@@ -5,7 +5,7 @@ Covers:
  - GET /api/engagements/{eid}/documents/download-all returns a valid ZIP
    containing every client-uploaded file organized by document folder.
  - 404 when no files are uploaded yet.
- - WS partners receive 403 (cannot download client documents).
+ - Partners receive 403 (cannot download client documents).
  - Email subjects + headings now carry the role suffix "(Client)" / "(Partner)"
    and preserve multi-word first_name values.
 """

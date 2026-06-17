@@ -50,7 +50,7 @@ async def main():
             "status": "ONBOARDING", "cra_access_status": "NOT_STARTED",
             "cra_access_method": None, "cra_programs": None, "referral_date": None,
             "notes": None, "corporation_id": corp_id, "assigned_cpa_id": None,
-            "ws_advisor_id": kris["id"], "created_at": now, "updated_at": now,
+            "partner_advisor_id": kris["id"], "created_at": now, "updated_at": now,
         })
         print(f"Seeded onboarding: {full} ({'READY' if ready else 'DRAFT'})")
     await db.seed_marker.insert_one({"key": "ws_onboarding_v4", "applied_at": now})

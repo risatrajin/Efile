@@ -2,7 +2,7 @@
 
 The user reported that delegates couldn't upload or view documents. Backend
 investigation showed the engagement gate ALREADY accepts delegates and the
-upload/view endpoints ONLY block WS_PARTNER. This test locks those guarantees
+upload/view endpoints ONLY block PARTNER. This test locks those guarantees
 in place and ensures we never regress them.
 
 Covers:

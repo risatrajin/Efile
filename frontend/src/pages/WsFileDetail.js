@@ -69,7 +69,7 @@ export default function WsFileDetail() {
   const { user } = useAuth();
   // Partner viewers get the Ownr purple scope; ADMIN viewing this shared route
   // stays on the CloudTax warm-neutral palette.
-  const rootClass = "app-root" + (user?.role === "WS_PARTNER" ? " ownr-portal" : "");
+  const rootClass = "app-root" + (user?.role === "PARTNER" ? " ownr-portal" : "");
   const [eng, setEng] = useState(null);
   const [docs, setDocs] = useState([]);
   const [time, setTime] = useState([]);
@@ -84,7 +84,7 @@ export default function WsFileDetail() {
       ]);
       setEng(a.data);
       setHistory(b.data || []);
-      // WS partner safe summary (no S3 keys / download URLs); fall back to full /documents for CPA/Admin
+      // Partner safe summary (no S3 keys / download URLs); fall back to full /documents for CPA/Admin
       try {
         const { data: d } = await api.get(`/engagements/${eid}/documents/summary`);
         setDocs(d);
@@ -96,13 +96,13 @@ export default function WsFileDetail() {
         catch (e2) { console.debug("[WsFileDetail] documents fetch failed:", e1, e2); }
       }
       try { const { data: t } = await api.get(`/engagements/${eid}/time-entries`); setTime(t); }
-      catch (e) { console.debug("[WsFileDetail] time-entries fetch (expected for WS_PARTNER):", e?.response?.status); }
+      catch (e) { console.debug("[WsFileDetail] time-entries fetch (expected for PARTNER):", e?.response?.status); }
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
 
   if (!eng) return (
-    <div className={rootClass}><AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>
+    <div className={rootClass}><AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>
   );
 
   const corp = eng.corporation || {};
@@ -111,15 +111,15 @@ export default function WsFileDetail() {
   const totalHours = time.reduce((s, t) => s + (t.hours || 0), 0);
   const docsTotal = docs.length || eng.docs_total || 0;
   const docsReceived = docs.filter((d) => ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(d.status)).length;
-  const tabs = [{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }];
+  const tabs = [{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }];
 
   const docList = docs.map((d) => ({ name: d.name, status: d.status }));
 
   return (
     <div className={rootClass}>
       <AppHeader tabs={tabs} />
-      <div className="page-wide stack-lg" data-testid="ws-file-detail">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate("/ws/dashboard")} style={{ width: "fit-content" }} data-testid="back-link"><ArrowLeft size={12} /> Dashboard</button>
+      <div className="page-wide stack-lg" data-testid="partner-file-detail">
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate("/partner/dashboard")} style={{ width: "fit-content" }} data-testid="back-link"><ArrowLeft size={12} /> Dashboard</button>
         {err && <div className="alert alert-risk">{err}</div>}
 
         <div className="flex between items-start" style={{ flexWrap: "wrap", gap: 16 }}>
