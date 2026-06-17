@@ -94,6 +94,11 @@ html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;u
 .ownr-portal {
   --accent-dark: #5f3dc8;
   --accent-dark-hover: #4c30a0;
+  /* Kanban layering: white page -> light grey columns -> white cards on top.
+     --bg-subtle drives the kanban column background; .kanban-card is already
+     #fff with a --border-default outline, so cards lift off the grey. */
+  --bg-primary: #ffffff;
+  --bg-subtle: #f5f5f7;
 }
 .ownr-portal .btn-primary:hover { background: var(--accent-dark-hover); }
 
