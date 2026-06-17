@@ -229,38 +229,55 @@ class TestOnboardingSeedsFromTemplate:
         # All should start uncompleted
         assert all(c["is_completed"] is False for c in cl)
 
-    @pytest.mark.skip(reason=(
-        "Superseded contract. This asserts the PRE-propagation behavior (existing "
-        "engagements frozen after a template PUT). The backend now propagates template "
-        "changes to ALL engagements by design — see update_checklist_template in "
-        "server.py ('Changes apply to all clients'), which rebuilds every "
-        "pre_filing_checklist while preserving completion for surviving labels. The "
-        "current propagation contract is covered by test_checklist_templates.py "
-        "(test_partner_save_propagates_to_existing / test_put_propagates_to_engagements). "
-        "Unrelated to the Phase 1.5 WS sweep / partner view-only change."
-    ))
-    def test_existing_engagement_unchanged_after_template_put(self, ws_token, admin_token):
-        # Step 1: create engagement under current template
+    def test_existing_engagement_updated_after_template_put(self, ws_token, admin_token):
+        # Global-propagation contract: an ADMIN template change rebuilds every
+        # existing engagement's pre_filing_checklist to the new template, while
+        # preserving completion state for any label that survives the edit.
+        # (Superseded the old "existing engagement frozen" behavior — see
+        # update_checklist_template in server.py: "Changes apply to all clients".)
+
+        # Step 1: set template v1 and create an engagement that snapshots it.
         new_items_v1 = [
             {"label": "TEST_V1_ONE", "optional": False},
             {"label": "TEST_V1_TWO", "optional": False},
         ]
-        requests.put(f"{BASE}/api/partner/checklist-template",
-                     headers=_h(admin_token), json={"items": new_items_v1}, timeout=20)
-        eid = self._create_eng(admin_token, "_regression")
-        prog_before = self._get_eng(ws_token, eid)
-        labels_before = [c["item"] for c in prog_before["checklist"]]
-        assert labels_before == ["TEST_V1_ONE", "TEST_V1_TWO"]
+        r = requests.put(f"{BASE}/api/partner/checklist-template",
+                         headers=_h(admin_token), json={"items": new_items_v1}, timeout=20)
+        assert r.status_code == 200, r.text
+        eid = self._create_eng(admin_token, "_propagation")
+        cl_before = self._get_eng(ws_token, eid)["checklist"]
+        assert [c["item"] for c in cl_before] == ["TEST_V1_ONE", "TEST_V1_TWO"]
 
-        # Step 2: change the template
-        new_items_v2 = [
-            {"label": "TEST_V2_DIFFERENT", "optional": False},
+        # Step 2: mark a surviving item (TEST_V1_ONE) complete so we can prove
+        # completion state is preserved across the template change.
+        patch_items = [
+            {"id": c["id"], "item": c["item"], "is_completed": (c["item"] == "TEST_V1_ONE")}
+            for c in cl_before
         ]
-        requests.put(f"{BASE}/api/partner/checklist-template",
-                     headers=_h(admin_token), json={"items": new_items_v2}, timeout=20)
+        rp = requests.patch(f"{BASE}/api/engagements/{eid}/pre-filing-checklist",
+                            headers=_h(admin_token), json={"items": patch_items}, timeout=20)
+        assert rp.status_code == 200, rp.text
 
-        # Step 3: existing engagement's checklist must NOT have changed
-        prog_after = self._get_eng(ws_token, eid)
-        labels_after = [c["item"] for c in prog_after["checklist"]]
-        assert labels_after == labels_before, \
-            f"Existing engagement checklist mutated! before={labels_before} after={labels_after}"
+        # Step 3: update the template — TEST_V1_ONE survives, TEST_V1_TWO is
+        # dropped, TEST_V2_NEW is added.
+        new_items_v2 = [
+            {"label": "TEST_V1_ONE", "optional": False},
+            {"label": "TEST_V2_NEW", "optional": False},
+        ]
+        r2 = requests.put(f"{BASE}/api/partner/checklist-template",
+                          headers=_h(admin_token), json={"items": new_items_v2}, timeout=20)
+        assert r2.status_code == 200, r2.text
+
+        # Step 4: existing engagement IS rebuilt to the new template, with the
+        # surviving label keeping its completion state.
+        cl_after = self._get_eng(ws_token, eid)["checklist"]
+        labels_after = [c["item"] for c in cl_after]
+        assert labels_after == ["TEST_V1_ONE", "TEST_V2_NEW"], \
+            f"expected propagation to new template, got {labels_after}"
+        by_label = {c["item"]: c for c in cl_after}
+        # Surviving label keeps its completed state...
+        assert by_label["TEST_V1_ONE"]["is_completed"] is True, \
+            "completion of surviving label must be preserved across template edit"
+        # ...the new item starts unchecked, and the dropped item is gone.
+        assert by_label["TEST_V2_NEW"]["is_completed"] is False
+        assert "TEST_V1_TWO" not in labels_after
