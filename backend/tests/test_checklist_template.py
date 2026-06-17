@@ -1,9 +1,12 @@
 """
 Iteration 5 — Partner checklist template & onboarding seeding.
-Endpoints under test:
-  - GET  /api/partner/checklist-template (PARTNER+ADMIN allowed; CPA/CLIENT 403)
-  - PUT  /api/partner/checklist-template (PARTNER persists; empty -> 400)
-  - POST /api/engagements/onboarding seeds pre_filing_checklist from current template
+
+Partner is view-only (Phase 1.5): partners may READ the template but only ADMIN
+may mutate it or create onboardings. Endpoints under test:
+  - GET  /api/partner/checklist-template (PARTNER+ADMIN read; CPA/CLIENT 403)
+  - PUT  /api/partner/checklist-template (ADMIN persists; PARTNER 403; empty -> 400)
+  - POST /api/engagements/onboarding (ADMIN creates; PARTNER 403) seeds
+    pre_filing_checklist from current template
 Regression: existing engagement's pre_filing_checklist remains unchanged after PUT.
 """
 import os
@@ -87,34 +90,34 @@ class TestChecklistTemplateAccess:
 # ==================== PUT /partner/checklist-template ====================
 
 class TestChecklistTemplatePersistence:
-    """Mutates global state — keep ordered and restore at end."""
+    """Mutates global state — keep ordered and restore at end. ADMIN-only writes."""
 
     @pytest.fixture(scope="class", autouse=True)
-    def _restore_default(self, ws_token):
+    def _restore_default(self, admin_token):
         # Snapshot current template before mutation
-        r = requests.get(f"{BASE}/api/partner/checklist-template", headers=_h(ws_token), timeout=20)
+        r = requests.get(f"{BASE}/api/partner/checklist-template", headers=_h(admin_token), timeout=20)
         original = r.json()["items"] if r.status_code == 200 else None
         yield
         # Restore
         if original:
             requests.put(f"{BASE}/api/partner/checklist-template",
-                         headers=_h(ws_token),
+                         headers=_h(admin_token),
                          json={"items": original}, timeout=20)
 
-    def test_put_empty_items_returns_400(self, ws_token):
+    def test_put_empty_items_returns_400(self, admin_token):
         r = requests.put(f"{BASE}/api/partner/checklist-template",
-                         headers=_h(ws_token), json={"items": []}, timeout=20)
+                         headers=_h(admin_token), json={"items": []}, timeout=20)
         assert r.status_code == 400, r.text
 
-    def test_put_persists_and_get_returns_new(self, ws_token):
+    def test_put_persists_and_get_returns_new(self, admin_token, ws_token):
         new_items = [
             {"label": "TEST_X required item", "optional": False},
             {"label": "TEST_Y optional item", "optional": True},
         ]
         r = requests.put(f"{BASE}/api/partner/checklist-template",
-                         headers=_h(ws_token), json={"items": new_items}, timeout=20)
+                         headers=_h(admin_token), json={"items": new_items}, timeout=20)
         assert r.status_code == 200, r.text
-        # GET should now return exactly 2 items
+        # GET should now return exactly 2 items — partner (view-only) can still read.
         r2 = requests.get(f"{BASE}/api/partner/checklist-template", headers=_h(ws_token), timeout=20)
         assert r2.status_code == 200
         items = r2.json()["items"]
@@ -122,6 +125,12 @@ class TestChecklistTemplatePersistence:
         labels = [it["label"] for it in items]
         assert "TEST_X required item" in labels
         assert "TEST_Y optional item" in labels
+
+    def test_put_as_partner_forbidden(self, ws_token):
+        # Partner is view-only: PUT must be rejected even though GET is allowed.
+        r = requests.put(f"{BASE}/api/partner/checklist-template",
+                         headers=_h(ws_token), json={"items": [{"label": "x", "optional": False}]}, timeout=20)
+        assert r.status_code == 403, r.text
 
     def test_put_as_cpa_forbidden(self, cpa_token):
         r = requests.put(f"{BASE}/api/partner/checklist-template",
@@ -134,16 +143,16 @@ class TestChecklistTemplatePersistence:
 class TestOnboardingSeedsFromTemplate:
 
     @pytest.fixture(scope="class", autouse=True)
-    def _restore_default(self, ws_token):
-        r = requests.get(f"{BASE}/api/partner/checklist-template", headers=_h(ws_token), timeout=20)
+    def _restore_default(self, admin_token):
+        r = requests.get(f"{BASE}/api/partner/checklist-template", headers=_h(admin_token), timeout=20)
         original = r.json()["items"] if r.status_code == 200 else None
         yield
         if original:
             requests.put(f"{BASE}/api/partner/checklist-template",
-                         headers=_h(ws_token),
+                         headers=_h(admin_token),
                          json={"items": original}, timeout=20)
 
-    def _create_eng(self, ws_token, suffix=""):
+    def _create_eng(self, admin_token, suffix=""):
         unique = f"TEST_onboarding_{uuid.uuid4().hex[:8]}{suffix}@example.com"
         body = {
             "first_name": "TestFirst",
@@ -156,7 +165,7 @@ class TestOnboardingSeedsFromTemplate:
             "tier": "STANDARD",
             "notes": None,
         }
-        r = requests.post(f"{BASE}/api/engagements/onboarding", headers=_h(ws_token), json=body, timeout=20)
+        r = requests.post(f"{BASE}/api/engagements/onboarding", headers=_h(admin_token), json=body, timeout=20)
         assert r.status_code == 200, r.text
         return r.json()["id"]
 
@@ -166,32 +175,52 @@ class TestOnboardingSeedsFromTemplate:
         assert r.status_code == 200, r.text
         return r.json()
 
-    def test_new_onboarding_uses_default_template(self, ws_token):
+    def test_partner_cannot_create_onboarding_admin_can(self, ws_token, admin_token):
+        # View-only contract: partner POST is rejected, admin still succeeds.
+        body = {
+            "first_name": "TestFirst",
+            "last_name": "TestLast",
+            "client_email": f"TEST_viewonly_{uuid.uuid4().hex[:8]}@example.com",
+            "phone": "555-0100",
+            "province": "ON",
+            "corp_name": "Test Corp",
+            "fiscal_year_end": "2025-12-31",
+            "tier": "STANDARD",
+            "notes": None,
+        }
+        r_partner = requests.post(f"{BASE}/api/engagements/onboarding",
+                                  headers=_h(ws_token), json=body, timeout=20)
+        assert r_partner.status_code == 403, r_partner.text
+        r_admin = requests.post(f"{BASE}/api/engagements/onboarding",
+                                headers=_h(admin_token), json=body, timeout=20)
+        assert r_admin.status_code == 200, r_admin.text
+
+    def test_new_onboarding_uses_default_template(self, ws_token, admin_token):
         # Reset template to default by PUT-ing the canonical 6 (idempotent regardless of prior state)
         default_items = [{"label": L, "optional": L.endswith("(optional)")} for L in DEFAULT_TEMPLATE_LABELS]
         r = requests.put(f"{BASE}/api/partner/checklist-template",
-                         headers=_h(ws_token), json={"items": default_items}, timeout=20)
+                         headers=_h(admin_token), json={"items": default_items}, timeout=20)
         assert r.status_code == 200
 
-        eid = self._create_eng(ws_token, "_default")
-        prog = self._get_eng(ws_token, eid)
+        eid = self._create_eng(admin_token, "_default")
+        prog = self._get_eng(ws_token, eid)  # partner can view the seeded checklist
         cl = prog.get("checklist", [])
         assert len(cl) == 6, f"expected 6 items, got {len(cl)}: {cl}"
         labels = [c["item"] for c in cl]
         for expected in DEFAULT_TEMPLATE_LABELS:
             assert expected in labels, f"missing {expected} in {labels}"
 
-    def test_new_onboarding_uses_updated_template(self, ws_token):
+    def test_new_onboarding_uses_updated_template(self, ws_token, admin_token):
         new_items = [
             {"label": "TEST_TPL_A", "optional": False},
             {"label": "TEST_TPL_B", "optional": True},
             {"label": "TEST_TPL_C", "optional": False},
         ]
         r = requests.put(f"{BASE}/api/partner/checklist-template",
-                         headers=_h(ws_token), json={"items": new_items}, timeout=20)
+                         headers=_h(admin_token), json={"items": new_items}, timeout=20)
         assert r.status_code == 200
 
-        eid = self._create_eng(ws_token, "_updated")
+        eid = self._create_eng(admin_token, "_updated")
         prog = self._get_eng(ws_token, eid)
         cl = prog.get("checklist", [])
         assert len(cl) == 3, f"expected 3 items, got {len(cl)}: {cl}"
@@ -200,15 +229,25 @@ class TestOnboardingSeedsFromTemplate:
         # All should start uncompleted
         assert all(c["is_completed"] is False for c in cl)
 
-    def test_existing_engagement_unchanged_after_template_put(self, ws_token):
+    @pytest.mark.skip(reason=(
+        "Superseded contract. This asserts the PRE-propagation behavior (existing "
+        "engagements frozen after a template PUT). The backend now propagates template "
+        "changes to ALL engagements by design — see update_checklist_template in "
+        "server.py ('Changes apply to all clients'), which rebuilds every "
+        "pre_filing_checklist while preserving completion for surviving labels. The "
+        "current propagation contract is covered by test_checklist_templates.py "
+        "(test_partner_save_propagates_to_existing / test_put_propagates_to_engagements). "
+        "Unrelated to the Phase 1.5 WS sweep / partner view-only change."
+    ))
+    def test_existing_engagement_unchanged_after_template_put(self, ws_token, admin_token):
         # Step 1: create engagement under current template
         new_items_v1 = [
             {"label": "TEST_V1_ONE", "optional": False},
             {"label": "TEST_V1_TWO", "optional": False},
         ]
         requests.put(f"{BASE}/api/partner/checklist-template",
-                     headers=_h(ws_token), json={"items": new_items_v1}, timeout=20)
-        eid = self._create_eng(ws_token, "_regression")
+                     headers=_h(admin_token), json={"items": new_items_v1}, timeout=20)
+        eid = self._create_eng(admin_token, "_regression")
         prog_before = self._get_eng(ws_token, eid)
         labels_before = [c["item"] for c in prog_before["checklist"]]
         assert labels_before == ["TEST_V1_ONE", "TEST_V1_TWO"]
@@ -218,7 +257,7 @@ class TestOnboardingSeedsFromTemplate:
             {"label": "TEST_V2_DIFFERENT", "optional": False},
         ]
         requests.put(f"{BASE}/api/partner/checklist-template",
-                     headers=_h(ws_token), json={"items": new_items_v2}, timeout=20)
+                     headers=_h(admin_token), json={"items": new_items_v2}, timeout=20)
 
         # Step 3: existing engagement's checklist must NOT have changed
         prog_after = self._get_eng(ws_token, eid)
