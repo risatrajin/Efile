@@ -7,8 +7,11 @@ import { TierBadge } from "../components/shared/Badges";
 import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
 import { Lock, Inbox } from "lucide-react";
 
+// Partner pipeline starts at Referred — Onboarding is CloudTax-only and is not
+// shown in the partner view (partners can't onboard, so the column would always
+// be empty). The ONBOARDING stage still exists in the data model and in the
+// Admin/CloudTax views.
 const COLUMNS = [
-  { key: "ONBOARDING", label: "Onboarding", icon: "lock" },
   { key: "REFERRED", label: "Referred", icon: "lock" },
   { key: "INTAKE", label: "Intake", icon: "lock" },
   { key: "IN_PREP", label: "In Prep", icon: "lock" },
@@ -19,42 +22,6 @@ const COLUMNS = [
 function withDrPrefix(name) {
   if (!name) return "—";
   return (/^dr\.?\s/i).test(name) ? name : `Dr. ${name}`;
-}
-
-// View-only onboarding card. CloudTax does the onboarding now; partners just
-// see progress. No "Move to CloudTax" / "Complete checklist" actions.
-function OnboardingCard({ eng, progress, onOpen }) {
-  const corp = eng.corporation || {};
-  const client = eng.client || {};
-  const ready = progress?.ready;
-  return (
-    <div className="kanban-card" onClick={onOpen} data-testid={`onboarding-card-${eng.id}`} style={{ position: "relative", cursor: "pointer" }}>
-      <Lock size={11} style={{ position: "absolute", top: 12, right: 12, color: "var(--text-tertiary)" }} />
-      <div style={{ flex: 1, paddingRight: 16 }}>
-        <div style={{ fontWeight: 600, fontSize: 13 }}>{withDrPrefix(client.name)}</div>
-        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{corp.name || "Corporation pending"}</div>
-      </div>
-      {eng.tier && <div style={{ marginTop: 10 }}><TierBadge tier={eng.tier} /></div>}
-      <div className="muted" style={{ fontSize: 11, marginTop: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${client.email || ""}${corp.province ? " · " + corp.province : ""}`}>
-        {client.email}{corp.province ? ` · ${corp.province}` : ""}
-      </div>
-      <div className="mt-3">
-        {ready ? (
-          <span className="badge badge-complete">Ready</span>
-        ) : (
-          <div>
-            <div className="flex items-center between" style={{ fontSize: 11 }}>
-              <span className="muted">Draft</span>
-              <span className="muted">{progress?.completed || 0}/{progress?.total || 6} checklist</span>
-            </div>
-            <div className="mini-bar" style={{ width: "100%", marginTop: 6 }}>
-              <div className="fill" style={{ width: `${((progress?.completed || 0) / (progress?.total || 6)) * 100}%`, background: "#1565c0" }} />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function ReadOnlyCard({ eng, onOpen }) {
@@ -102,11 +69,13 @@ function ReadOnlyCard({ eng, onOpen }) {
   );
 }
 
+// Active (not-yet-filed) pipeline stages shown to the partner.
+const IN_PROGRESS_STATUSES = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW"];
+
 export default function WsDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [engs, setEngs] = useState([]);
-  const [progressMap, setProgressMap] = useState({});
   const [err, setErr] = useState("");
   const [view, setView] = useState(() => localStorage.getItem("ct_ws_dash_view") || "kanban");
 
@@ -114,13 +83,6 @@ export default function WsDashboard() {
     try {
       const { data } = await api.get("/engagements");
       setEngs(data);
-      const onboarding = data.filter((e) => e.status === "ONBOARDING");
-      const map = {};
-      await Promise.all(onboarding.map(async (e) => {
-        try { const { data: p } = await api.get(`/engagements/${e.id}/onboarding-progress`); map[e.id] = p; }
-        catch (err) { console.debug("[WsDashboard] onboarding-progress for", e.id, "failed:", err?.response?.status); }
-      }));
-      setProgressMap(map);
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); }, []);
@@ -132,6 +94,16 @@ export default function WsDashboard() {
   };
 
   const openFile = (eid) => navigate(`/ws/file/${eid}`);
+
+  // Stats derived entirely from the already-loaded engagement list.
+  const thisYear = new Date().getFullYear();
+  const filedEngs = engs.filter((e) => e.status === "FILED");
+  const stats = [
+    { key: "total", label: "Total clients", value: engs.length },
+    { key: "in_progress", label: "In progress", value: engs.filter((e) => IN_PROGRESS_STATUSES.includes(e.status)).length },
+    { key: "filed", label: "Filed", value: filedEngs.length },
+    { key: "filed_year", label: "Filed this year", value: filedEngs.filter((e) => e.filing_date && new Date(e.filing_date).getFullYear() === thisYear).length },
+  ];
 
   const tabs = [{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }];
   const rootClass = "app-root" + (user?.role === "WS_PARTNER" ? " ownr-portal" : "");
@@ -147,12 +119,21 @@ export default function WsDashboard() {
           </div>
           <ViewToggle value={view} onChange={setViewPersist} testid="ws-view-toggle" />
         </div>
+
+        <div className="partner-stats" data-testid="partner-stats">
+          {stats.map((s) => (
+            <div className="stat-card" key={s.key} data-testid={`stat-${s.key}`}>
+              <div className="stat-num">{s.value}</div>
+              <div className="stat-label">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
         {err && <div className="alert alert-risk">{err}</div>}
         {view === "kanban" ? (
-          <div className="kanban" style={{ gridTemplateColumns: "repeat(6, minmax(220px, 1fr))" }} data-testid="ws-kanban">
+          <div className="kanban" style={{ gridTemplateColumns: "repeat(5, minmax(220px, 1fr))" }} data-testid="ws-kanban">
             {COLUMNS.map((col) => {
               const items = engs.filter((e) => e.status === col.key);
-              const isOnboarding = col.key === "ONBOARDING";
               const isReferred = col.key === "REFERRED";
               const isEmpty = items.length === 0;
               return (
@@ -177,10 +158,7 @@ export default function WsDashboard() {
                   )}
                   {!isEmpty && (
                     <div className="stack-sm">
-                      {isOnboarding
-                        ? items.map((e) => <OnboardingCard key={e.id} eng={e} progress={progressMap[e.id]} onOpen={() => openFile(e.id)} />)
-                        : items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)
-                      }
+                      {items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)}
                     </div>
                   )}
                 </div>
@@ -195,7 +173,7 @@ export default function WsDashboard() {
             testid="ws-engagement-table"
             stageOptions={[
               { key: "all", label: "All stages" },
-              { key: "ONBOARDING", label: "Onboarding" },
+              { key: "REFERRED", label: "Referred" },
               { key: "INTAKE", label: "Intake" },
               { key: "IN_PREP", label: "In Prep" },
               { key: "IN_REVIEW", label: "In Review" },
