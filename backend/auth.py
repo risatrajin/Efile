@@ -46,6 +46,20 @@ def decode_token(token: str) -> dict:
     return pyjwt.decode(token, _jwt_secret(), algorithms=[JWT_ALG])
 
 
+# --- Phase 1.5 transition: WS_PARTNER <-> PARTNER dual-accept ---------------
+# During the rename both strings mean the same role. We normalise the in-memory
+# role to one canonical value so every downstream check (require_role + inline
+# role comparisons) accepts EITHER, regardless of what is stored in the DB or
+# carried in a JWT. Canonical is WS_PARTNER in stages A-B and flips to PARTNER
+# in stage C; deleting this block is stage D.
+PARTNER_ROLE_ALIASES = {"WS_PARTNER", "PARTNER"}
+CANONICAL_PARTNER_ROLE = "WS_PARTNER"
+
+
+def normalize_role(role):
+    return CANONICAL_PARTNER_ROLE if role in PARTNER_ROLE_ALIASES else role
+
+
 async def get_current_user(request: Request) -> dict:
     # Per-tab token first, fallback to cookie. The Authorization header is
     # populated from sessionStorage on the frontend (lib/tokenStorage.js) so it
@@ -66,6 +80,9 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"id": payload["sub"]}, {"password_hash": 0, "_id": 0})
         if not user or not user.get("is_active", True):
             raise HTTPException(status_code=401, detail="User not found or inactive")
+        # Dual-accept: collapse WS_PARTNER/PARTNER to the canonical role so all
+        # gating works no matter which value the DB holds during the migration.
+        user["role"] = normalize_role(user.get("role"))
         return user
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -74,8 +91,15 @@ async def get_current_user(request: Request) -> dict:
 
 
 def require_role(*roles: str):
+    # If any partner alias is named, accept both during the transition. (Roles
+    # are matched against the already-normalized user role from get_current_user,
+    # so this is belt-and-suspenders.)
+    allowed = set(roles)
+    if allowed & PARTNER_ROLE_ALIASES:
+        allowed |= PARTNER_ROLE_ALIASES
+
     async def dep(user: dict = Depends(get_current_user)) -> dict:
-        if user["role"] not in roles:
+        if user["role"] not in allowed:
             raise HTTPException(status_code=403, detail="Insufficient role")
         return user
     return dep
