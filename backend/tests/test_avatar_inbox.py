@@ -55,7 +55,7 @@ def cpa():
 
 @pytest.fixture(scope="module")
 def ws():
-    return _login("henry.ziegler@wealthsimple.com")
+    return _login("watson@partner.ca")
 
 
 @pytest.fixture(scope="module")

@@ -58,7 +58,7 @@ def client_thompson_token():
 
 @pytest.fixture(scope="module")
 def ws_token():
-    return login("henry.ziegler@wealthsimple.com")
+    return login("watson@partner.ca")
 
 
 @pytest.fixture(scope="module")

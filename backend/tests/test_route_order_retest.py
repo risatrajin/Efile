@@ -18,7 +18,7 @@ def tokens():
     return {
         "admin": login("admin@cloudtax.ca"),
         "cpa": login("pallavi@cloudtax.ca"),
-        "ws": login("henry.ziegler@wealthsimple.com"),
+        "ws": login("watson@partner.ca"),
         "client": login("chen@example.com"),
     }
 

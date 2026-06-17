@@ -43,8 +43,8 @@ CPAS = [
     ("terryann@cloudtax.ca", "Terry-Ann Mitchell"),
 ]
 WS_PARTNERS = [
-    ("henry.ziegler@ownr.co", "Henry Ziegler"),
-    ("kris.kibler@ownr.co", "Kris Kibler"),
+    ("watson@partner.ca", "Henry Ziegler"),
+    ("kristin@partner.ca", "Kris Kibler"),
 ]
 PHYSICIANS = [
     ("chen@example.com", "Dr. Emily Chen", "BC", "Family medicine"),

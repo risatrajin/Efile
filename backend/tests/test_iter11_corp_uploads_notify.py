@@ -55,7 +55,7 @@ def admin():
 
 @pytest.fixture(scope="session")
 def ws():
-    return _login("henry.ziegler@wealthsimple.com")
+    return _login("watson@partner.ca")
 
 
 @pytest.fixture(scope="session")

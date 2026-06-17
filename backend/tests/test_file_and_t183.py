@@ -36,7 +36,7 @@ PW = "CloudTax2026!"
 ADMIN = "admin@cloudtax.ca"
 CPA_TERRY = "terryann@cloudtax.ca"
 CPA_PALLAVI = "pallavi@cloudtax.ca"
-WS = "henry.ziegler@wealthsimple.com"
+WS = "watson@partner.ca"
 THOMPSON = "thompson@example.com"   # FILED already
 AHMED = "ahmed@example.com"         # IN_REVIEW
 

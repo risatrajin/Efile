@@ -15,7 +15,7 @@ if not BASE_URL:
 ADMIN_CREDS = {"email": "admin@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 CPA_CREDS = {"email": "pallavi@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 CPA2_CREDS = {"email": "terryann@cloudtax.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
-WS_CREDS = {"email": "henry.ziegler@wealthsimple.com", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
+WS_CREDS = {"email": "watson@partner.ca", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 CLIENT_CREDS = {"email": "chen@example.com", "password": os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")}
 
 

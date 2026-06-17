@@ -36,7 +36,7 @@ PASSWORD = os.environ.get("CT_TEST_PASSWORD", "CloudTax2026!")
 ADMIN = "admin@cloudtax.ca"
 CPA = "terryann@cloudtax.ca"  # Thompson's assigned CPA
 CPA_OTHER = "pallavi@cloudtax.ca"
-WS = "henry.ziegler@wealthsimple.com"
+WS = "watson@partner.ca"
 CLIENT_INPREP = "thompson@example.com"  # IN_PREP, assigned to terryann
 CLIENT_INREVIEW = "ahmed@example.com"   # IN_REVIEW
 
