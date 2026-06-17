@@ -101,6 +101,12 @@ html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;u
   --bg-subtle: #f5f5f7;
 }
 .ownr-portal .btn-primary:hover { background: var(--accent-dark-hover); }
+/* Partner cards: drop the border (stroke), lift with a subtle 1px shadow
+   instead. Hover keeps the existing stronger shadow. Partner portal only. */
+.ownr-portal .kanban-card {
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; min-height: 100%; }
