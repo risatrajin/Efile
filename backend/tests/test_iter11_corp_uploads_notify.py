@@ -48,6 +48,33 @@ def _login(email):
     pytest.skip(f"login {email} unavailable: {getattr(last, 'status_code', last)}")
 
 
+# Bearer-token auth for the ADMIN-gated onboarding endpoints. The session
+# fixtures above rely on the login *cookie*, which the backend marks Secure —
+# a plain-HTTP test client won't echo it back, so authenticated session calls
+# 401. Header auth sidesteps that, matching test_checklist_template.py.
+def _token(email):
+    last = None
+    for _ in range(3):
+        try:
+            r = requests.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD}, timeout=60)
+            last = r
+            if r.status_code == 200:
+                return r.json()["token"]
+        except Exception as e:
+            last = e
+        time.sleep(2)
+    pytest.skip(f"login {email} unavailable: {getattr(last, 'status_code', last)}")
+
+
+def _h(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(scope="session")
+def admin_token():
+    return _token("nim@cloudtax.ca")
+
+
 @pytest.fixture(scope="session")
 def admin():
     return _login("nim@cloudtax.ca")
@@ -69,8 +96,10 @@ def kaur():
 
 
 # ---------- corp_name mandatory ----------
+# Onboarding create/patch is ADMIN-only (partners are view-only since Phase 1),
+# so these drive the real ADMIN path via Bearer token.
 class TestCorpNameMandatory:
-    def test_post_onboarding_missing_corp_name_returns_400(self, ws):
+    def test_post_onboarding_missing_corp_name_returns_400(self, admin_token):
         payload = {
             "first_name": "TEST",
             "last_name": f"NoCorp{uuid.uuid4().hex[:6]}",
@@ -79,12 +108,12 @@ class TestCorpNameMandatory:
             "province": "ON",
             "tier": "STANDARD",
         }
-        r = ws.post(f"{API}/engagements/onboarding", json=payload, timeout=20)
+        r = requests.post(f"{API}/engagements/onboarding", headers=_h(admin_token), json=payload, timeout=20)
         assert r.status_code in (400, 422), f"expected 400/422, got {r.status_code} {r.text}"
         body = r.text.lower()
         assert "corp_name" in body, f"error message should mention corp_name: {r.text}"
 
-    def test_post_onboarding_blank_corp_name_returns_400(self, ws):
+    def test_post_onboarding_blank_corp_name_returns_400(self, admin_token):
         payload = {
             "first_name": "TEST",
             "last_name": f"Blank{uuid.uuid4().hex[:6]}",
@@ -94,11 +123,11 @@ class TestCorpNameMandatory:
             "tier": "STANDARD",
             "corp_name": "   ",
         }
-        r = ws.post(f"{API}/engagements/onboarding", json=payload, timeout=20)
+        r = requests.post(f"{API}/engagements/onboarding", headers=_h(admin_token), json=payload, timeout=20)
         assert r.status_code == 400, f"expected 400, got {r.status_code} {r.text}"
         assert "corp_name" in r.text.lower()
 
-    def test_post_onboarding_with_corp_name_succeeds(self, ws):
+    def test_post_onboarding_with_corp_name_succeeds(self, admin_token):
         suffix = uuid.uuid4().hex[:6]
         payload = {
             "first_name": "TEST",
@@ -109,7 +138,7 @@ class TestCorpNameMandatory:
             "tier": "STANDARD",
             "corp_name": f"TEST Iter11 Corp {suffix}",
         }
-        r = ws.post(f"{API}/engagements/onboarding", json=payload, timeout=20)
+        r = requests.post(f"{API}/engagements/onboarding", headers=_h(admin_token), json=payload, timeout=20)
         assert r.status_code in (200, 201), f"expected success, got {r.status_code} {r.text}"
         data = r.json()
         assert "engagement_id" in data or "id" in data, data
@@ -117,19 +146,22 @@ class TestCorpNameMandatory:
         # Save for PATCH test
         TestCorpNameMandatory._eid = eid
 
-    def test_patch_onboarding_blank_corp_name_returns_400(self, ws):
+    def test_patch_onboarding_blank_corp_name_returns_400(self, admin_token):
         eid = getattr(TestCorpNameMandatory, "_eid", None)
         if not eid:
             pytest.skip("create test did not run")
-        r = ws.patch(f"{API}/engagements/{eid}/onboarding", json={"corp_name": ""}, timeout=20)
+        r = requests.patch(f"{API}/engagements/{eid}/onboarding", headers=_h(admin_token), json={"corp_name": ""}, timeout=20)
         assert r.status_code == 400, f"expected 400, got {r.status_code} {r.text}"
         assert "corp_name" in r.text.lower() and "empty" in r.text.lower()
 
 
 # ---------- submit-to-cloudtax notifies admins ----------
+# Admin-driven end-to-end: ADMIN onboards, completes the checklist, submits to
+# CloudTax, and receives the new_referral_admin notification. Bearer token auth.
 class TestSubmitToCloudtaxNotifiesAdmins:
-    def test_admin_receives_new_referral_admin_notification(self, ws, admin):
+    def test_admin_receives_new_referral_admin_notification(self, admin_token):
         suffix = uuid.uuid4().hex[:6]
+        H = _h(admin_token)
         # Create onboarding draft
         payload = {
             "first_name": "TEST",
@@ -141,28 +173,28 @@ class TestSubmitToCloudtaxNotifiesAdmins:
             "corp_name": f"TEST Notify Corp {suffix}",
             "fiscal_year_end": "2026-12-31",
         }
-        r = ws.post(f"{API}/engagements/onboarding", json=payload, timeout=20)
+        r = requests.post(f"{API}/engagements/onboarding", headers=H, json=payload, timeout=20)
         assert r.status_code in (200, 201), r.text
         eid = r.json().get("engagement_id") or r.json().get("id")
 
         # PATCH onboarding to fill all remaining required fields
-        ws.patch(f"{API}/engagements/{eid}/onboarding", json=payload, timeout=20)
+        requests.patch(f"{API}/engagements/{eid}/onboarding", headers=H, json=payload, timeout=20)
 
         # Fetch progress (which exposes the checklist items) then mark them all complete
-        pg = ws.get(f"{API}/engagements/{eid}/onboarding-progress", timeout=20)
+        pg = requests.get(f"{API}/engagements/{eid}/onboarding-progress", headers=H, timeout=20)
         if pg.status_code == 200:
             cl = pg.json().get("checklist") or []
             items_payload = {"items": [{"id": c.get("id"), "item": c.get("item"), "is_completed": True} for c in cl]}
             if items_payload["items"]:
-                ws.patch(f"{API}/engagements/{eid}/pre-filing-checklist", json=items_payload, timeout=20)
+                requests.patch(f"{API}/engagements/{eid}/pre-filing-checklist", headers=H, json=items_payload, timeout=20)
 
         # Submit to cloudtax
-        r = ws.post(f"{API}/engagements/{eid}/submit", timeout=20)
+        r = requests.post(f"{API}/engagements/{eid}/submit", headers=H, timeout=20)
         assert r.status_code in (200, 201), f"submit failed: {r.status_code} {r.text}"
 
         # Admin should now see a new_referral_admin notification for this eid
         time.sleep(1)
-        nr = admin.get(f"{API}/notifications", timeout=20)
+        nr = requests.get(f"{API}/notifications", headers=H, timeout=20)
         assert nr.status_code == 200, nr.text
         notes = nr.json()
         match = [n for n in notes if n.get("type") == "new_referral_admin" and n.get("engagement_id") == eid]
