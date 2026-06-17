@@ -743,10 +743,10 @@ export default function ClientPortal() {
       <h1 className="page-title">
         {greetingName ? `Welcome, ${greetingName}` : "Welcome"}
       </h1>
-      <p className="muted" style={{ fontSize: 13 }}>Your CloudTax × Wealthsimple corporate tax engagement is being set up.</p>
+      <p className="muted" style={{ fontSize: 13 }}>Your CloudTax corporate tax engagement is being set up.</p>
       <div className="card">
         <p className="muted" style={{ fontSize: 13, lineHeight: 1.7 }}>
-          Your Wealthsimple advisor is setting up your file. A licensed CPA will be assigned shortly and you&apos;ll be notified to begin uploading documents.
+          Your CloudTax team is setting up your file. A licensed CPA will be assigned shortly and you&apos;ll be notified to begin uploading documents.
         </p>
       </div>
     </div>

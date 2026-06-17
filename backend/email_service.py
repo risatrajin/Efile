@@ -66,7 +66,7 @@ def _wrap(inner: str) -> str:
     return (
         f"<html><head>{_BRAND_STYLE}</head><body>"
         f"<div class='card'><div class='brand'>CloudTax</div>{inner}</div>"
-        f"<div class='footer'>Powered by CloudTax, in partnership with Wealthsimple</div>"
+        f"<div class='footer'>Powered by CloudTax, in partnership with Ownr</div>"
         f"</body></html>"
     )
 

@@ -122,7 +122,9 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
           data-testid="brand-logo"
           style={{ display: "inline-flex", alignItems: "center", marginRight: 8 }}
         >
-          <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block" }} />
+          {user?.role === "WS_PARTNER"
+            ? <img src="/ownr-logo.svg" alt="Ownr" style={{ height: 24, width: "auto", display: "block" }} />
+            : <img src="/cloud-tax-logo.svg" alt="CloudTax" style={{ height: 24, width: "auto", display: "block" }} />}
         </Link>
         {visibleTabs.length > 0 && (
           <nav className="nav-tabs" data-testid="nav-tabs">

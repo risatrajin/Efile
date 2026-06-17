@@ -31,17 +31,19 @@ def _frontend_url() -> str:
     return os.environ.get("FRONTEND_URL", "").rstrip("/") or "https://cloudtax.ca"
 
 
-def _brand_logo_svg() -> str:
-    # Use the combined CloudTax + Wealthsimple PNG (retina ready) — SVG is not
-    # reliably supported in Gmail / Outlook, so we serve a ~880x66 PNG from the
-    # frontend static directory and let the email client scale it down to
-    # ~220px wide. The URL lives under the public FRONTEND_URL so that all
-    # inbox providers (which strip cookies) can fetch it anonymously.
-    logo_url = f"{_frontend_url()}/cloudtax-wealthsimple-logo@2x.png"
+def _brand_logo_svg(brand: str = "cloudtax") -> str:
+    # CloudTax is the operator on every email; Ownr is the partner. Partner-facing
+    # emails pass brand="ownr" to show the Ownr wordmark instead. We serve a
+    # retina (@2x) PNG, NOT an SVG — Gmail/Outlook do not reliably render SVG in
+    # email. The asset lives under the public FRONTEND_URL so inbox providers
+    # (which strip cookies) can fetch it anonymously. The display height is 24px;
+    # the @2x PNG is 48px tall so it stays crisp on retina screens.
+    asset = "/ownr-logo@2x.png" if brand == "ownr" else "/cloud-tax-logo@2x.png"
+    alt = "Ownr" if brand == "ownr" else "CloudTax"
+    logo_url = f"{_frontend_url()}{asset}"
     return (
-        f"<img src=\"{logo_url}\" alt=\"CloudTax + Wealthsimple\" "
-        "width=\"220\" height=\"17\" "
-        "style=\"display:block;border:0;outline:none;text-decoration:none;max-width:220px;height:auto;\" />"
+        f"<img src=\"{logo_url}\" alt=\"{alt}\" height=\"24\" "
+        "style=\"display:block;border:0;outline:none;text-decoration:none;max-width:240px;height:24px;width:auto;\" />"
     )
 
 
@@ -69,8 +71,11 @@ def _resolve_first_name(d: dict) -> str:
     return raw.split()[0]
 
 
-def _wrap(body_html: str, *, preheader: str = "") -> str:
-    """Wrap `body_html` in the standard CloudTax email shell."""
+def _wrap(body_html: str, *, preheader: str = "", brand: str = "cloudtax") -> str:
+    """Wrap `body_html` in the standard CloudTax email shell.
+
+    ``brand`` selects the header wordmark: "cloudtax" (default, operator) or
+    "ownr" (partner-facing emails)."""
     preheader_html = (
         f"<div style=\"display:none !important;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#faf9f7;\">{preheader}</div>"
         if preheader else ""
@@ -88,7 +93,7 @@ def _wrap(body_html: str, *, preheader: str = "") -> str:
     <tr>
       <td align="center">
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-          <tr><td align="center" style="padding:4px 4px 20px 4px;">{_brand_logo_svg()}</td></tr>
+          <tr><td align="center" style="padding:4px 4px 20px 4px;">{_brand_logo_svg(brand)}</td></tr>
           <tr>
             <td style="background:#ffffff;border:1px solid #ebe7e0;border-radius:16px;padding:32px 34px;">
               {body_html}
@@ -96,7 +101,7 @@ def _wrap(body_html: str, *, preheader: str = "") -> str:
           </tr>
           <tr>
             <td style="padding:18px 8px 4px 8px;font-size:11px;color:#8b8685;line-height:1.55;">
-              Powered by CloudTax, in partnership with Wealthsimple<br/>
+              Powered by CloudTax, in partnership with Ownr<br/>
               <a href="https://cloudtax.ca" style="color:#8b8685;text-decoration:underline;">CloudTax</a> &nbsp;·&nbsp; <a href="https://cloudtax.ca" style="color:#8b8685;text-decoration:underline;">www.cloudtax.ca</a>
             </td>
           </tr>
@@ -213,14 +218,14 @@ def _tpl_welcome_cpa(d: dict):
         text_greeting = "Welcome to CloudTax."
     body = (
         _h1(heading)
-        + _p("You&rsquo;ve been invited to join CloudTax as a CPA. You&rsquo;ll use the platform to manage your assigned corporate-tax engagements end-to-end: review documents, run our AI-assisted data extraction, collaborate with the Wealthsimple partner team, and deliver filed returns to your clients.")
+        + _p("You&rsquo;ve been invited to join CloudTax as a CPA. You&rsquo;ll use the platform to manage your assigned corporate-tax engagements end-to-end: review documents, run our AI-assisted data extraction, collaborate with the Ownr partner team, and deliver filed returns to your clients.")
         + _p("Your workspace gives you a single view of every engagement, a shared review checklist, and a private chat thread per client.")
         + _cta_button("Set your password &amp; sign in", link)
         + _muted("This invitation link is valid for 7 days. After you set your password you&rsquo;ll be prompted to enable 2FA on your first sign-in.")
     )
     text = (
         f"{text_greeting}\n\nYou've been invited to join as a CPA. You'll manage corporate-tax engagements, "
-        "run AI extraction on client documents, collaborate with Wealthsimple partners, and deliver filed returns from one place.\n\n"
+        "run AI extraction on client documents, collaborate with Ownr partners, and deliver filed returns from one place.\n\n"
         f"Set your password and sign in: {link}\n\n(Link is valid for 7 days.)"
     )
     return (subject, _wrap(body, preheader="Your CPA workspace is ready — set your password to begin."), text)
@@ -245,12 +250,12 @@ def _tpl_welcome_ws(d: dict):
         + _muted("This invitation link is valid for 7 days. After you set your password you&rsquo;ll be prompted to enable 2FA on your first sign-in.")
     )
     text = (
-        f"{text_greeting}\n\nCloudTax invited you to join the platform as a Wealthsimple partner. "
+        f"{text_greeting}\n\nCloudTax invited you to join the platform as an Ownr partner. "
         "Refer physician clients to our done-for-you corporate-tax workflow, track every engagement in one pipeline, "
         "and see advisory opportunities surfaced by our CPAs.\n\n"
         f"Set your password and sign in: {link}\n\n(Link is valid for 7 days.)"
     )
-    return (subject, _wrap(body, preheader="Partner dashboard ready — set your password to begin."), text)
+    return (subject, _wrap(body, preheader="Partner dashboard ready — set your password to begin.", brand="ownr"), text)
 
 
 def _tpl_engagement_started(d: dict):
@@ -369,7 +374,7 @@ def _tpl_cpa_client_assigned(d: dict):
     name = d.get("client_name") or "a client"
     corp = d.get("corporation_name") or "—"
     tier = d.get("tier") or "Standard"
-    ws = d.get("ws_advisor_name") or "Wealthsimple team"
+    ws = d.get("ws_advisor_name") or "Ownr team"
     link = d.get("link") or f"{_frontend_url()}/cpa/files"
     body = (
         _h1(f"New client assigned: {name}")
@@ -419,7 +424,7 @@ def _tpl_ws_intake_complete(d: dict):
         + _key_value([("Client", client), ("Corporation", corp), ("Tier", tier)])
         + _cta_button("Open partner dashboard", link)
     )
-    return (f"Intake complete: {client}", _wrap(body, preheader=f"{corp} · {tier}"), f"Intake complete: {client}. Open: {link}")
+    return (f"Intake complete: {client}", _wrap(body, preheader=f"{corp} · {tier}", brand="ownr"), f"Intake complete: {client}. Open: {link}")
 
 
 def _tpl_ws_filing_complete(d: dict):
@@ -436,7 +441,7 @@ def _tpl_ws_filing_complete(d: dict):
         + _key_value(rows)
         + _cta_button("Open partner dashboard", link)
     )
-    return (f"Filing complete: {client}", _wrap(body, preheader=f"CRA confirmation {conf}"), f"Filing complete: {client}. CRA confirmation: {conf}. Open: {link}")
+    return (f"Filing complete: {client}", _wrap(body, preheader=f"CRA confirmation {conf}", brand="ownr"), f"Filing complete: {client}. CRA confirmation: {conf}. Open: {link}")
 
 
 def _tpl_ws_opportunity(d: dict):
@@ -447,22 +452,22 @@ def _tpl_ws_opportunity(d: dict):
     link = d.get("link") or f"{_frontend_url()}/ws/dashboard"
     body = (
         _h1(f"Advisory opportunity: {client}")
-        + _p("Our CPA identified an opportunity worth sharing with the Wealthsimple advisory team.")
+        + _p("Our CPA identified an opportunity worth sharing with the Ownr advisory team.")
         + _key_value([("Client", client), ("Category", cat), ("Title", title)])
         + (f"<div style=\"background:#faf9f7;border-radius:10px;padding:14px 16px;font-size:13px;line-height:1.6;margin:14px 0;color:#1a1a1a;\">{desc}</div>" if desc else "")
         + _cta_button("View in partner dashboard", link)
     )
-    return (f"Advisory opportunity: {client}", _wrap(body, preheader=title), f"Advisory opportunity for {client}: {title} ({cat}). {desc}. Open: {link}")
+    return (f"Advisory opportunity: {client}", _wrap(body, preheader=title, brand="ownr"), f"Advisory opportunity for {client}: {title} ({cat}). {desc}. Open: {link}")
 
 
 def _tpl_admin_new_referral(d: dict):
     client = d.get("client_name") or "a client"
     corp = d.get("corporation_name") or "—"
     tier = d.get("tier") or "Standard"
-    ws = d.get("ws_advisor_name") or "Wealthsimple"
+    ws = d.get("ws_advisor_name") or "Ownr"
     link = d.get("link") or f"{_frontend_url()}/admin/dashboard"
     body = (
-        _h1(f"New client referred by Wealthsimple: {client}")
+        _h1(f"New client referred by Ownr: {client}")
         + _key_value([
             ("Client", client),
             ("Corporation", corp),

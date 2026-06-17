@@ -1,4 +1,4 @@
-/* === CloudTax WS Pilot — Wealthsimple-inspired design system === */
+/* === CloudTax portal design system === */
 
 /* Accessibility scaling — applied via <html> classes from AccessibilityContext.
    Default text-scale = 1.0; the panel multiplies via --a11y-text-scale. */
@@ -84,6 +84,18 @@ html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;u
   --font-serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
+
+/* === Ownr partner portal — purple primary action color ===
+   Scoped to the partner portal only (wrapper carries .ownr-portal). Admin,
+   Client, and CPA portals are CloudTax and keep the warm-neutral palette
+   above untouched. This overrides --accent-dark so every primary button,
+   focus ring, progress dot, and bar inside the partner portal turns Ownr
+   purple without changing any component code. */
+.ownr-portal {
+  --accent-dark: #5f3dc8;
+  --accent-dark-hover: #4c30a0;
+}
+.ownr-portal .btn-primary:hover { background: var(--accent-dark-hover); }
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; min-height: 100%; }

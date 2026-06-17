@@ -62,8 +62,8 @@ function notifPathFor(n, userRole) {
     case "CPA":
       return `/cpa/engagement/${eid}`;
     case "WS_PARTNER":
-      // ONBOARDING-stage referrals route to the onboarding wizard; everything else to the file detail.
-      if (n.type === "new_referral" || n.type === "ws_onboarding") return `/ws/onboarding/${eid}`;
+      // Partners are view-only — every notification opens the read-only file
+      // detail. Onboarding is CloudTax-only, so there is no partner wizard link.
       return `/ws/file/${eid}`;
     case "CLIENT":
       if (n.type === "client_message" || n.type === "cpa_message") return "/portal/messages";

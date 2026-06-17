@@ -12,7 +12,7 @@ async def main():
     if await db.seed_marker.find_one({"key": "ws_onboarding_v4"}):
         print("Already applied. Skipping.")
         return
-    kris = await db.users.find_one({"email": "kris.kibler@wealthsimple.com"})
+    kris = await db.users.find_one({"email": "kris.kibler@ownr.co"})
     if not kris:
         print("Kris not found"); return
     now = datetime.now(timezone.utc)

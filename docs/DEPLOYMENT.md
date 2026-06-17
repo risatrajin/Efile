@@ -1,4 +1,4 @@
-# CloudTax × Wealthsimple Deployment Notes
+# CloudTax and Ownr Deployment Notes
 
 ## 1. AWS S3 IAM policy
 

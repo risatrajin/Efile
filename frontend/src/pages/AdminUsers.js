@@ -50,7 +50,7 @@ function InviteModal({ onClose, onDone }) {
               <select className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} data-testid="invite-role">
                 <option value="CLIENT">Client (physician)</option>
                 <option value="CPA">CPA</option>
-                <option value="WS_PARTNER">Wealthsimple partner</option>
+                <option value="WS_PARTNER">Ownr partner</option>
                 <option value="ADMIN">Admin</option>
               </select></div>
             <div className="field"><label className="field-label">Phone (optional)</label>

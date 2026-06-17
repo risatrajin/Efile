@@ -111,7 +111,8 @@ export default function App() {
           </Route>
 
           <Route path="/ws/dashboard" element={<Protected roles={["WS_PARTNER"]}><WsDashboard /></Protected>} />
-          <Route path="/ws/onboarding/:eid" element={<Protected roles={["WS_PARTNER", "ADMIN"]}><WsOnboardingDetail /></Protected>} />
+          {/* Onboarding is CloudTax-only now; partners are view-only. ADMIN guard, not just hidden UI. */}
+          <Route path="/ws/onboarding/:eid" element={<Protected roles={["ADMIN"]}><WsOnboardingDetail /></Protected>} />
           <Route path="/ws/file/:eid" element={<Protected roles={["WS_PARTNER", "ADMIN"]}><WsFileDetail /></Protected>} />
 
           <Route path="/cpa/files" element={<Protected roles={["CPA", "ADMIN"]}><CpaFiles /></Protected>} />

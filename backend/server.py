@@ -320,7 +320,10 @@ def default_permissions_for(role: str) -> dict:
         on = {"view_clients", "send_reminders", "send_messages", "view_docs", "view_cpa_hours"}
         return {k: (k in on) for k in PERMISSION_KEYS}
     if role == "WS_PARTNER":
-        on = {"view_clients", "onboard_clients", "assign_cpa", "view_docs", "move_clients", "export_data", "settings"}
+        # Ownr partners are view-only. CloudTax (ADMIN) does all onboarding,
+        # CPA assignment, stage moves, and settings. The permission KEYS stay
+        # intact so ADMIN keeps them; partners just get read access.
+        on = {"view_clients", "view_docs"}
         return {k: (k in on) for k in PERMISSION_KEYS}
     return {k: False for k in PERMISSION_KEYS}
 
@@ -814,7 +817,7 @@ async def invite_user(body: InviteUserIn, user: dict = Depends(require_role("ADM
                 "Client accounts are managed from the client record — please use a different email for staff."
             )
         else:
-            role_label = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "WS Partner"}.get(ex_role, ex_role or "member")
+            role_label = {"ADMIN": "Admin", "CPA": "CPA", "WS_PARTNER": "Partner"}.get(ex_role, ex_role or "member")
             detail = (
                 f"This email is already in use by an active {role_label} ({ex_name}). "
                 "Check the Roles & Permissions table above or use a different address."
@@ -1617,7 +1620,7 @@ async def list_engagements(user: dict = Depends(get_current_user)):
 
 
 @api.post("/engagements")
-async def create_engagement(body: CreateEngagementIn, user: dict = Depends(require_role("ADMIN", "WS_PARTNER"))):
+async def create_engagement(body: CreateEngagementIn, user: dict = Depends(require_role("ADMIN"))):
     db = get_db()
     # Find or create client user
     client_email = body.client_email.lower()
@@ -1748,7 +1751,7 @@ def _onboarding_progress(eng: dict, corp: dict, client: dict) -> dict:
 
 
 @api.post("/engagements/onboarding")
-async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(require_role("ADMIN"))):
     """Create a draft engagement in ONBOARDING status with whatever fields are provided."""
     db = get_db()
     if not body.client_email or not body.first_name:
@@ -1834,7 +1837,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
 
 
 @api.post("/engagements/{eid}/resend-invite")
-async def resend_client_invite(eid: str, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def resend_client_invite(eid: str, user: dict = Depends(require_role("ADMIN"))):
     """Re-issue a fresh set-password invite for the client on this engagement."""
     db = get_db()
     eng = await db.engagements.find_one({"id": eid})
@@ -1870,7 +1873,7 @@ async def resend_client_invite(eid: str, user: dict = Depends(require_role("WS_P
 
 
 @api.patch("/engagements/{eid}/onboarding")
-async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def ws_update_onboarding(eid: str, body: WsOnboardingIn, user: dict = Depends(require_role("ADMIN"))):
     db = get_db()
     eng = await db.engagements.find_one({"id": eid})
     if not eng:
@@ -1953,7 +1956,7 @@ def _legacy_partner_note(eng: dict) -> Optional[dict]:
         "text": text,
         "at": when.isoformat() if isinstance(when, datetime) else when,
         "author_id": eng.get("ws_partner_id"),
-        "author_name": "WS partner (legacy)",
+        "author_name": "Ownr partner (legacy)",
         "author_role": "WS_PARTNER",
         "is_legacy": True,
     }
@@ -2024,7 +2027,7 @@ async def append_engagement_note(eid: str, body: EngagementNoteIn, user: dict = 
 
 
 @api.post("/engagements/{eid}/submit")
-async def ws_submit_to_cloudtax(eid: str, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def ws_submit_to_cloudtax(eid: str, user: dict = Depends(require_role("ADMIN"))):
     """Move ONBOARDING engagement to REFERRED, creating doc + review checklists."""
     db = get_db()
     eng = await db.engagements.find_one({"id": eid})
@@ -2043,15 +2046,15 @@ async def ws_submit_to_cloudtax(eid: str, user: dict = Depends(require_role("WS_
         "referral_date": now,
         "updated_at": now,
     }})
-    await log_status_change(eid, user["id"], "ONBOARDING", "REFERRED", "Submitted to CloudTax by WS partner")
+    await log_status_change(eid, user["id"], "ONBOARDING", "REFERRED", "Submitted to CloudTax")
     # Notify all admins so they can assign a CPA
     corp = await db.corporations.find_one({"id": eng["corporation_id"]})
     client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
-    partner_name = user.get("name") or user.get("email") or "WS partner"
+    partner_name = user.get("name") or user.get("email") or "CloudTax"
     client_label = (client.get("name") if client else "") or (corp.get("name") if corp else eid[:8])
     await notify_admins(
-        "New client referred from Wealthsimple",
-        f"{partner_name} referred {client_label} — assign a CPA to begin intake.",
+        "New client referred from Ownr",
+        f"{partner_name} referred {client_label}. Assign a CPA to begin intake.",
         "new_referral_admin",
         eid,
     )
@@ -2083,7 +2086,7 @@ class ChecklistArrayIn(BaseModel):
 
 
 @api.patch("/engagements/{eid}/pre-filing-checklist")
-async def ws_update_checklist(eid: str, body: ChecklistArrayIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def ws_update_checklist(eid: str, body: ChecklistArrayIn, user: dict = Depends(require_role("ADMIN"))):
     db = get_db()
     eng = await db.engagements.find_one({"id": eid})
     if not eng:
@@ -3084,7 +3087,7 @@ async def get_checklist_template(user: dict = Depends(require_role("WS_PARTNER",
 
 
 @api.put("/partner/checklist-template")
-async def update_checklist_template(body: ChecklistTemplateIn, user: dict = Depends(require_role("WS_PARTNER", "ADMIN"))):
+async def update_checklist_template(body: ChecklistTemplateIn, user: dict = Depends(require_role("ADMIN"))):
     db = get_db()
     items = [{"label": str(it.get("label", "")).strip(), "optional": bool(it.get("optional", False))} for it in body.items if str(it.get("label", "")).strip()]
     if not items:

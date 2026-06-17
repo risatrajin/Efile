@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError, fmtDate, initials, TIME_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
@@ -65,6 +66,10 @@ function StageMessage({ status }) {
 export default function WsFileDetail() {
   const { eid } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Partner viewers get the Ownr purple scope; ADMIN viewing this shared route
+  // stays on the CloudTax warm-neutral palette.
+  const rootClass = "app-root" + (user?.role === "WS_PARTNER" ? " ownr-portal" : "");
   const [eng, setEng] = useState(null);
   const [docs, setDocs] = useState([]);
   const [time, setTime] = useState([]);
@@ -97,7 +102,7 @@ export default function WsFileDetail() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
 
   if (!eng) return (
-    <div className="app-root"><AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>
+    <div className={rootClass}><AppHeader tabs={[{ key: "dashboard", to: "/ws/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>
   );
 
   const corp = eng.corporation || {};
@@ -111,7 +116,7 @@ export default function WsFileDetail() {
   const docList = docs.map((d) => ({ name: d.name, status: d.status }));
 
   return (
-    <div className="app-root">
+    <div className={rootClass}>
       <AppHeader tabs={tabs} />
       <div className="page-wide stack-lg" data-testid="ws-file-detail">
         <button className="btn btn-ghost btn-sm" onClick={() => navigate("/ws/dashboard")} style={{ width: "fit-content" }} data-testid="back-link"><ArrowLeft size={12} /> Dashboard</button>
