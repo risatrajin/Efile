@@ -29,7 +29,7 @@ function ReadOnlyCard({ eng, onOpen }) {
   const client = eng.client || {};
   return (
     <div className="kanban-card" onClick={onOpen} data-testid={`pipeline-card-${eng.id}`} style={{ position: "relative", cursor: "pointer" }}>
-      <Lock size={11} style={{ position: "absolute", top: 12, right: 12, color: "var(--text-tertiary)" }} />
+      <Lock size={11} style={{ position: "absolute", top: 12, right: 12, color: "var(--bg-subtle)" }} />
       <div style={{ fontWeight: 600, fontSize: 13, paddingRight: 16 }}>{withDrPrefix(client.name)}</div>
       <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{corp.name}</div>
       {eng.tier && <div style={{ marginTop: 8 }}><TierBadge tier={eng.tier} /></div>}
@@ -143,7 +143,7 @@ export default function WsDashboard() {
                       <div className="kanban-col-title">{col.label}</div>
                       <div className="kanban-col-count">{items.length}</div>
                     </div>
-                    <Lock size={11} style={{ color: "var(--text-tertiary)" }} />
+                    <Lock size={11} style={{ color: "var(--bg-subtle)" }} />
                   </div>
                   {/* Empty state UI is intentionally kept ONLY on the Referred
                       column — that's the handoff pocket where it helps partners

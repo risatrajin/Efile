@@ -116,7 +116,8 @@ html.a11y-big-cursor, html.a11y-big-cursor * { cursor: url("data:image/svg+xml;u
 }
 .ownr-portal .stat-card {
   background: var(--bg-card);
-  border: 1px solid var(--border-default);
+  /* Stroke matches the column tone (#F5F5F7) — partner portal only. */
+  border: 1px solid var(--bg-subtle);
   border-radius: 12px;
   padding: 18px 20px;
 }
