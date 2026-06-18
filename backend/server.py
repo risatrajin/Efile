@@ -2118,6 +2118,21 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     now = datetime.now(timezone.utc)
     updates["updated_at"] = now
+    # Assigning / reassigning a CPA needs the matching permission flag ON TOP of
+    # the role gate above. Enforced ONLY when the request actually changes
+    # assigned_cpa_id to a real CPA — status moves, CRA updates, etc. keep the
+    # role-only gate so existing CPA/admin workflows are untouched.
+    if (
+        "assigned_cpa_id" in updates
+        and updates["assigned_cpa_id"]
+        and updates["assigned_cpa_id"] != eng.get("assigned_cpa_id")
+    ):
+        # Seeded admins (auth.seed_admin) carry no explicit permissions map, so
+        # fall back to the role defaults — ADMIN is all-true and never locked out.
+        perms = user.get("permissions") or default_permissions_for(user["role"])
+        needed = "reassign_cpa" if eng.get("assigned_cpa_id") else "assign_cpa"
+        if not perms.get(needed):
+            raise HTTPException(403, f"You don't have permission to {needed.replace('_', ' ')}")
     # Status transitions
     if "status" in updates and updates["status"] != eng["status"]:
         s = updates["status"]
