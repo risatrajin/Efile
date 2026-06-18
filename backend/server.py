@@ -3052,18 +3052,28 @@ async def update_opp(oid: str, body: UpdateOpportunityIn, user: dict = Depends(g
     opp = await db.opportunities.find_one({"id": oid})
     if not opp:
         raise HTTPException(404, "Not found")
+    # Scope to the opportunity's engagement. This was an id-keyed route with no
+    # ownership check — any authenticated user could read/flip any opportunity
+    # by id (IDOR), and the handler returned the full opp (leaking another
+    # tenant's financials). get_engagement_or_404 enforces: ADMIN any, CPA only
+    # their assigned engagement, PARTNER any pilot client, CLIENT only their own
+    # corp (which 403/404s a client poking at another client's opp before any
+    # data is read or written).
+    eng = await get_engagement_or_404(opp["engagement_id"], user)
     updates = body.dict(exclude_unset=True)
-    if "shared_with_ws" in updates and updates["shared_with_ws"] and not opp.get("shared_with_ws"):
+    # Changing the share flag in EITHER direction is a CPA/Admin action (the old
+    # guard only fired on False->True, so un-share slipped through ungated).
+    if "shared_with_ws" in updates:
         if user["role"] not in ("CPA", "ADMIN"):
-            raise HTTPException(403, "Only CPA/Admin can share opportunities")
-        updates["shared_at"] = datetime.now(timezone.utc)
-        eng = await db.engagements.find_one({"id": opp["engagement_id"]})
-        if eng and eng.get("partner_advisor_id"):
-            corp = await db.corporations.find_one({"id": eng["corporation_id"]})
-            user_row = await db.users.find_one({"id": eng["partner_advisor_id"]}, {"_id": 0, "password_hash": 0})
-            if user_row:
-                await notify(user_row["id"], "Advisory opportunity", opp["title"], "opportunity_shared", eng["id"])
-                ses_service.send_opportunity(user_row["email"], corp["name"] if corp else "client", opp["title"], f"{FRONTEND_URL}/partner/dashboard")
+            raise HTTPException(403, "Only CPA/Admin can change opportunity sharing")
+        if updates["shared_with_ws"] and not opp.get("shared_with_ws"):
+            updates["shared_at"] = datetime.now(timezone.utc)
+            if eng.get("partner_advisor_id"):
+                corp = await db.corporations.find_one({"id": eng["corporation_id"]})
+                user_row = await db.users.find_one({"id": eng["partner_advisor_id"]}, {"_id": 0, "password_hash": 0})
+                if user_row:
+                    await notify(user_row["id"], "Advisory opportunity", opp["title"], "opportunity_shared", eng["id"])
+                    ses_service.send_opportunity(user_row["email"], corp["name"] if corp else "client", opp["title"], f"{FRONTEND_URL}/partner/dashboard")
     if "ws_followed_up" in updates and user["role"] not in ("PARTNER", "ADMIN"):
         raise HTTPException(403, "Only Partner can mark followed up")
     await db.opportunities.update_one({"id": oid}, {"$set": updates})
