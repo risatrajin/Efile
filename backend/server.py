@@ -205,6 +205,14 @@ class UpdateOpportunityIn(BaseModel):
     ws_followed_up: Optional[bool] = None
 
 
+class PartnerFeedbackIn(BaseModel):
+    text: str
+
+
+class PartnerFeedbackEditIn(BaseModel):
+    text: str
+
+
 class TimeEntryIn(BaseModel):
     category: str
     hours: float
@@ -369,6 +377,9 @@ def redact_for_client(eng: dict) -> dict:
     eng["original_tier"] = None
     eng.pop("notes", None)
     eng.pop("partner_notes", None)
+    # Partner feedback is staff-only. It lives in its own collection (not on the
+    # engagement), so this is defence-in-depth in case it's ever denormalised in.
+    eng.pop("partner_feedback", None)
     return eng
 
 
@@ -3057,6 +3068,132 @@ async def update_opp(oid: str, body: UpdateOpportunityIn, user: dict = Depends(g
         raise HTTPException(403, "Only Partner can mark followed up")
     await db.opportunities.update_one({"id": oid}, {"$set": updates})
     return await db.opportunities.find_one({"id": oid}, {"_id": 0})
+
+
+# ==================== Partner feedback ====================
+# Partner-authored feedback on a client/engagement. The partner portal is
+# otherwise view-only — this is the ONE thing a partner can write. Visibility
+# rules, all enforced server-side:
+#   * PARTNER (any pilot client they can view) — create; read/edit/remove ONLY
+#     their own item.
+#   * ADMIN + CPA — read everyone's (read-only); they cannot create/edit/remove.
+#   * CLIENT — blocked entirely. It lives in its own collection (never embedded
+#     in the engagement payload) AND is stripped in redact_for_client.
+# Edits keep an audit trail (edit_history + edited flag); removals are a
+# soft-delete tombstone so staff always see that feedback existed and was
+# removed — it never silently vanishes.
+
+def _serialize_feedback(fb: dict, *, for_staff: bool) -> dict:
+    out = {
+        "id": fb["id"],
+        "engagement_id": fb["engagement_id"],
+        "partner_id": fb["partner_id"],
+        "partner_name": fb.get("partner_name"),
+        "text": fb.get("text"),
+        "edited": bool(fb.get("edited")),
+        "edited_at": fb.get("edited_at"),
+        "removed": bool(fb.get("removed")),
+        "removed_at": fb.get("removed_at"),
+        "created_at": fb.get("created_at"),
+        "updated_at": fb.get("updated_at"),
+    }
+    # Only staff get the full previous-text audit trail.
+    if for_staff:
+        out["edit_history"] = fb.get("edit_history") or []
+    return out
+
+
+@api.post("/engagements/{eid}/partner-feedback")
+async def create_partner_feedback(eid: str, body: PartnerFeedbackIn, user: dict = Depends(get_current_user)):
+    if user["role"] != "PARTNER":
+        raise HTTPException(403, "Only partners can leave feedback")
+    await get_engagement_or_404(eid, user)
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Feedback text is required")
+    if len(text) > 5000:
+        raise HTTPException(400, "Feedback is too long (max 5000 chars)")
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    row = {
+        "id": str(uuid.uuid4()),
+        "engagement_id": eid,
+        "partner_id": user["id"],
+        "partner_name": user.get("name") or user.get("email"),
+        "text": text,
+        "edited": False,
+        "edited_at": None,
+        "edit_history": [],
+        "removed": False,
+        "removed_at": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.partner_feedback.insert_one(row)
+    return _serialize_feedback(row, for_staff=False)
+
+
+@api.get("/engagements/{eid}/partner-feedback")
+async def list_partner_feedback(eid: str, user: dict = Depends(get_current_user)):
+    # CLIENT can never read partner feedback.
+    if user["role"] == "CLIENT":
+        raise HTTPException(403, "Not permitted")
+    await get_engagement_or_404(eid, user)
+    db = get_db()
+    is_staff = user["role"] in ("ADMIN", "CPA")
+    q: dict = {"engagement_id": eid}
+    if not is_staff:
+        # A partner only ever sees their OWN feedback (so they can edit/remove
+        # it); their own removed items drop off their list.
+        q["partner_id"] = user["id"]
+        q["removed"] = {"$ne": True}
+    rows = [r async for r in db.partner_feedback.find(q).sort("created_at", 1)]
+    return [_serialize_feedback(r, for_staff=is_staff) for r in rows]
+
+
+@api.patch("/partner-feedback/{fid}")
+async def edit_partner_feedback(fid: str, body: PartnerFeedbackEditIn, user: dict = Depends(get_current_user)):
+    db = get_db()
+    fb = await db.partner_feedback.find_one({"id": fid})
+    if not fb:
+        raise HTTPException(404, "Feedback not found")
+    # Only the authoring partner may edit (staff are read-only).
+    if user["role"] != "PARTNER" or fb["partner_id"] != user["id"]:
+        raise HTTPException(403, "You can only edit your own feedback")
+    if fb.get("removed"):
+        raise HTTPException(400, "Cannot edit removed feedback")
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Feedback text is required")
+    if len(text) > 5000:
+        raise HTTPException(400, "Feedback is too long (max 5000 chars)")
+    now = datetime.now(timezone.utc)
+    # Audit trail: stash the prior text so staff can see what changed.
+    hist_entry = {"text": fb.get("text"), "at": fb.get("edited_at") or fb.get("created_at")}
+    await db.partner_feedback.update_one(
+        {"id": fid},
+        {"$set": {"text": text, "edited": True, "edited_at": now, "updated_at": now},
+         "$push": {"edit_history": hist_entry}},
+    )
+    fb2 = await db.partner_feedback.find_one({"id": fid})
+    return _serialize_feedback(fb2, for_staff=False)
+
+
+@api.delete("/partner-feedback/{fid}")
+async def remove_partner_feedback(fid: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    fb = await db.partner_feedback.find_one({"id": fid})
+    if not fb:
+        raise HTTPException(404, "Feedback not found")
+    if user["role"] != "PARTNER" or fb["partner_id"] != user["id"]:
+        raise HTTPException(403, "You can only remove your own feedback")
+    now = datetime.now(timezone.utc)
+    # Soft-delete tombstone — staff keep visibility that feedback was removed.
+    await db.partner_feedback.update_one(
+        {"id": fid},
+        {"$set": {"removed": True, "removed_at": now, "updated_at": now}},
+    )
+    return {"ok": True, "removed": True}
 
 
 # ==================== Time entries ====================
