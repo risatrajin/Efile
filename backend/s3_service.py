@@ -71,6 +71,19 @@ def bucket_name() -> str:
     return os.environ["S3_BUCKET_NAME"]
 
 
+def is_configured() -> bool:
+    """True when S3 is fully configured (bucket + AWS credentials present).
+
+    Callers use this to decide between real S3 and the local-disk fallback so a
+    missing config returns False instead of raising KeyError mid-upload.
+    """
+    return bool(
+        os.environ.get("S3_BUCKET_NAME")
+        and os.environ.get("AWS_ACCESS_KEY_ID")
+        and os.environ.get("AWS_SECRET_ACCESS_KEY")
+    )
+
+
 def expiration() -> int:
     return int(os.environ.get("PRESIGNED_URL_EXPIRATION", 900))
 
@@ -151,6 +164,15 @@ def put_object_bytes(object_key: str, body: bytes, content_type: str = "applicat
     admin alert when IAM is mis-configured and we get ``AccessDenied``).
     """
     global _last_error_code, _last_error_message
+    # When S3 isn't configured (no bucket / no AWS creds — e.g. local dev, or a
+    # deploy before IAM is wired up) the helpers below read missing env vars and
+    # raise KeyError. Treat that as "not stored" and return False so the caller
+    # falls back to local-disk storage, instead of bubbling up a 500. The
+    # real-S3 path is unchanged whenever the bucket + creds are present.
+    if not is_configured():
+        _last_error_code = "NotConfigured"
+        _last_error_message = "S3 is not configured (S3_BUCKET_NAME / AWS credentials unset)"
+        return False
     try:
         get_client().put_object(
             Bucket=bucket_name(),
@@ -166,6 +188,13 @@ def put_object_bytes(object_key: str, body: bytes, content_type: str = "applicat
         return True
     except (ClientError, EndpointConnectionError) as e:
         _record_failure(e, "put_object")
+        return False
+    except KeyError as e:
+        # Belt-and-suspenders: an AWS credential env var went missing between the
+        # is_configured() check and the call. Still prefer the local fallback
+        # over a 500.
+        _last_error_code = "NotConfigured"
+        _last_error_message = f"S3 credential not configured: {e}"
         return False
 
 
