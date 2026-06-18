@@ -2176,7 +2176,7 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
         client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
         client_label = (client.get("name") if client else "") or (corp.get("name") if corp else eid[:8])
         cpa_label = (cpa_user.get("name") if cpa_user else "your CPA") if cpa_user else "your CPA"
-        # Notify the newly-assigned CPA
+        # Notify the newly-assigned CPA — keep the in-app bell ...
         await notify(
             new_cpa_id,
             "New client assigned to you",
@@ -2184,6 +2184,25 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
             "cpa_assigned",
             eid,
         )
+        # ... and send the operator "New client assigned" email alongside it
+        # (fire-and-forget, non-fatal — mirrors every other email send site).
+        # Only the newly-assigned CPA is emailed; on reassignment we do NOT
+        # email the previously-assigned CPA.
+        if cpa_user and cpa_user.get("email"):
+            partner_advisor = (
+                await db.users.find_one({"id": eng["partner_advisor_id"]}, {"_id": 0, "name": 1})
+                if eng.get("partner_advisor_id") else None
+            )
+            try:
+                await _email_templates_send(cpa_user["email"], "cpa_client_assigned", {
+                    "client_name": client_label,
+                    "corporation_name": (corp or {}).get("name"),
+                    "tier": eng.get("tier"),
+                    "partner_advisor_name": (partner_advisor or {}).get("name"),
+                    "link": f"{FRONTEND_URL}/cpa/engagement/{eid}",
+                })
+            except Exception as e:
+                log.warning("cpa_client_assigned email failed: %s", e)
         # Notify the Partner so they see progress
         if eng.get("partner_advisor_id"):
             await notify(
