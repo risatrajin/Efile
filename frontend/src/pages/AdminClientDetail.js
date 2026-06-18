@@ -467,7 +467,7 @@ export default function AdminClientDetail() {
                 <label className="field-label">CPA</label>
                 <select className="select" value={selectedCpa} onChange={(e) => setSelectedCpa(e.target.value)} data-testid="cpa-select">
                   <option value="">— Select a CPA —</option>
-                  {cpas.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {cpas.map((c) => <option key={c.id} value={c.id}>{c.email ? `${c.name} · ${c.email}` : c.name}</option>)}
                 </select>
               </div>
               <div className="flex gap-2 mt-3">
