@@ -3,7 +3,7 @@ import { api, fmtError } from "../../lib/api";
 import { Send, Clock } from "lucide-react";
 
 const ROLE_LABEL = {
-  PARTNER: "Ownr",
+  PARTNER: "Partner",
   CPA: "CPA",
   ADMIN: "Admin",
   CLIENT: "Client",
