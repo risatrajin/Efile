@@ -9,6 +9,7 @@ import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared
 import FiledReturnCard from "../components/shared/FiledReturnCard";
 import EngagementNotes from "../components/shared/EngagementNotes";
 import { ChatThread } from "./Messages";
+import { toast } from "../lib/toast";
 
 // ----- Tax Situation: parse the legacy "[time] note\n\nnote" string back into rows -----
 function parseNotes(notes) {
@@ -305,6 +306,8 @@ export default function AdminClientDetail() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
 
+  const cpaName = (id) => cpas.find((c) => c.id === id)?.name || "the CPA";
+
   const assignAndMove = async () => {
     setBusy(true); setErr("");
     try {
@@ -314,6 +317,7 @@ export default function AdminClientDetail() {
       if (eng.status === "REFERRED") {
         await api.patch(`/engagements/${eid}`, { status: "INTAKE" });
       }
+      toast(`${eng.client?.name || "Client"} assigned to ${cpaName(selectedCpa)} — moved to Intake.`);
       navigate("/admin/dashboard");
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
@@ -321,8 +325,10 @@ export default function AdminClientDetail() {
 
   const justAssign = async () => {
     setBusy(true); setErr("");
+    const wasAssigned = !!eng.assigned_cpa_id;
     try {
       await api.patch(`/engagements/${eid}`, { assigned_cpa_id: selectedCpa });
+      toast(`${wasAssigned ? "CPA reassigned" : "CPA assigned"} to ${cpaName(selectedCpa)}.`);
       await load();
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);

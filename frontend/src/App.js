@@ -18,6 +18,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminClientDetail from "./pages/AdminClientDetail";
 import AdminUsers from "./pages/AdminUsers";
 import AdminSettings from "./pages/AdminSettings";
+import { ToastHost } from "./lib/toast";
 
 function roleHome(role) {
   if (role === "CLIENT") return "/portal";
@@ -97,6 +98,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
         <PageTitle />
+        <ToastHost />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/set-password" element={<SetPassword />} />

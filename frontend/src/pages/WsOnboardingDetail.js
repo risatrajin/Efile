@@ -6,6 +6,7 @@ import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
 import ChecklistSettingsModal from "../components/shared/ChecklistSettingsModal";
 import EngagementNotes from "../components/shared/EngagementNotes";
+import { toast } from "../lib/toast";
 import { ArrowLeft, ArrowRight, Settings as SettingsIcon, Lock, Check, Mail } from "lucide-react";
 
 const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"];
@@ -118,6 +119,8 @@ export default function WsOnboardingDetail() {
     setBusy(true); setErr("");
     try {
       await api.post(`/engagements/${eid}/submit`);
+      const nm = `${form.first_name} ${form.last_name}`.trim() || form.corp_name || "Client";
+      toast(`${nm} referred to CloudTax — now awaiting CPA assignment.`);
       navigate("/admin/dashboard");
     } catch (x) { setErr(fmtError(x)); }
     setBusy(false);
