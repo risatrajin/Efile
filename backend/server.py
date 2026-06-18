@@ -2015,7 +2015,9 @@ async def list_engagement_notes(eid: str, user: dict = Depends(get_current_user)
 async def append_engagement_note(eid: str, body: EngagementNoteIn, user: dict = Depends(get_current_user)):
     db = get_db()
     eng = await get_engagement_or_404(eid, user)
-    if user["role"] not in ("PARTNER", "CPA", "ADMIN"):
+    # Notes are a staff (ADMIN/CPA) feed. Partners are view-only — their input
+    # path is the separate partner-feedback feature, not this endpoint.
+    if user["role"] not in ("CPA", "ADMIN"):
         raise HTTPException(403, "Only staff can write engagement notes")
     text = (body.text or "").strip()
     if not text:
