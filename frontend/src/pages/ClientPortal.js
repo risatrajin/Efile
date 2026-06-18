@@ -598,7 +598,11 @@ export default function ClientPortal() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       await loadAll();
-    } catch (x) { setErr(fmtError(x)); }
+    } catch (x) {
+      // Client-facing copy — never surface the raw axios "Request failed with
+      // status code 500" to the physician.
+      setErr("We couldn’t upload your file. Please try again, or contact support@cloudtax.ca if it keeps happening.");
+    }
     setBusy(null);
   };
 
