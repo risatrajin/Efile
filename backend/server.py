@@ -2356,6 +2356,10 @@ async def doc_complete_upload(doc_id: str, body: DocumentCompleteUploadIn, user:
     if not doc:
         raise HTTPException(404, "Document not found")
     eng = await get_engagement_or_404(doc["engagement_id"], user)
+    # Partners are view-only (and get_engagement_or_404 admits them to any pilot
+    # engagement) — block the write here like every sibling document endpoint.
+    if user["role"] == "PARTNER":
+        raise HTTPException(403, "Partners cannot upload documents")
     now = datetime.now(timezone.utc)
     # Re-upload tracking — if the previous state was ISSUE (CPA flagged) the
     # next upload counts as a "re-upload" and we surface a badge in the CPA's
