@@ -359,6 +359,9 @@ def redact_for_ws(eng: dict) -> dict:
     # They CAN see their own onboarding notes (partner_notes).
     eng = dict(eng)
     eng.pop("notes", None)
+    # ``notes_history`` is the internal staff notes feed (CPA/Admin). Strip it
+    # from the engagement object — it was leaking the whole feed to partners.
+    eng.pop("notes_history", None)
     return eng
 
 
@@ -369,6 +372,10 @@ def redact_for_client(eng: dict) -> dict:
     eng["original_tier"] = None
     eng.pop("notes", None)
     eng.pop("partner_notes", None)
+    # ``notes_history`` is the staff notes feed ("Not visible to clients"). The
+    # old redact only stripped the legacy ``notes`` field, so the newer
+    # notes_history array leaked the entire staff feed to the client.
+    eng.pop("notes_history", None)
     return eng
 
 
