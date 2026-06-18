@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
@@ -11,7 +11,7 @@ import { ArrowLeft, ArrowRight, Settings as SettingsIcon, Lock, Check, Mail } fr
 
 const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"];
 
-function ChecklistRow({ item, onToggle }) {
+function ChecklistRow({ item, onToggle, disabled }) {
   return (
     <div className="flex items-center gap-3" style={{ padding: "8px 0" }} data-testid={`checklist-item-${item.id}`}>
       <button
@@ -19,13 +19,14 @@ function ChecklistRow({ item, onToggle }) {
         role="checkbox"
         aria-checked={item.is_completed}
         onClick={onToggle}
+        disabled={disabled}
         data-testid={`checklist-toggle-${item.id}`}
         style={{
           width: 20, height: 20, borderRadius: 4,
           border: `1.5px solid ${item.is_completed ? "#1565c0" : "#c5c0b8"}`,
           background: item.is_completed ? "#1565c0" : "#fff",
           display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          cursor: "pointer",
+          cursor: disabled ? "wait" : "pointer", opacity: disabled ? 0.6 : 1,
         }}
       >
         {item.is_completed && <Check size={13} style={{ color: "#fff" }} strokeWidth={3} />}
@@ -46,6 +47,14 @@ export default function WsOnboardingDetail() {
   const [eng, setEng] = useState(null);
   const [form, setForm] = useState(null);
   const [checklist, setChecklist] = useState([]);
+  // Authoritative copy of the checklist, mutated synchronously on each toggle so
+  // rapid clicks never build a PATCH body off stale state (the old closure bug
+  // dropped fast checks). Saves are coalesced + serialized (saveChecklist below)
+  // so concurrent full-list PATCHes can't race and clobber each other on the
+  // backend — a single in-flight request always carries the latest ref.
+  const checklistRef = useRef([]);
+  const savingRef = useRef(false);
+  const dirtyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [err, setErr] = useState("");
@@ -81,16 +90,39 @@ export default function WsOnboardingDetail() {
         tier: data.tier || "STANDARD",
         notes: data.partner_notes || data.notes || "",
       });
-      setChecklist(data.pre_filing_checklist || []);
+      const items = data.pre_filing_checklist || [];
+      setChecklist(items);
+      checklistRef.current = items;
     } catch (x) { setErr(fmtError(x)); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
 
-  const toggleItem = async (idx) => {
-    const next = checklist.map((c, i) => i === idx ? { ...c, is_completed: !c.is_completed } : c);
-    setChecklist(next);
-    try { await api.patch(`/engagements/${eid}/pre-filing-checklist`, { items: next }); }
-    catch (x) { setErr(fmtError(x)); }
+  // Persist the current checklist, but never more than one PATCH in flight. Any
+  // toggles that land while a save is running set dirtyRef; we re-flush once it
+  // returns so the backend converges to the latest ref instead of being
+  // clobbered by an out-of-order, stale, full-list write.
+  const saveChecklist = async () => {
+    if (savingRef.current) { dirtyRef.current = true; return; }
+    savingRef.current = true;
+    dirtyRef.current = false;
+    try {
+      await api.patch(`/engagements/${eid}/pre-filing-checklist`, { items: checklistRef.current });
+    } catch (x) {
+      setErr(fmtError(x));
+    } finally {
+      savingRef.current = false;
+      if (dirtyRef.current) saveChecklist();
+    }
+  };
+
+  const toggleItem = (idx) => {
+    const cur = checklistRef.current;
+    const item = cur[idx];
+    if (!item) return;
+    const next = cur.map((c, i) => (i === idx ? { ...c, is_completed: !c.is_completed } : c));
+    checklistRef.current = next; // synchronous source of truth — no stale closure
+    setChecklist(next);          // optimistic UI, instant feedback
+    saveChecklist();             // coalesced + serialized persistence
   };
 
   const onTemplateSaved = async () => {
@@ -212,7 +244,7 @@ export default function WsOnboardingDetail() {
                       { v: "BOOKS_COMPLETE", label: "Books Complete" },
                       { v: "STANDARD", label: "Standard" },
                     ].map((t) => (
-                      <button key={t.v} type="button" onClick={() => setForm({ ...form, tier: t.v })} data-testid={`f-tier-${t.v}`}
+                      <button key={t.v} type="button" aria-pressed={form.tier === t.v} onClick={() => setForm({ ...form, tier: t.v })} data-testid={`f-tier-${t.v}`}
                         style={{
                           flex: 1, padding: "12px 16px", borderRadius: 10, fontSize: 13, fontWeight: 500,
                           border: `1.5px solid ${form.tier === t.v ? "#1565c0" : "var(--border-default)"}`,
@@ -260,13 +292,16 @@ export default function WsOnboardingDetail() {
                 {checklist.map((c, i) => <ChecklistRow key={c.id || i} item={c} onToggle={() => toggleItem(i)} />)}
                 {checklist.length === 0 && <div className="muted" style={{ fontSize: 12, padding: 12, textAlign: "center" }}>No checklist items configured. Click the gear icon to set up.</div>}
               </div>
-              <button
-                onClick={submit}
-                disabled={!ready || busy}
-                data-testid="submit-to-cloudtax"
-                className="btn btn-primary w-full"
-                style={{ marginTop: 16 }}
-              >Move to CloudTax <ArrowRight size={14} /></button>
+              {/* Wrapper carries the title so the tooltip shows even while the
+                  button is disabled (disabled controls swallow pointer events). */}
+              <div style={{ marginTop: 16 }} title={!ready ? "Complete all required checklist items to submit." : undefined}>
+                <button
+                  onClick={submit}
+                  disabled={!ready || busy}
+                  data-testid="submit-to-cloudtax"
+                  className="btn btn-primary w-full"
+                >Move to CloudTax <ArrowRight size={14} /></button>
+              </div>
               <p className="muted" style={{ fontSize: 12, textAlign: "center", marginTop: 10 }}>CPA assigned within 1–2 business days</p>
             </div>
 

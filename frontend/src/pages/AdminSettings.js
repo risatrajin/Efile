@@ -793,21 +793,23 @@ function RolesTab() {
                           onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
                           onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                         ><Pencil size={14} /> Edit member</button>
-                        <button
-                          type="button"
-                          onClick={() => doResendInvite(u)}
-                          disabled={resendBusy === u.id}
-                          data-testid={`role-actions-resend-${u.id}`}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 10,
-                            width: "100%", padding: "9px 12px", borderRadius: 6,
-                            background: "transparent", border: "none",
-                            cursor: resendBusy === u.id ? "wait" : "pointer", fontSize: 13,
-                            color: "var(--text-primary)",
-                          }}
-                          onMouseEnter={(e) => { if (resendBusy !== u.id) e.currentTarget.style.background = "var(--bg-subtle)"; }}
-                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                        ><Mail size={14} /> {resendBusy === u.id ? "Sending…" : "Resend invitation"}</button>
+                        {u.status === "invited" && (
+                          <button
+                            type="button"
+                            onClick={() => doResendInvite(u)}
+                            disabled={resendBusy === u.id}
+                            data-testid={`role-actions-resend-${u.id}`}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              width: "100%", padding: "9px 12px", borderRadius: 6,
+                              background: "transparent", border: "none",
+                              cursor: resendBusy === u.id ? "wait" : "pointer", fontSize: 13,
+                              color: "var(--text-primary)",
+                            }}
+                            onMouseEnter={(e) => { if (resendBusy !== u.id) e.currentTarget.style.background = "var(--bg-subtle)"; }}
+                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                          ><Mail size={14} /> {resendBusy === u.id ? "Sending…" : "Resend invitation"}</button>
+                        )}
                         <button
                           type="button"
                           onClick={() => { setConfirmRemove(u); setOpenMenu(null); }}

@@ -258,7 +258,7 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
       </div>
       {err && <div className="alert alert-risk" style={{ margin: 16 }}>{err}</div>}
       <form onSubmit={send} style={{ display: "flex", alignItems: "center", gap: 8, padding: 16, borderTop: "1px solid var(--border-default)", background: "var(--bg-card)" }}>
-        <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }} data-testid="chat-attach">
+        <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }} data-testid="chat-attach" aria-label="Attach file" title="Attach file">
           <Paperclip size={14} />
           <input ref={fileRef} type="file" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && onAttach(e.target.files[0])} />
         </label>
@@ -266,12 +266,13 @@ export function ChatThread({ engagementId, headerUser, mineRightAlign = true, mi
           className="input"
           style={{ flex: 1, height: 38, borderRadius: 19, paddingLeft: 16 }}
           placeholder="Type a message..."
+          aria-label="Message"
           value={text}
           onChange={(e) => setText(e.target.value)}
           disabled={busy}
           data-testid="chat-input"
         />
-        <button type="submit" className="btn btn-primary btn-sm" style={{ borderRadius: 19, padding: "8px 14px" }} disabled={busy || !text.trim()} data-testid="chat-send">
+        <button type="submit" className="btn btn-primary btn-sm" style={{ borderRadius: 19, padding: "8px 14px" }} disabled={busy || !text.trim()} data-testid="chat-send" aria-label="Send message" title="Send message">
           <Send size={12} />
         </button>
       </form>

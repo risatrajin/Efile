@@ -154,7 +154,7 @@ function AddClientModal({ onClose, onCreated }) {
                   ].map((t) => {
                     const sel = form.tier === t.v;
                     return (
-                      <button key={t.v} type="button" onClick={() => setForm({ ...form, tier: t.v })} data-testid={`ac-tier-${t.v}`}
+                      <button key={t.v} type="button" aria-pressed={sel} onClick={() => setForm({ ...form, tier: t.v })} data-testid={`ac-tier-${t.v}`}
                         style={{ width: "100%", textAlign: "left", padding: 14, borderRadius: 12, border: `1.5px solid ${sel ? "#1565c0" : "var(--border-default)"}`, background: sel ? "#e3f2fd" : "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 120ms ease" }}>
                         <div>
                           <TierBadge tier={t.v} />

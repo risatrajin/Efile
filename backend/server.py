@@ -1290,6 +1290,9 @@ async def list_team(user: dict = Depends(require_role("ADMIN"))):
             u["permissions"] = default_permissions_for(u["role"])
         if not u.get("display_role"):
             u["display_role"] = {"ADMIN": "Admin", "CPA": "CPA", "PARTNER": "Partner"}.get(u["role"], u["role"])
+        # Lifecycle status drives row affordances (e.g. only "invited" members
+        # can have their invitation resent).
+        u["status"] = await _compute_user_status(db, u)
         out.append(u)
     return out
 

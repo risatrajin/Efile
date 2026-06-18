@@ -129,6 +129,9 @@ export default function NotificationBell() {
       <button
         onClick={() => setOpen((o) => !o)}
         data-testid="notification-bell"
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-haspopup="menu"
+        aria-expanded={open}
         style={{
           position: "relative", width: 36, height: 36, borderRadius: 999,
           display: "inline-flex", alignItems: "center", justifyContent: "center",

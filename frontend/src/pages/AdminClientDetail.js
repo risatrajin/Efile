@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
-import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileText, Download, CheckCircle2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileText, Download, CheckCircle2, AlertTriangle, Lock } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import FiledReturnCard from "../components/shared/FiledReturnCard";
@@ -443,6 +443,9 @@ export default function AdminClientDetail() {
             {eng.status === "FILED" && <FiledReturnCard eng={eng} />}
             <div className="card" data-testid="client-info-card">
               <h2 className="card-title">Client information</h2>
+              <div className="muted flex items-center gap-2" data-testid="client-info-readonly-note" style={{ fontSize: 12, marginTop: 4 }}>
+                <Lock size={12} style={{ flexShrink: 0 }} /> Locked after referral — these details are set during onboarding and can’t be edited once the client is with CloudTax.
+              </div>
               <div className="grid-2 mt-3" style={{ rowGap: 18 }}>
                 <div className="field"><label className="field-label">Email</label><div style={{ fontSize: 13, fontWeight: 500 }}>{client.email}</div></div>
                 <div className="field"><label className="field-label">Phone</label><div style={{ fontSize: 13, fontWeight: 500 }}>{client.phone || "—"}</div></div>
