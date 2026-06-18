@@ -1311,7 +1311,7 @@ export default function CpaEngagement() {
                       <div className="label-caption mt-2">{OPP_LABELS[o.category]}</div>
                     </div>
                     <div>
-                      {o.shared_with_ws ? <span className="badge badge-complete">shared</span> : <button className="btn btn-secondary btn-sm" disabled={sharingId === o.id} onClick={() => shareOpp(o)} data-testid={`share-opp-${o.id}`}>{sharingId === o.id ? "Sharing…" : "Share with WS"}</button>}
+                      {o.shared_with_ws ? <span className="badge badge-complete">Shared with the partner</span> : <button className="btn btn-secondary btn-sm" disabled={sharingId === o.id} onClick={() => shareOpp(o)} data-testid={`share-opp-${o.id}`}>{sharingId === o.id ? "Sharing…" : "Share with the partner"}</button>}
                     </div>
                   </div>
                 ))}
