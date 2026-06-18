@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
-import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileText, Download, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileText, Download, CheckCircle2, AlertTriangle } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import FiledReturnCard from "../components/shared/FiledReturnCard";
@@ -275,6 +275,8 @@ export default function AdminClientDetail() {
   const [documents, setDocuments] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
 
   const load = async () => {
@@ -290,7 +292,16 @@ export default function AdminClientDetail() {
       setSelectedCpa(a.data.assigned_cpa_id || "");
       setHistory(h.data || []);
       setDocuments(d.data || []);
-    } catch (x) { setErr(fmtError(x)); }
+      setLoadFailed(false);
+      setNotFound(false);
+    } catch (x) {
+      setErr(fmtError(x));
+      // A failed initial load (engagement 404'd because it was removed, or any
+      // other fetch error) must not leave the page spinning on "Loading…"
+      // forever — surface an explicit recoverable state instead.
+      setLoadFailed(true);
+      setNotFound(x?.response?.status === 404);
+    }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
 
@@ -331,7 +342,29 @@ export default function AdminClientDetail() {
     { key: "users", to: "/admin/users", label: "Users" },
   ];
 
-  if (!eng) return <div className="app-root"><AppHeader tabs={tabs} /><div className="page-wide">Loading…</div></div>;
+  if (!eng) {
+    if (loadFailed) return (
+      <div className="app-root">
+        <AppHeader tabs={tabs} />
+        <div className="page-wide stack-lg" data-testid="admin-client-not-found">
+          <div className="card" style={{ textAlign: "center", padding: "48px 24px", maxWidth: 480, margin: "40px auto" }}>
+            <AlertTriangle size={32} style={{ color: "var(--text-tertiary)", margin: "0 auto 12px" }} />
+            <h1 className="page-title" style={{ fontSize: 20 }}>{notFound ? "Client not found" : "Couldn’t load this client"}</h1>
+            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+              {notFound
+                ? "This client may have been removed, or the link is out of date."
+                : "Something went wrong loading this client. Please try again."}
+            </p>
+            <div className="flex gap-2" style={{ justifyContent: "center", marginTop: 20 }}>
+              {!notFound && <button className="btn btn-secondary btn-sm" onClick={() => { setLoadFailed(false); setErr(""); load(); }} data-testid="client-load-retry">Try again</button>}
+              <Link to="/admin/dashboard" className="btn btn-primary btn-sm" data-testid="client-not-found-back"><ArrowLeft size={12} /> Back to Dashboard</Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+    return <div className="app-root"><AppHeader tabs={tabs} /><div className="page-wide">Loading…</div></div>;
+  }
   const corp = eng.corporation || {};
   const client = eng.client || {};
   const noteRows = parseNotes(eng.notes);
