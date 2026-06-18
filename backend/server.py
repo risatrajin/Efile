@@ -2118,6 +2118,23 @@ async def ws_update_checklist(eid: str, body: ChecklistArrayIn, user: dict = Dep
     return {"items": cleaned}
 
 
+# Engagement pipeline order + allowed forward transitions. The generic
+# PATCH /engagements/{eid} validates against these so a status change can't be
+# set to a junk value, skip a stage, or bypass the gates the dedicated
+# endpoints (move-to-review, file-with-cra) enforce.
+ENGAGEMENT_STATUSES = ["ONBOARDING", "REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW", "DELIVERY", "FILED"]
+_STATUS_ORDER = {s: i for i, s in enumerate(ENGAGEMENT_STATUSES)}
+ALLOWED_FORWARD = {
+    "ONBOARDING": {"REFERRED"},
+    "REFERRED": {"INTAKE"},
+    "INTAKE": {"IN_PREP"},
+    "IN_PREP": {"IN_REVIEW"},
+    "IN_REVIEW": {"DELIVERY", "FILED"},
+    "DELIVERY": {"FILED"},
+    "FILED": set(),
+}
+
+
 @api.patch("/engagements/{eid}")
 async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Depends(get_current_user)):
     db = get_db()
@@ -2142,10 +2159,32 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
         needed = "reassign_cpa" if eng.get("assigned_cpa_id") else "assign_cpa"
         if not perms.get(needed):
             raise HTTPException(403, f"You don't have permission to {needed.replace('_', ' ')}")
-    # Status transitions
+    # Status transitions — honour the same gates as the dedicated endpoints so
+    # they can't be skipped via a direct PATCH.
     if "status" in updates and updates["status"] != eng["status"]:
         s = updates["status"]
-        await log_status_change(eid, user["id"], eng["status"], s)
+        cur = eng["status"]
+        # Reject junk / unknown statuses.
+        if s not in _STATUS_ORDER:
+            raise HTTPException(400, f"Invalid status '{s}'")
+        # Forward moves must follow the pipeline (no skipping a stage); backward
+        # moves (corrections) to an earlier stage are allowed.
+        if _STATUS_ORDER.get(cur, -1) < _STATUS_ORDER[s] and s not in ALLOWED_FORWARD.get(cur, set()):
+            raise HTTPException(400, f"Cannot move from {cur} to {s}")
+        # Review requires a T2 draft (same gate as /move-to-review).
+        if s == "IN_REVIEW" and not eng.get("t2_draft_doc_id"):
+            raise HTTPException(400, "Upload a T2 draft PDF before moving to Review.")
+        # Filed requires the FULL file-with-cra preconditions — T183 signed,
+        # explicit CLIENT approval, and submission info — so a return can never
+        # be FILED without client approval, even via a direct PATCH.
+        if s == "FILED":
+            if not eng.get("t183_signed_at"):
+                raise HTTPException(400, "Cannot move to Filed: client must sign T183 first.")
+            if (eng.get("review_decision") or {}).get("decision") != "approved":
+                raise HTTPException(400, "Cannot move to Filed: client must approve the draft (Your Review) before filing.")
+            if not eng.get("filing_confirmation"):
+                raise HTTPException(400, "Cannot move to Filed: complete 'Update submission info' (CRA confirmation + filed PDF) first.")
+        await log_status_change(eid, user["id"], cur, s)
         if s == "INTAKE":
             updates["intake_complete_date"] = now
         elif s == "IN_PREP":
@@ -2155,13 +2194,6 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
         elif s == "DELIVERY":
             updates["delivery_date"] = now
         elif s == "FILED":
-            # Hard gate: T183 must be signed AND submission info recorded before
-            # this engagement can be marked FILED via the Move-to dropdown.
-            # (The "Update submission info" form sets both fields atomically.)
-            if not eng.get("t183_signed_at"):
-                raise HTTPException(400, "Cannot move to Filed: client must sign T183 first.")
-            if not eng.get("filing_confirmation"):
-                raise HTTPException(400, "Cannot move to Filed: complete 'Update submission info' (CRA confirmation + filed PDF) first.")
             updates["filing_date"] = now
             ref = eng.get("referral_date")
             if ref:
