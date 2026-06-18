@@ -370,7 +370,6 @@ def redact_for_client(eng: dict) -> dict:
     eng.pop("notes", None)
     eng.pop("partner_notes", None)
     return eng
-    return eng
 
 
 # ==================== Auth ====================

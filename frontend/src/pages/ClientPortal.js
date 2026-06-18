@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
-import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Building2, Trash2, ThumbsUp, Flag, PenLine, Plus } from "lucide-react";
+import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Trash2, ThumbsUp, Flag, PenLine, Plus } from "lucide-react";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
 import T183SigningModal from "../components/shared/T183SigningModal";
 
