@@ -186,7 +186,7 @@ export default function DelegateManagementCard({ engagementId, primaryClientName
             <button
               type="submit"
               className="btn btn-primary btn-sm"
-              disabled={busy}
+              disabled={busy || !form.name.trim() || !form.email.trim()}
               data-testid="delegate-form-submit"
             >
               {busy ? <span className="spinner" /> : "Send invitation"}
