@@ -778,7 +778,7 @@ export default function CpaEngagement() {
 
   const remindDoc = async (doc) => {
     setBusy(true); setErr("");
-    try { await api.post(`/documents/${doc.id}/remind`); await load(); }
+    try { await api.post(`/documents/${doc.id}/remind`); toast(`Reminder sent for “${doc.name}”.`); await load(); }
     catch (x) { setErr(fmtError(x)); }
     setBusy(false);
   };
@@ -862,11 +862,11 @@ export default function CpaEngagement() {
   const createOpp = async (f) => { try { await api.post(`/engagements/${eid}/opportunities`, f); await load(); } catch (x) { setErr(fmtError(x)); } };
 
   const flagIssue = async (note) => {
-    try { await api.patch(`/documents/${flagDoc.id}`, { status: "ISSUE", issue_note: note }); await load(); } catch (x) { setErr(fmtError(x)); }
+    try { await api.patch(`/documents/${flagDoc.id}`, { status: "ISSUE", issue_note: note }); toast(`Issue flagged on “${flagDoc.name}” — client notified.`); await load(); } catch (x) { setErr(fmtError(x)); }
   };
 
   const requestNewDoc = async (form) => {
-    try { await api.post(`/engagements/${eid}/documents/request`, form); await load(); } catch (x) { setErr(fmtError(x)); }
+    try { await api.post(`/engagements/${eid}/documents/request`, form); toast("Document request sent to the client."); await load(); } catch (x) { setErr(fmtError(x)); }
   };
 
   const markReviewed = async (doc) => {
@@ -904,6 +904,7 @@ export default function CpaEngagement() {
     if (!newTime.hours) return;
     try {
       await api.post(`/engagements/${eid}/time-entries`, { category: newTime.category, hours: parseFloat(newTime.hours), description: newTime.description || null });
+      toast(`Logged ${parseFloat(newTime.hours)}h.`);
       setNewTime({ ...newTime, hours: "", description: "" });
       await load();
     } catch (x) { setErr(fmtError(x)); }
@@ -1438,7 +1439,7 @@ export default function CpaEngagement() {
                   </div>
                 )}
                 {eng.cra_access_status !== "ACCESS_VERIFIED" && (
-                  <button className="btn btn-secondary btn-sm mt-3" onClick={async () => { await api.patch(`/engagements/${eid}`, { cra_access_status: "ACCESS_VERIFIED", cra_programs: { RC0001: true, RZ0001: false, RP0001: false } }); await load(); }} data-testid="verify-cra">
+                  <button className="btn btn-secondary btn-sm mt-3" onClick={async () => { await api.patch(`/engagements/${eid}`, { cra_access_status: "ACCESS_VERIFIED", cra_programs: { RC0001: true, RZ0001: false, RP0001: false } }); toast("CRA access marked as verified."); await load(); }} data-testid="verify-cra">
                     Mark CRA access verified
                   </button>
                 )}
