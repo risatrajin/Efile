@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, TIME_LABELS, OPP_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
@@ -6,6 +6,7 @@ import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import EngagementNotes from "../components/shared/EngagementNotes";
 import { ChatThread } from "./Messages";
+import { toast } from "../lib/toast";
 import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft, Settings, Archive } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
@@ -881,8 +882,22 @@ export default function CpaEngagement() {
     setReminderBusy(false);
   };
 
+  const [sharingId, setSharingId] = useState(null);
+  // Synchronous in-flight guard: setSharingId (state) lags a rapid double/triple
+  // click, so without a ref every click in the burst would re-PATCH and
+  // re-notify the partner. The ref blocks the duplicates immediately.
+  const sharingRef = useRef(new Set());
   const shareOpp = async (opp) => {
-    try { await api.patch(`/opportunities/${opp.id}`, { shared_with_ws: true }); await load(); } catch (x) { setErr(fmtError(x)); }
+    if (opp.shared_with_ws || sharingRef.current.has(opp.id)) return;
+    sharingRef.current.add(opp.id);
+    setSharingId(opp.id);
+    try {
+      await api.patch(`/opportunities/${opp.id}`, { shared_with_ws: true });
+      toast("Opportunity shared with the partner.");
+      await load();
+    } catch (x) { setErr(fmtError(x)); }
+    sharingRef.current.delete(opp.id);
+    setSharingId(null);
   };
 
   const addTime = async () => {
@@ -1296,7 +1311,7 @@ export default function CpaEngagement() {
                       <div className="label-caption mt-2">{OPP_LABELS[o.category]}</div>
                     </div>
                     <div>
-                      {o.shared_with_ws ? <span className="badge badge-complete">shared</span> : <button className="btn btn-secondary btn-sm" onClick={() => shareOpp(o)} data-testid={`share-opp-${o.id}`}>Share with WS</button>}
+                      {o.shared_with_ws ? <span className="badge badge-complete">shared</span> : <button className="btn btn-secondary btn-sm" disabled={sharingId === o.id} onClick={() => shareOpp(o)} data-testid={`share-opp-${o.id}`}>{sharingId === o.id ? "Sharing…" : "Share with WS"}</button>}
                     </div>
                   </div>
                 ))}
