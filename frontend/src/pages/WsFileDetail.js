@@ -274,10 +274,9 @@ export default function WsFileDetail() {
                   {eng.filing_confirmation && <div className="list-row"><span className="muted" style={{ fontSize: 13 }}>CRA ref</span><span style={{ color: "#f57f17", fontWeight: 600, fontSize: 13 }}>{eng.filing_confirmation}</span></div>}
                 </>
               )}
-              <div style={{ marginTop: 16 }}>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Have a question about this file?</div>
-                <button className="btn btn-secondary btn-sm w-full" disabled style={{ justifyContent: "center", color: "var(--text-tertiary)" }} data-testid="message-cloudtax-team">Message CloudTax team</button>
-              </div>
+              {/* "Message CloudTax team" intentionally hidden until partner
+                  messaging is built — it was a permanently-disabled placeholder.
+                  Restore this block (prompt + button) once the feature exists. */}
             </div>
 
             <div className="card" data-testid="activity-card">
