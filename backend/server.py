@@ -2190,6 +2190,26 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
         client = await db.users.find_one({"id": corp["client_id"]}) if corp else None
         client_label = (client.get("name") if client else "") or (corp.get("name") if corp else eid[:8])
         cpa_label = (cpa_user.get("name") if cpa_user else "your CPA") if cpa_user else "your CPA"
+        # Record the (re)assignment in the engagement's status history. A CPA
+        # change is not a status transition, so without this it left no trace
+        # in the timeline. Tagged kind="cpa_change" so the UI renders it as an
+        # assignment event rather than a status badge transition.
+        prev_cpa_id = eng.get("assigned_cpa_id")
+        if prev_cpa_id:
+            prev_cpa = await db.users.find_one({"id": prev_cpa_id}, {"_id": 0, "name": 1})
+            cpa_note = f"CPA reassigned: {(prev_cpa or {}).get('name') or 'previous CPA'} → {cpa_label}"
+        else:
+            cpa_note = f"CPA assigned: {cpa_label}"
+        await db.status_history.insert_one({
+            "id": str(uuid.uuid4()),
+            "engagement_id": eid,
+            "changed_by_id": user["id"],
+            "kind": "cpa_change",
+            "from_status": None,
+            "to_status": None,
+            "note": cpa_note,
+            "created_at": now,
+        })
         # Notify the newly-assigned CPA — keep the in-app bell ...
         await notify(
             new_cpa_id,

@@ -28,17 +28,25 @@ export default function StatusHistoryTimeline({ rows = [], compact = false }) {
             }}
           />
           <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-            {h.from_status && (
+            {h.kind === "cpa_change" ? (
+              <span className="badge" style={{ fontSize: 10, background: "#ede7f6", color: "#5e35b1", fontWeight: 600 }}>
+                {h.note || "CPA change"}
+              </span>
+            ) : (
               <>
-                <span className="badge badge-neutral" style={{ fontSize: 10 }}>
-                  {h.from_status.replace(/_/g, " ").toLowerCase()}
+                {h.from_status && (
+                  <>
+                    <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                      {h.from_status.replace(/_/g, " ").toLowerCase()}
+                    </span>
+                    <span className="tertiary">→</span>
+                  </>
+                )}
+                <span className="badge badge-active" style={{ fontSize: 10 }}>
+                  {(h.to_status || "").replace(/_/g, " ").toLowerCase()}
                 </span>
-                <span className="tertiary">→</span>
               </>
             )}
-            <span className="badge badge-active" style={{ fontSize: 10 }}>
-              {h.to_status.replace(/_/g, " ").toLowerCase()}
-            </span>
             <span className="tertiary" style={{ fontSize: 11 }}>
               by {h.changed_by?.name || "—"}
             </span>
@@ -46,7 +54,7 @@ export default function StatusHistoryTimeline({ rows = [], compact = false }) {
               · {new Date(h.created_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}
             </span>
           </div>
-          {h.note && (
+          {h.note && h.kind !== "cpa_change" && (
             <div className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>
               "{h.note}"
             </div>

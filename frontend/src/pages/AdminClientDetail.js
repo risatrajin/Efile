@@ -461,8 +461,12 @@ export default function AdminClientDetail() {
 
           <div className="stack-lg">
             <div className="card" data-testid="assign-cpa-card">
-              <h2 className="card-title">Assign CPA</h2>
-              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Select a CPA to take over from intake.</div>
+              <h2 className="card-title">{eng.assigned_cpa_id ? "Reassign CPA" : "Assign CPA"}</h2>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }} data-testid="assign-cpa-subtitle">
+                {eng.assigned_cpa_id
+                  ? <>Currently assigned to <strong>{cpaName(eng.assigned_cpa_id)}</strong>. Pick a different CPA to reassign.</>
+                  : "Select a CPA to take over from intake."}
+              </div>
               <div className="field mt-3">
                 <label className="field-label">CPA</label>
                 <select className="select" value={selectedCpa} onChange={(e) => setSelectedCpa(e.target.value)} data-testid="cpa-select">
