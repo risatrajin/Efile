@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError, fmtDate, initials, TIME_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
-import { Lock, FileText, Clock, Activity, ArrowLeft, Check, CircleDashed } from "lucide-react";
+import { Lock, FileText, Clock, Activity, ArrowLeft, Check, CircleDashed, AlertCircle } from "lucide-react";
 
 const PHASES = ["Referred", "Intake", "In Prep", "Review", "Filed"];
 const STATUS_INDEX = { REFERRED: 0, INTAKE: 1, IN_PREP: 2, IN_REVIEW: 3, DELIVERY: 3, FILED: 4 };
@@ -75,6 +75,8 @@ export default function WsFileDetail() {
   const [time, setTime] = useState([]);
   const [history, setHistory] = useState([]);
   const [err, setErr] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   const load = async () => {
     try {
@@ -84,6 +86,7 @@ export default function WsFileDetail() {
       ]);
       setEng(a.data);
       setHistory(b.data || []);
+      setLoadFailed(false); setNotFound(false);
       // Partner safe summary (no S3 keys / download URLs); fall back to full /documents for CPA/Admin
       try {
         const { data: d } = await api.get(`/engagements/${eid}/documents/summary`);
@@ -97,13 +100,42 @@ export default function WsFileDetail() {
       }
       try { const { data: t } = await api.get(`/engagements/${eid}/time-entries`); setTime(t); }
       catch (e) { console.debug("[WsFileDetail] time-entries fetch (expected for PARTNER):", e?.response?.status); }
-    } catch (x) { setErr(fmtError(x)); }
+    } catch (x) {
+      setErr(fmtError(x));
+      // A failed initial load (bad/stale id 404'd) must not spin on "Loading…"
+      // forever — show a recoverable state instead. Partners view the whole
+      // pilot, so there's no 403 case here; only the 404/bad-id path.
+      setLoadFailed(true);
+      setNotFound(x?.response?.status === 404);
+    }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [eid]);
 
-  if (!eng) return (
-    <div className={rootClass}><AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>
-  );
+  if (!eng) {
+    if (loadFailed) return (
+      <div className={rootClass}>
+        <AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} />
+        <div className="page-wide stack-lg" data-testid="partner-file-error">
+          <div className="card" style={{ textAlign: "center", padding: "48px 24px", maxWidth: 480, margin: "40px auto" }}>
+            <AlertCircle size={32} style={{ color: "var(--text-tertiary)", margin: "0 auto 12px" }} />
+            <h1 className="page-title" style={{ fontSize: 20 }}>{notFound ? "Client not found" : "Couldn’t load this client"}</h1>
+            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+              {notFound
+                ? "This client may have been removed, or the link is out of date."
+                : "Something went wrong loading this client. Please try again."}
+            </p>
+            <div className="flex gap-2" style={{ justifyContent: "center", marginTop: 20 }}>
+              {!notFound && <button className="btn btn-secondary btn-sm" onClick={() => { setLoadFailed(false); setErr(""); load(); }} data-testid="partner-file-retry">Try again</button>}
+              <Link to="/partner/dashboard" className="btn btn-primary btn-sm" data-testid="partner-file-back"><ArrowLeft size={12} /> Back to dashboard</Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+    return (
+      <div className={rootClass}><AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>
+    );
+  }
 
   const corp = eng.corporation || {};
   const client = eng.client || {};
