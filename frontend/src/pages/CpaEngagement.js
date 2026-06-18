@@ -661,6 +661,9 @@ export default function CpaEngagement() {
   const [newTime, setNewTime] = useState({ category: "T2_PREPARATION", hours: "", description: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
   const [showChecklistSettings, setShowChecklistSettings] = useState(false);
   const [delegateList, setDelegateList] = useState([]);
 
@@ -679,7 +682,18 @@ export default function CpaEngagement() {
       ]);
       setEng(a.data); setDocs(b.data); setExtracted(c.data); setOpps(d.data); setTime(e.data); setCl(f.data); setHistory(h.data); setT183(t.data);
       setDelegateList(dl.data?.delegates || []);
-    } catch (x) { setErr(fmtError(x)); }
+      setLoadFailed(false); setNotFound(false); setForbidden(false);
+    } catch (x) {
+      setErr(fmtError(x));
+      // A failed initial load must not leave the page spinning on "Loading…"
+      // forever. 403 = the engagement isn't this CPA's (scoping is enforced
+      // server-side); 404 = it doesn't exist / was removed. Surface an explicit
+      // recoverable state instead of a dead spinner.
+      const status = x?.response?.status;
+      setLoadFailed(true);
+      setNotFound(status === 404);
+      setForbidden(status === 403);
+    }
   };
   const loadT183 = async () => {
     try {
@@ -880,7 +894,33 @@ export default function CpaEngagement() {
     } catch (x) { setErr(fmtError(x)); }
   };
 
-  if (!eng) return (<div className="app-root"><AppHeader /><div className="page-wide">Loading…</div></div>);
+  if (!eng) {
+    if (loadFailed) return (
+      <div className="app-root">
+        <AppHeader />
+        <div className="page-wide stack-lg" data-testid="cpa-engagement-error">
+          <div className="card" style={{ textAlign: "center", padding: "48px 24px", maxWidth: 480, margin: "40px auto" }}>
+            <AlertCircle size={32} style={{ color: "var(--text-tertiary)", margin: "0 auto 12px" }} />
+            <h1 className="page-title" style={{ fontSize: 20 }}>
+              {forbidden ? "You don’t have access to this client" : notFound ? "Client not found" : "Couldn’t load this client"}
+            </h1>
+            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+              {forbidden
+                ? "This client is assigned to a different CPA."
+                : notFound
+                ? "This client may have been removed, or the link is out of date."
+                : "Something went wrong loading this client. Please try again."}
+            </p>
+            <div className="flex gap-2" style={{ justifyContent: "center", marginTop: 20 }}>
+              {!forbidden && !notFound && <button className="btn btn-secondary btn-sm" onClick={() => { setLoadFailed(false); setErr(""); load(); }} data-testid="cpa-engagement-retry">Try again</button>}
+              <Link to="/cpa/files" className="btn btn-primary btn-sm" data-testid="cpa-engagement-back"><ArrowLeft size={12} /> Back to Files</Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+    return (<div className="app-root"><AppHeader /><div className="page-wide">Loading…</div></div>);
+  }
 
   const corp = eng.corporation || {};
   const client = eng.client || {};
