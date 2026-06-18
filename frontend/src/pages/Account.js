@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError } from "../lib/api";
-import { LogOut, KeyRound, BookOpen, Download, Phone, ArrowLeft } from "lucide-react";
+import { LogOut, KeyRound, Phone, ArrowLeft } from "lucide-react";
 import AppHeader from "../components/shared/AppHeader";
 import AvatarUploadCard from "../components/shared/AvatarUploadCard";
 import TwoFactorCard from "../components/shared/TwoFactorCard";
@@ -262,10 +262,9 @@ export default function AccountPage() {
         <p style={{ fontSize: 13, lineHeight: 1.6 }}>
           Have questions? Contact us at <a className="link-underline" style={{ color: "#1565c0" }} href="mailto:support@cloudtax.ca">support@cloudtax.ca</a> or call <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={12} /> +1 888-953-2112</span>.
         </p>
-        <div className="flex gap-2 mt-4">
-          <button className="btn btn-secondary btn-sm" data-testid="view-faq"><BookOpen size={12} /> View FAQ ›</button>
-          <button className="btn btn-secondary btn-sm" data-testid="download-guide"><Download size={12} /> Download guide</button>
-        </div>
+        {/* FAQ + downloadable guide intentionally hidden until that content
+            exists — they were placeholder buttons with no handler. Restore the
+            block below once the FAQ page / guide PDF are built. */}
       </div>
 
       <button
