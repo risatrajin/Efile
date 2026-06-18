@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError, fmtDate, initials, TIME_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
+import PartnerFeedbackCard from "../components/shared/PartnerFeedbackCard";
 import { Lock, FileText, Clock, Activity, ArrowLeft, Check, CircleDashed, AlertCircle } from "lucide-react";
 
 const PHASES = ["Referred", "Intake", "In Prep", "Review", "Filed"];
@@ -258,6 +259,9 @@ export default function WsFileDetail() {
                 ))}
               </div>
             </div>
+
+            {/* The one writable surface in the otherwise view-only partner portal */}
+            <PartnerFeedbackCard eid={eid} />
           </div>
 
           {/* Right rail */}

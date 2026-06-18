@@ -8,6 +8,7 @@ import MoveToDropdown from "../components/shared/MoveToDropdown";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import FiledReturnCard from "../components/shared/FiledReturnCard";
 import EngagementNotes from "../components/shared/EngagementNotes";
+import PartnerFeedbackCard from "../components/shared/PartnerFeedbackCard";
 import { ChatThread } from "./Messages";
 import { toast } from "../lib/toast";
 
@@ -458,6 +459,8 @@ export default function AdminClientDetail() {
 
             <TaxSituationCard rows={noteRows} onSave={saveNotesFromRows} busy={busy} />
             <EngagementNotes eid={eid} title="Notes feed (Partner / CPA / Admin)" />
+
+            <PartnerFeedbackCard eid={eid} />
 
             <DocumentsCard documents={documents} />
           </div>

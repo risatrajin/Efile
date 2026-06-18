@@ -5,6 +5,7 @@ import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import EngagementNotes from "../components/shared/EngagementNotes";
+import PartnerFeedbackCard from "../components/shared/PartnerFeedbackCard";
 import { ChatThread } from "./Messages";
 import { toast } from "../lib/toast";
 import { Check, CircleDashed, AlertCircle, FileText, Sparkles, Plus, Download, Flag, FilePlus, Bell, Upload, X, Send, ArrowLeft, Settings, Archive } from "lucide-react";
@@ -1477,6 +1478,9 @@ export default function CpaEngagement() {
 
         {/* Tax situation / Notes — shared with Partner + Admin */}
         <EngagementNotes eid={eid} />
+
+        {/* Partner feedback — read-only for staff */}
+        <PartnerFeedbackCard eid={eid} />
       </div>
 
       {showOppModal && <AddOppModal onClose={() => setShowOppModal(false)} onCreate={createOpp} />}
