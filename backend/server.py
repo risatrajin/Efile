@@ -1823,7 +1823,7 @@ async def ws_create_onboarding(body: WsOnboardingIn, user: dict = Depends(requir
     corp_id = str(uuid.uuid4())
     await db.corporations.insert_one({
         "id": corp_id,
-        "name": body.corp_name or f"{full_name} Medicine Professional Corporation",
+        "name": body.corp_name or "",
         "business_number": None,
         "fiscal_year_start": None,
         "fiscal_year_end": body.fiscal_year_end,
