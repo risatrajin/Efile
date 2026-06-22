@@ -109,7 +109,7 @@ function AddClientModal({ onClose, onCreated }) {
               <div className="field"><label className="field-label">Phone</label>
                 <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 (416) 555-0000" data-testid="ac-phone" /></div>
               <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label>
-                <input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="ac-corp" required /></div>
+                <input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Northpath IT Solutions Inc." data-testid="ac-corp" required /></div>
               <div className="field"><label className="field-label">Province</label>
                 <select className="select" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} data-testid="ac-province">
                   {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}

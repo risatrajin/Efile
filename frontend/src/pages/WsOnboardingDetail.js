@@ -234,7 +234,7 @@ export default function WsOnboardingDetail() {
             <div className="card" data-testid="form-engagement">
               <h2 className="card-title" style={{ fontSize: 16, fontWeight: 600 }}>Engagement</h2>
               <div className="stack-md mt-3">
-                <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label><input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Dr Sam Smith Medicine Professional Corporation" data-testid="f-corp" required /></div>
+                <div className="field"><label className="field-label">Corporation name <span style={{ color: "#c62828" }}>*</span></label><input className="input" value={form.corp_name} onChange={(e) => setForm({ ...form, corp_name: e.target.value })} placeholder="Northpath IT Solutions Inc." data-testid="f-corp" required /></div>
                 <div className="field"><label className="field-label">Fiscal year end</label><input className="input" type="date" value={form.fiscal_year_end} onChange={(e) => setForm({ ...form, fiscal_year_end: e.target.value })} data-testid="f-fye" /></div>
                 <div className="field">
                   <label className="field-label">Service tier</label>
