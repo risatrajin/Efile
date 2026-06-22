@@ -72,3 +72,9 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Local-dev CRA proxy (machine-specific backend URL — never commit)
+frontend/src/setupProxy.js
+
+# Python virtualenv
+backend/.venv/
