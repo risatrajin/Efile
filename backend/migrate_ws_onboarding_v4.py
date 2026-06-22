@@ -20,15 +20,15 @@ async def main():
     seeds = [
         # (first, last, email, phone, prov, corp, tier, ready)
         ("Marcus", "Webb", "marcus@clinicmail.ca", "+1 (416) 555-0102", "ON",
-         "Marcus Webb Medicine Professional Corporation", "WHITE_GLOVE", True),
+         "Granite Auto Works Inc.", "WHITE_GLOVE", True),
         ("Priya", "Nair", "priya@clinicmail.ca", None, "BC",
-         "Priya Nair Medicine Professional Corporation", "BOOKS_COMPLETE", False),
+         "Harbour Coffee Roasters Inc.", "BOOKS_COMPLETE", False),
     ]
     for first, last, email, phone, prov, corp_name, tier, ready in seeds:
         existing = await db.users.find_one({"email": email})
         if existing: continue
         uid = str(uuid.uuid4())
-        full = f"Dr. {first} {last}"
+        full = f"{first} {last}"
         await db.users.insert_one({
             "id": uid, "email": email, "password_hash": hash_password(uuid.uuid4().hex),
             "name": full, "role": "CLIENT", "phone": phone, "is_active": True, "created_at": now,
