@@ -1,0 +1,52 @@
+# Render Blueprint — CloudTax × Ownr backend (FastAPI).
+# New > Blueprint > connect this repo. Render reads this file and provisions
+# the service. Fill the `sync: false` secrets when prompted.
+#
+# Frontend is NOT here — it deploys to Vercel (root dir = frontend/).
+services:
+  - type: web
+    name: efile-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    # emergentintegrations is a private package — needs the extra index, or
+    # the app won't boot (hard import in ai_service.py -> server.py).
+    buildCommand: >-
+      pip install --upgrade pip &&
+      pip install -r requirements.txt
+      --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+    startCommand: python -m uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: DB_NAME
+        value: cloudtax_ws_pilot
+      - key: PRODUCTION
+        value: "true"
+      # MUST stay false in prod — true leaks reset/OTP tokens in API responses.
+      - key: SHOW_DEV_FALLBACK_TOKENS
+        value: "false"
+      # Auto-generated, stable across deploys. Signs JWTs.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: nim@cloudtax.ca
+      # --- secrets: Render prompts for these (never stored in the repo) ---
+      - key: MONGO_URL          # MongoDB Atlas SRV string
+        sync: false
+      - key: ADMIN_PASSWORD     # seed/admin password (also used by seed.py)
+        sync: false
+      - key: FRONTEND_URL       # set to the Vercel URL after frontend deploys
+        sync: false
+      - key: ALLOWED_ORIGINS    # = FRONTEND_URL (CORS); comma-separated if many
+        sync: false
+      # --- optional (features degrade gracefully if unset) ---
+      - key: RESEND_API_KEY     # email (OTP / invite / reset). Unset = no-op.
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - key: RESEND_FROM_NAME
+        sync: false
+      - key: EMERGENT_LLM_KEY   # AI document parsing. Unset = parse disabled.
+        sync: false
