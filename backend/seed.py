@@ -47,17 +47,32 @@ PARTNERS = [
     ("kristin@partner.ca", "Kristin Fox"),
 ]
 PHYSICIANS = [
-    ("chen@example.com", "Dr. Emily Chen", "BC", "Family medicine"),
-    ("nguyen@example.com", "Dr. Minh Nguyen", "ON", "Anesthesiology"),
-    ("martin@example.com", "Dr. Sarah Martin", "AB", "Cardiology"),
-    ("ahmed@example.com", "Dr. Youssef Ahmed", "ON", "Internal medicine"),
-    ("singh@example.com", "Dr. Amrit Singh", "ON", "Radiology"),
-    ("thompson@example.com", "Dr. Rachel Thompson", "BC", "Pediatrics"),
-    ("patel@example.com", "Dr. Neel Patel", "ON", "Dermatology"),
-    ("liu@example.com", "Dr. Wei Liu", "QC", "Family medicine"),
-    ("kaur@example.com", "Dr. Manpreet Kaur", "AB", "Psychiatry"),
-    ("okafor@example.com", "Dr. Chinedu Okafor", "MB", "Family medicine"),
+    ("chen@example.com", "Emily Chen", "BC", "Family medicine"),
+    ("nguyen@example.com", "Minh Nguyen", "ON", "Anesthesiology"),
+    ("martin@example.com", "Sarah Martin", "AB", "Cardiology"),
+    ("ahmed@example.com", "Youssef Ahmed", "ON", "Internal medicine"),
+    ("singh@example.com", "Amrit Singh", "ON", "Radiology"),
+    ("thompson@example.com", "Rachel Thompson", "BC", "Pediatrics"),
+    ("patel@example.com", "Neel Patel", "ON", "Dermatology"),
+    ("liu@example.com", "Wei Liu", "QC", "Family medicine"),
+    ("kaur@example.com", "Manpreet Kaur", "AB", "Psychiatry"),
+    ("okafor@example.com", "Chinedu Okafor", "MB", "Family medicine"),
 ]
+
+# Each physician's corporation, keyed by client name (post De-"Dr." rename).
+# Replaces the old auto-generated "<name> Medicine Professional Corporation".
+CORP_NAMES = {
+    "Emily Chen": "Northpath IT Solutions Inc.",
+    "Minh Nguyen": "Maple Ridge Retail Inc.",
+    "Sarah Martin": "Clearwater Consulting Inc.",
+    "Youssef Ahmed": "Ironwood Trades Inc.",
+    "Amrit Singh": "Brightline Marketing Inc.",
+    "Rachel Thompson": "Stoneridge Logistics Inc.",
+    "Neel Patel": "Cedar & Co Bakery Inc.",
+    "Wei Liu": "Summit Web Studio Inc.",
+    "Manpreet Kaur": "Riverside Landscaping Inc.",
+    "Chinedu Okafor": "Lakeview Property Group Inc.",
+}
 
 # [tier, original_tier, status, days_offset, cpa_hours, docs_filed, opps]
 ENGAGEMENT_MATRIX = [
@@ -127,7 +142,7 @@ async def main():
         fiscal_start = fiscal_end.replace(year=2025) - timedelta(days=364)
 
         corp_id = str(uuid.uuid4())
-        corp_name = client["name"].replace("Dr. ", "") + " Medicine Professional Corporation"
+        corp_name = CORP_NAMES[client["name"]]
         await db.corporations.insert_one({
             "id": corp_id,
             "name": corp_name,
