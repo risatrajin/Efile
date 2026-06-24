@@ -8,13 +8,16 @@ import PartnerFeedbackCard from "../components/shared/PartnerFeedbackCard";
 import { Lock, FileText, Clock, Activity, ArrowLeft, Check, CircleDashed, AlertCircle } from "lucide-react";
 
 const PHASES = ["Referred", "Intake", "In Prep", "Review", "Filed"];
+// DIY self-filers progress through their own steps (no CPA referral/review).
+const PHASES_DIY = ["Getting started", "Gathering slips", "Preparing", "Self-review", "Filed"];
 const STATUS_INDEX = { REFERRED: 0, INTAKE: 1, IN_PREP: 2, IN_REVIEW: 3, DELIVERY: 3, FILED: 4 };
 
-function FilingProgress({ status }) {
+function FilingProgress({ status, isDIY }) {
   const idx = STATUS_INDEX[status] ?? -1;
+  const phases = isDIY ? PHASES_DIY : PHASES;
   return (
     <div className="flex items-center gap-2" data-testid="filing-progress" style={{ marginTop: 12 }}>
-      {PHASES.map((label, i) => (
+      {phases.map((label, i) => (
         <React.Fragment key={label}>
           <div className="flex flex-col items-center" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: "0 0 auto" }}>
             <div style={{
@@ -28,7 +31,7 @@ function FilingProgress({ status }) {
             </div>
             <div style={{ fontSize: 11, color: i <= idx ? "var(--text-primary)" : "var(--text-tertiary)" }}>{label}</div>
           </div>
-          {i < PHASES.length - 1 && (
+          {i < phases.length - 1 && (
             <div style={{ flex: 1, height: 1, background: i < idx ? "#1565c0" : "#d9d5cf", marginTop: -22 }} />
           )}
         </React.Fragment>
@@ -203,7 +206,7 @@ export default function WsFileDetail() {
             {/* Filing progress */}
             <div className="card" data-testid="filing-progress-card">
               <h2 className="card-title">Filing progress</h2>
-              <FilingProgress status={isOnboarding ? "REFERRED" : eng.status} />
+              <FilingProgress status={isOnboarding ? "REFERRED" : eng.status} isDIY={isDIY} />
               <StageMessage status={isOnboarding ? "REFERRED" : eng.status} isDIY={isDIY} />
             </div>
 
@@ -220,7 +223,7 @@ export default function WsFileDetail() {
                         {received ? <Check size={14} style={{ color: "#2e7d32" }} /> : <CircleDashed size={14} style={{ color: "#b5b0ab" }} />}
                         <span style={{ fontSize: 13 }}>{d.name}</span>
                       </div>
-                      <span className={`badge ${received ? "badge-complete" : "badge-neutral"}`}>{received ? "Received" : "Pending"}</span>
+                      <span className={`badge ${received ? "badge-complete" : "badge-neutral"}`}>{received ? (isDIY ? "Uploaded" : "Received") : (isDIY ? "Not uploaded" : "Pending")}</span>
                     </div>
                   );
                 })}
