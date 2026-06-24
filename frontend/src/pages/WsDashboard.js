@@ -19,6 +19,13 @@ const COLUMNS = [
   { key: "FILED", label: "Filed", icon: "lock" },
 ];
 
+// DFY = CloudTax CPA pipeline. DIY = self-filer doing their own return, so the
+// same underlying statuses get self-serve labels (no CPA / referral framing).
+const STAGE_LABELS = {
+  DFY: { REFERRED: "Referred", INTAKE: "Intake", IN_PREP: "In Prep", IN_REVIEW: "Review", FILED: "Filed" },
+  DIY: { REFERRED: "Getting started", INTAKE: "Gathering slips", IN_PREP: "Preparing", IN_REVIEW: "Self-review", FILED: "Filed" },
+};
+
 function clientName(name) {
   if (!name) return "—";
   // Show the stored name as-is. Strip a stray leading "Dr." defensively —
@@ -26,7 +33,7 @@ function clientName(name) {
   return name.replace(/^dr\.?\s+/i, "");
 }
 
-function ReadOnlyCard({ eng, onOpen }) {
+function ReadOnlyCard({ eng, onOpen, isDIY }) {
   const corp = eng.corporation || {};
   const client = eng.client || {};
   return (
@@ -35,14 +42,15 @@ function ReadOnlyCard({ eng, onOpen }) {
       <div style={{ fontWeight: 600, fontSize: 13, paddingRight: 16 }}>{clientName(client.name)}</div>
       <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{corp.name}</div>
       {eng.tier && <div style={{ marginTop: 8 }}><TierBadge tier={eng.tier} /></div>}
-      {eng.status === "REFERRED" && (
+      {/* CPA referral/assignment framing only applies to Done-for-you. */}
+      {!isDIY && eng.status === "REFERRED" && (
         <div className="mt-2 flex items-center gap-1" style={{ fontSize: 11 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#f57f17" }} />
           <span className="muted">CloudTax reviewing</span>
         </div>
       )}
-      {eng.status === "REFERRED" && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>CPA assignment in progress</div>}
-      {eng.status !== "REFERRED" && eng.status !== "FILED" && eng.assigned_cpa && (
+      {!isDIY && eng.status === "REFERRED" && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>CPA assignment in progress</div>}
+      {!isDIY && eng.status !== "REFERRED" && eng.status !== "FILED" && eng.assigned_cpa && (
         <>
           <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Day {eng.days_elapsed || 0}</div>
           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>CPA: {eng.assigned_cpa.name}</div>
@@ -56,15 +64,16 @@ function ReadOnlyCard({ eng, onOpen }) {
       )}
       <div style={{ marginTop: 10 }}>
         {(() => {
-          const map = {
-            REFERRED: { bg: "#e3f2fd", fg: "#1565c0", label: "Referred" },
-            INTAKE: { bg: "#e3f2fd", fg: "#1565c0", label: "Intake" },
-            IN_PREP: { bg: "#fff3e0", fg: "#ef6c00", label: "In Prep" },
-            IN_REVIEW: { bg: "#fffde7", fg: "#f57f17", label: "Review" },
-            FILED: { bg: "#e8f5e9", fg: "#2e7d32", label: "Filed" },
+          const colors = {
+            REFERRED: { bg: "#e3f2fd", fg: "#1565c0" },
+            INTAKE: { bg: "#e3f2fd", fg: "#1565c0" },
+            IN_PREP: { bg: "#fff3e0", fg: "#ef6c00" },
+            IN_REVIEW: { bg: "#fffde7", fg: "#f57f17" },
+            FILED: { bg: "#e8f5e9", fg: "#2e7d32" },
           };
-          const s = map[eng.status] || { bg: "var(--bg-subtle)", fg: "var(--text-secondary)", label: eng.status };
-          return <span style={{ background: s.bg, color: s.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 500 }}>{s.label}</span>;
+          const c = colors[eng.status] || { bg: "var(--bg-subtle)", fg: "var(--text-secondary)" };
+          const label = STAGE_LABELS[isDIY ? "DIY" : "DFY"][eng.status] || eng.status;
+          return <span style={{ background: c.bg, color: c.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 500 }}>{label}</span>;
         })()}
       </div>
     </div>
@@ -110,6 +119,7 @@ export default function WsDashboard() {
   // Slice to the active service-model tab. Legacy engagements with no field
   // count as DFY. Stats + kanban + table all read from `shown`.
   const shown = engs.filter((e) => (e.service_model || "DFY") === model);
+  const isDIY = model === "DIY";
   const counts = {
     DFY: engs.filter((e) => (e.service_model || "DFY") === "DFY").length,
     DIY: engs.filter((e) => e.service_model === "DIY").length,
@@ -196,7 +206,7 @@ export default function WsDashboard() {
                 <div className="kanban-col" key={col.key} data-testid={`kanban-col-${col.key}`}>
                   <div className="kanban-col-header">
                     <div>
-                      <div className="kanban-col-title">{col.label}</div>
+                      <div className="kanban-col-title">{STAGE_LABELS[isDIY ? "DIY" : "DFY"][col.key] || col.label}</div>
                       <div className="kanban-col-count">{items.length}</div>
                     </div>
                     <Lock size={11} style={{ color: "var(--bg-subtle)" }} />
@@ -205,7 +215,7 @@ export default function WsDashboard() {
                       column — that's the handoff pocket where it helps partners
                       understand why it's quiet (CloudTax picks up from here).
                       Every other column stays visually clean when empty. */}
-                  {isEmpty && isReferred && (
+                  {isEmpty && isReferred && !isDIY && (
                     <div className="kanban-col-empty" data-testid={`kanban-empty-${col.key}`}>
                       <div className="kanban-col-empty-icon"><Inbox size={20} /></div>
                       <div className="kanban-col-empty-title">No clients referred yet</div>
@@ -214,7 +224,7 @@ export default function WsDashboard() {
                   )}
                   {!isEmpty && (
                     <div className="stack-sm">
-                      {items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} />)}
+                      {items.map((e) => <ReadOnlyCard key={e.id} eng={e} onOpen={() => openFile(e.id)} isDIY={isDIY} />)}
                     </div>
                   )}
                 </div>
@@ -229,10 +239,10 @@ export default function WsDashboard() {
             testid="partner-engagement-table"
             stageOptions={[
               { key: "all", label: "All stages" },
-              { key: "REFERRED", label: "Referred" },
-              { key: "INTAKE", label: "Intake" },
-              { key: "IN_PREP", label: "In Prep" },
-              { key: "IN_REVIEW", label: "In Review" },
+              { key: "REFERRED", label: STAGE_LABELS[isDIY ? "DIY" : "DFY"].REFERRED },
+              { key: "INTAKE", label: STAGE_LABELS[isDIY ? "DIY" : "DFY"].INTAKE },
+              { key: "IN_PREP", label: STAGE_LABELS[isDIY ? "DIY" : "DFY"].IN_PREP },
+              { key: "IN_REVIEW", label: STAGE_LABELS[isDIY ? "DIY" : "DFY"].IN_REVIEW },
               { key: "DELIVERY", label: "Delivery" },
               { key: "FILED", label: "Filed" },
             ]}
