@@ -19,9 +19,11 @@ const COLUMNS = [
   { key: "FILED", label: "Filed", icon: "lock" },
 ];
 
-function withDrPrefix(name) {
+function clientName(name) {
   if (!name) return "—";
-  return (/^dr\.?\s/i).test(name) ? name : `Dr. ${name}`;
+  // Show the stored name as-is. Strip a stray leading "Dr." defensively —
+  // clients are general small businesses, not physicians.
+  return name.replace(/^dr\.?\s+/i, "");
 }
 
 function ReadOnlyCard({ eng, onOpen }) {
@@ -30,7 +32,7 @@ function ReadOnlyCard({ eng, onOpen }) {
   return (
     <div className="kanban-card" onClick={onOpen} data-testid={`pipeline-card-${eng.id}`} style={{ position: "relative", cursor: "pointer" }}>
       <Lock size={11} style={{ position: "absolute", top: 12, right: 12, color: "var(--bg-subtle)" }} />
-      <div style={{ fontWeight: 600, fontSize: 13, paddingRight: 16 }}>{withDrPrefix(client.name)}</div>
+      <div style={{ fontWeight: 600, fontSize: 13, paddingRight: 16 }}>{clientName(client.name)}</div>
       <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{corp.name}</div>
       {eng.tier && <div style={{ marginTop: 8 }}><TierBadge tier={eng.tier} /></div>}
       {eng.status === "REFERRED" && (
@@ -80,6 +82,14 @@ export default function WsDashboard() {
   // Read the new key first, fall back to the legacy key so a partner mid-session
   // keeps their view toggle through the rename. Writes go to the new key only.
   const [view, setView] = useState(() => localStorage.getItem("ct_partner_dash_view") || localStorage.getItem("ct_ws_dash_view") || "kanban");
+  // Service-model tab: "DFY" (Done for you — full CPA pipeline) vs "DIY"
+  // (Do it yourself). Same UI under each, just a different slice of clients.
+  const [model, setModel] = useState(() => localStorage.getItem("ct_partner_model") || "DFY");
+  const setModelPersist = (m) => {
+    setModel(m);
+    try { localStorage.setItem("ct_partner_model", m); }
+    catch (e) { console.debug("[WsDashboard] persist model failed:", e); }
+  };
 
   const load = async () => {
     try {
@@ -97,14 +107,27 @@ export default function WsDashboard() {
 
   const openFile = (eid) => navigate(`/partner/file/${eid}`);
 
-  // Stats derived entirely from the already-loaded engagement list.
+  // Slice to the active service-model tab. Legacy engagements with no field
+  // count as DFY. Stats + kanban + table all read from `shown`.
+  const shown = engs.filter((e) => (e.service_model || "DFY") === model);
+  const counts = {
+    DFY: engs.filter((e) => (e.service_model || "DFY") === "DFY").length,
+    DIY: engs.filter((e) => e.service_model === "DIY").length,
+  };
+
+  // Stats derived entirely from the active-tab engagement slice.
   const thisYear = new Date().getFullYear();
-  const filedEngs = engs.filter((e) => e.status === "FILED");
+  const filedEngs = shown.filter((e) => e.status === "FILED");
   const stats = [
-    { key: "total", label: "Total clients", value: engs.length },
-    { key: "in_progress", label: "In progress", value: engs.filter((e) => IN_PROGRESS_STATUSES.includes(e.status)).length },
+    { key: "total", label: "Total clients", value: shown.length },
+    { key: "in_progress", label: "In progress", value: shown.filter((e) => IN_PROGRESS_STATUSES.includes(e.status)).length },
     { key: "filed", label: "Filed", value: filedEngs.length },
     { key: "filed_year", label: "Filed this year", value: filedEngs.filter((e) => e.filing_date && new Date(e.filing_date).getFullYear() === thisYear).length },
+  ];
+
+  const MODEL_TABS = [
+    { key: "DFY", label: "Done for you" },
+    { key: "DIY", label: "Do it yourself" },
   ];
 
   const tabs = [{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }];
@@ -114,6 +137,34 @@ export default function WsDashboard() {
     <div className={rootClass}>
       <AppHeader tabs={tabs} />
       <div className="page-wide stack-lg">
+        {/* Service-model tabs — text only. Same pipeline UI under each; just a
+            different slice of clients (Done for you vs Do it yourself). */}
+        <div role="tablist" aria-label="Service model" data-testid="partner-model-tabs"
+             style={{ display: "flex", gap: 24, borderBottom: "1px solid var(--border-default)" }}>
+          {MODEL_TABS.map((t) => {
+            const active = model === t.key;
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={active}
+                data-testid={`model-tab-${t.key}`}
+                onClick={() => setModelPersist(t.key)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  padding: "10px 2px", fontSize: 15, fontFamily: "inherit",
+                  fontWeight: active ? 600 : 500,
+                  color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                  borderBottom: active ? "2px solid var(--accent, #5F3DC8)" : "2px solid transparent",
+                  marginBottom: -1,
+                }}
+              >
+                {t.label} <span className="muted" style={{ fontWeight: 400 }}>({counts[t.key]})</span>
+              </button>
+            );
+          })}
+        </div>
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
           <div>
             <h1 className="page-title">Client pipeline</h1>
@@ -135,7 +186,7 @@ export default function WsDashboard() {
         {view === "kanban" ? (
           <div className="kanban" style={{ gridTemplateColumns: "repeat(5, minmax(220px, 1fr))" }} data-testid="partner-kanban">
             {COLUMNS.map((col) => {
-              const items = engs.filter((e) => e.status === col.key);
+              const items = shown.filter((e) => e.status === col.key);
               const isReferred = col.key === "REFERRED";
               const isEmpty = items.length === 0;
               return (
@@ -169,7 +220,7 @@ export default function WsDashboard() {
           </div>
         ) : (
           <EngagementTable
-            engagements={engs}
+            engagements={shown}
             role="PARTNER"
             onRowClick={(e) => openFile(e.id)}
             testid="partner-engagement-table"
