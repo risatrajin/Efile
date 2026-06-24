@@ -60,6 +60,11 @@ def random_slips():
     return sorted(random.sample(DIY_SLIP_POOL, n), key=lambda s: s["sort_order"])
 
 
+# Fraction of slips already uploaded by stage — a self-filer gathers slips as
+# they progress; by Filed everything is in.
+SLIP_FILL = {"REFERRED": 0.0, "INTAKE": 0.4, "IN_PREP": 0.8, "IN_REVIEW": 1.0, "FILED": 1.0}
+
+
 async def main():
     db = get_db()
     if await db.seed_marker.find_one({"key": MARKER}):
@@ -116,12 +121,16 @@ async def main():
             "partner_advisor_id": partners[idx % len(partners)]["id"],
             "created_at": ref, "updated_at": now,
         })
-        # tax slips — random 5–10 subset per client (not everyone's the same)
+        # tax slips — random 5–10 subset per client; how many are already
+        # uploaded depends on how far along the self-filer is.
+        chosen = random_slips()
+        filled = round(len(chosen) * SLIP_FILL.get(status, 0.0))
         docs = [{"id": str(uuid.uuid4()), "engagement_id": eng_id, "category": d["category"],
                  "name": d["name"], "description": d["description"],
-                 "status": "PENDING", "is_required": d["is_required"], "sort_order": d["sort_order"],
+                 "status": "UPLOADED" if i < filled else "PENDING",
+                 "is_required": d["is_required"], "sort_order": d["sort_order"],
                  "file_url": None, "object_key": None, "file_size": None, "file_name": None,
-                 "created_at": ref} for d in random_slips()]
+                 "created_at": ref} for i, d in enumerate(chosen)]
         if docs:
             await db.documents.insert_many(docs)
         cl = [{"id": str(uuid.uuid4()), "engagement_id": eng_id, **c, "completed_at": None, "completed_by_id": None}
