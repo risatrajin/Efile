@@ -37,31 +37,41 @@ function FilingProgress({ status }) {
   );
 }
 
-function StageMessage({ status }) {
-  if (status === "REFERRED") {
-    return (
-      <div>
-        <div style={{ fontWeight: 600, fontSize: 14, marginTop: 16 }}>Awaiting CPA assignment</div>
-        <p className="muted" style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
-          Client has been referred to CloudTax. Our team will assign a CPA and reach out to begin the intake process within 1–2 business days.
-        </p>
-      </div>
-    );
-  }
-  if (status === "INTAKE") return <div><div style={{ fontWeight: 600, fontSize: 14, marginTop: 16 }}>Intake in progress</div><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>The CPA is collecting documents from the client.</p></div>;
-  if (status === "IN_PREP") return <div><div style={{ fontWeight: 600, fontSize: 14, marginTop: 16 }}>T2 preparation underway</div><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>The CPA is preparing the corporate tax return.</p></div>;
-  if (status === "IN_REVIEW") return <div><div style={{ fontWeight: 600, fontSize: 14, marginTop: 16 }}>Internal review</div><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>The return is being reviewed by senior CPA before filing.</p></div>;
-  if (status === "FILED") {
-    return (
-      <div>
-        <div style={{ fontWeight: 600, fontSize: 14, marginTop: 16 }}>Return filed with CRA</div>
-        <p className="muted" style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
-          The T2 return has been filed with the CRA. The client should expect a Notice of Assessment in approximately 6–8 weeks.
-        </p>
-      </div>
-    );
-  }
-  return null;
+// Stage copy differs by service model: DFY = CloudTax CPA does the work; DIY =
+// the client files on their own (no CPA in the loop).
+const STAGE_COPY = {
+  REFERRED: {
+    dfy: ["Awaiting CPA assignment", "Client has been referred to CloudTax. Our team will assign a CPA and reach out to begin the intake process within 1–2 business days."],
+    diy: ["Getting started", "Client is setting up their self-file workspace and will start their own return shortly."],
+  },
+  INTAKE: {
+    dfy: ["Intake in progress", "The CPA is collecting documents from the client."],
+    diy: ["Gathering documents", "Client is collecting and uploading their own documents."],
+  },
+  IN_PREP: {
+    dfy: ["T2 preparation underway", "The CPA is preparing the corporate tax return."],
+    diy: ["Preparing return", "Client is preparing their own T2 corporate return."],
+  },
+  IN_REVIEW: {
+    dfy: ["Internal review", "The return is being reviewed by senior CPA before filing."],
+    diy: ["Final review", "Client is reviewing their own return before filing it themselves."],
+  },
+  FILED: {
+    dfy: ["Return filed with CRA", "The T2 return has been filed with the CRA. The client should expect a Notice of Assessment in approximately 6–8 weeks."],
+    diy: ["Return filed with CRA", "Client filed their own T2 return with the CRA. They should expect a Notice of Assessment in approximately 6–8 weeks."],
+  },
+};
+
+function StageMessage({ status, isDIY }) {
+  const copy = STAGE_COPY[status];
+  if (!copy) return null;
+  const [title, body] = isDIY ? copy.diy : copy.dfy;
+  return (
+    <div>
+      <div style={{ fontWeight: 600, fontSize: 14, marginTop: 16 }}>{title}</div>
+      <p className="muted" style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>{body}</p>
+    </div>
+  );
 }
 
 export default function WsFileDetail() {
@@ -141,6 +151,7 @@ export default function WsFileDetail() {
   const corp = eng.corporation || {};
   const client = eng.client || {};
   const isOnboarding = eng.status === "ONBOARDING";
+  const isDIY = eng.service_model === "DIY";
   const totalHours = time.reduce((s, t) => s + (t.hours || 0), 0);
   const docsTotal = docs.length || eng.docs_total || 0;
   const docsReceived = docs.filter((d) => ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(d.status)).length;
@@ -164,6 +175,9 @@ export default function WsFileDetail() {
               <div className="flex items-center gap-2 mt-3">
                 <TierBadge tier={eng.tier} />
                 <StatusBadge status={eng.status} />
+                {isDIY && (
+                  <span style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 600, color: "#fff", background: "var(--accent-dark)", borderRadius: 999, padding: "2px 10px" }}>Do it yourself</span>
+                )}
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-secondary)" }}><Lock size={11} /> Read only</span>
               </div>
             </div>
@@ -190,13 +204,13 @@ export default function WsFileDetail() {
             <div className="card" data-testid="filing-progress-card">
               <h2 className="card-title">Filing progress</h2>
               <FilingProgress status={isOnboarding ? "REFERRED" : eng.status} />
-              <StageMessage status={isOnboarding ? "REFERRED" : eng.status} />
+              <StageMessage status={isOnboarding ? "REFERRED" : eng.status} isDIY={isDIY} />
             </div>
 
             {/* Document status */}
             <div className="card" data-testid="doc-status-card">
               <div className="flex items-center gap-2"><FileText size={14} style={{ color: "var(--text-secondary)" }} /><h2 className="card-title" style={{ margin: 0 }}>Document status</h2></div>
-              <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Managed by CloudTax — documents are collected directly from the client by their assigned CPA</p>
+              <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>{isDIY ? "Self-serve — the client uploads and manages their own documents" : "Managed by CloudTax — documents are collected directly from the client by their assigned CPA"}</p>
               <div className="mt-3">
                 {docList.map((d, i) => {
                   const received = ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(d.status);
@@ -213,7 +227,9 @@ export default function WsFileDetail() {
               </div>
             </div>
 
-            {/* Time log */}
+            {/* Time log — CPA-only. DIY clients are self-serve, so there's no
+                CPA time to surface; hide the card entirely. */}
+            {!isDIY && (
             <div className="card" data-testid="time-log-card">
               <div className="flex items-center between">
                 <div className="flex items-center gap-2"><Clock size={14} style={{ color: "var(--text-secondary)" }} /><h2 className="card-title" style={{ margin: 0 }}>Time log</h2></div>
@@ -235,6 +251,7 @@ export default function WsFileDetail() {
                 )}
               </div>
             </div>
+            )}
 
             {/* Client information */}
             <div className="card" data-testid="client-info-card">
@@ -246,7 +263,7 @@ export default function WsFileDetail() {
                   ["Province", corp.province],
                   ["Corporation", corp.name],
                   ["Fiscal year end", fmtDate(corp.fiscal_year_end)],
-                  ["Assigned CPA", eng.assigned_cpa?.name || "Pending assignment"],
+                  isDIY ? ["Filing method", "Self-file (no CPA)"] : ["Assigned CPA", eng.assigned_cpa?.name || "Pending assignment"],
                   ...(eng.status === "FILED" ? [
                     ["CRA ref number", eng.filing_confirmation || "—"],
                     ["Filed date", fmtDate(eng.filing_date)],
@@ -269,7 +286,9 @@ export default function WsFileDetail() {
             <div className="card" data-testid="current-stage-card">
               <h2 className="card-title">Current stage</h2>
               <div className="list-row mt-3"><span className="muted" style={{ fontSize: 13 }}>Stage</span><StatusBadge status={eng.status} /></div>
-              {eng.assigned_cpa && (
+              {isDIY ? (
+                <div className="list-row"><span className="muted" style={{ fontSize: 13 }}>Filing method</span><span style={{ fontWeight: 500, fontSize: 13 }}>Self-file</span></div>
+              ) : eng.assigned_cpa && (
                 <div className="list-row"><span className="muted" style={{ fontSize: 13 }}>Assigned CPA</span><span style={{ fontWeight: 500, fontSize: 13 }}>{eng.assigned_cpa.name}</span></div>
               )}
               {eng.status === "FILED" && (
