@@ -193,7 +193,7 @@ export default function WsFileDetail() {
             </div>
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--font-serif)" }}>{docsReceived}/{docsTotal}</div>
-              <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>Docs received</div>
+              <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{isDIY ? "Slips received" : "Docs received"}</div>
             </div>
           </div>
         </div>
@@ -209,8 +209,8 @@ export default function WsFileDetail() {
 
             {/* Document status */}
             <div className="card" data-testid="doc-status-card">
-              <div className="flex items-center gap-2"><FileText size={14} style={{ color: "var(--text-secondary)" }} /><h2 className="card-title" style={{ margin: 0 }}>Document status</h2></div>
-              <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>{isDIY ? "Self-serve — the client uploads and manages their own documents" : "Managed by CloudTax — documents are collected directly from the client by their assigned CPA"}</p>
+              <div className="flex items-center gap-2"><FileText size={14} style={{ color: "var(--text-secondary)" }} /><h2 className="card-title" style={{ margin: 0 }}>{isDIY ? "Tax slips" : "Document status"}</h2></div>
+              <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>{isDIY ? "Self-serve — the client gathers and uploads their own tax slips" : "Managed by CloudTax — documents are collected directly from the client by their assigned CPA"}</p>
               <div className="mt-3">
                 {docList.map((d, i) => {
                   const received = ["UPLOADED", "REVIEWED", "EXTRACTED"].includes(d.status);

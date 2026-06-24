@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from db import get_db
 from auth import hash_password
-from config import docs_for_tier, review_checklist_for_tier
+from config import review_checklist_for_tier
 
 APPLY = "--apply" in sys.argv
 MARKER = "diy_demo_v1"
@@ -29,6 +29,20 @@ DIY_CLIENTS = [
     ("Noah Kim",       "noah@diymail.ca",    "ON", "Kim Software Labs Inc.",       "WHITE_GLOVE",    "IN_REVIEW", 11),
     ("Ava Morales",    "ava@diymail.ca",     "QC", "Morales Catering Inc.",        "STANDARD",       "FILED",     12),
     ("Emma Davies",    "emma@diymail.ca",    "BC", "Davies Florist Inc.",          "BOOKS_COMPLETE", "FILED",     13),
+]
+
+
+# DIY clients are self-filers — they gather personal tax slips, not the
+# CPA-style corporate document checklist. Same record shape as docs_for_tier().
+DIY_TAX_SLIPS = [
+    {"category": "TAX_SLIP", "name": "T4 — Employment income",                      "description": "Employment income and deductions", "is_required": True,  "sort_order": 0},
+    {"category": "TAX_SLIP", "name": "T4A — Pension, retirement & other income",     "description": "Pension, annuity and other income", "is_required": True,  "sort_order": 1},
+    {"category": "TAX_SLIP", "name": "T5 — Investment income",                       "description": "Interest and dividend income",      "is_required": True,  "sort_order": 2},
+    {"category": "TAX_SLIP", "name": "T3 — Trust income",                            "description": "Income from trusts",                "is_required": True,  "sort_order": 3},
+    {"category": "TAX_SLIP", "name": "T5008 — Securities transactions",              "description": "Proceeds from securities dispositions", "is_required": False, "sort_order": 4},
+    {"category": "TAX_SLIP", "name": "T4E — Employment insurance benefits",          "description": "EI and other benefits",             "is_required": False, "sort_order": 5},
+    {"category": "TAX_SLIP", "name": "T4RSP — RRSP income",                          "description": "RRSP withdrawals and income",       "is_required": False, "sort_order": 6},
+    {"category": "TAX_SLIP", "name": "T2202 — Tuition & enrolment",                  "description": "Tuition and enrolment certificate", "is_required": False, "sort_order": 7},
 ]
 
 
@@ -88,12 +102,12 @@ async def main():
             "partner_advisor_id": partners[idx % len(partners)]["id"],
             "created_at": ref, "updated_at": now,
         })
-        # documents + checklist so cards show realistic progress
+        # tax slips (self-filers gather slips, not the corporate doc checklist)
         docs = [{"id": str(uuid.uuid4()), "engagement_id": eng_id, "category": d["category"],
                  "name": d["name"], "description": d["description"],
                  "status": "PENDING", "is_required": d["is_required"], "sort_order": d["sort_order"],
                  "file_url": None, "object_key": None, "file_size": None, "file_name": None,
-                 "created_at": ref} for d in docs_for_tier(tier)]
+                 "created_at": ref} for d in DIY_TAX_SLIPS]
         if docs:
             await db.documents.insert_many(docs)
         cl = [{"id": str(uuid.uuid4()), "engagement_id": eng_id, **c, "completed_at": None, "completed_by_id": None}
