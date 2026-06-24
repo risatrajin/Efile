@@ -78,3 +78,9 @@ frontend/src/setupProxy.js
 
 # Python virtualenv
 backend/.venv/
+
+# One-off demo-data maintenance scripts (local only — never commit)
+backend/_demo_rename.py
+backend/_demo_purge.py
+backend/_demo_orphan_scan.py
+backend/_demo_diy_slips.py
