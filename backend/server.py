@@ -1566,6 +1566,10 @@ async def _enrich_engagements(engs: list[dict]) -> list[dict]:
         e["client"] = users.get(corp.get("client_id"))
         e["assigned_cpa"] = users.get(e.get("assigned_cpa_id"))
         e["partner_advisor"] = users.get(e.get("partner_advisor_id"))
+        # Service model groups partner clients into "Done for you" (DFY, full
+        # CPA pipeline) vs "Do it yourself" (DIY). Legacy engagements predate the
+        # field — treat them as DFY.
+        e["service_model"] = e.get("service_model") or "DFY"
         # Quick progress
         counts = await db.documents.count_documents({"engagement_id": e["id"]})
         uploaded = await db.documents.count_documents({"engagement_id": e["id"], "status": {"$in": ["UPLOADED", "REVIEWED", "EXTRACTED"]}})
@@ -1699,6 +1703,7 @@ async def create_engagement(body: CreateEngagementIn, user: dict = Depends(requi
         "corporation_id": corp_id,
         "assigned_cpa_id": body.assigned_cpa_id,
         "partner_advisor_id": partner_advisor_id,
+        "service_model": "DFY",
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
