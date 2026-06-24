@@ -137,29 +137,32 @@ export default function WsDashboard() {
     <div className={rootClass}>
       <AppHeader tabs={tabs} />
       <div className="page-wide stack-lg">
-        {/* Service-model tabs — text only. Same pipeline UI under each; just a
+        {/* Service-model tabs — text-only pill segmented control, same styling
+            as the Kanban/Table ViewToggle. Same pipeline UI under each; just a
             different slice of clients (Done for you vs Do it yourself). */}
         <div role="tablist" aria-label="Service model" data-testid="partner-model-tabs"
-             style={{ display: "flex", gap: 24, borderBottom: "1px solid var(--border-default)" }}>
+             style={{ display: "inline-flex", background: "var(--bg-subtle)", border: "1px solid var(--border-default)", borderRadius: 999, padding: 3 }}>
           {MODEL_TABS.map((t) => {
             const active = model === t.key;
             return (
               <button
                 key={t.key}
+                type="button"
                 role="tab"
                 aria-selected={active}
                 data-testid={`model-tab-${t.key}`}
                 onClick={() => setModelPersist(t.key)}
                 style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  padding: "10px 2px", fontSize: 15, fontFamily: "inherit",
-                  fontWeight: active ? 600 : 500,
-                  color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                  borderBottom: active ? "2px solid var(--accent, #5F3DC8)" : "2px solid transparent",
-                  marginBottom: -1,
+                  position: "relative", zIndex: 1, border: "none", cursor: "pointer",
+                  padding: "7px 16px", fontSize: 14, fontFamily: "inherit",
+                  fontWeight: active ? 600 : 500, borderRadius: 999, whiteSpace: "nowrap",
+                  background: active ? "var(--accent-dark)" : "transparent",
+                  color: active ? "#fff" : "var(--text-secondary)",
+                  boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+                  transition: "color 200ms ease, background 200ms ease",
                 }}
               >
-                {t.label} <span className="muted" style={{ fontWeight: 400 }}>({counts[t.key]})</span>
+                {t.label} <span style={{ fontWeight: 400, opacity: 0.85 }}>({counts[t.key]})</span>
               </button>
             );
           })}
