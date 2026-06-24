@@ -6,7 +6,7 @@ under the Partner portal's "Do it yourself" tab. Idempotent via seed_marker.
   python seed_diy.py            # dry run (prints what would insert)
   python seed_diy.py --apply    # execute
 """
-import asyncio, os, sys, uuid
+import asyncio, os, random, sys, uuid
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 load_dotenv()
@@ -33,17 +33,31 @@ DIY_CLIENTS = [
 
 
 # DIY clients are self-filers — they gather personal tax slips, not the
-# CPA-style corporate document checklist. Same record shape as docs_for_tier().
-DIY_TAX_SLIPS = [
-    {"category": "TAX_SLIP", "name": "T4 — Employment income",                      "description": "Employment income and deductions", "is_required": True,  "sort_order": 0},
-    {"category": "TAX_SLIP", "name": "T4A — Pension, retirement & other income",     "description": "Pension, annuity and other income", "is_required": True,  "sort_order": 1},
-    {"category": "TAX_SLIP", "name": "T5 — Investment income",                       "description": "Interest and dividend income",      "is_required": True,  "sort_order": 2},
-    {"category": "TAX_SLIP", "name": "T3 — Trust income",                            "description": "Income from trusts",                "is_required": True,  "sort_order": 3},
-    {"category": "TAX_SLIP", "name": "T5008 — Securities transactions",              "description": "Proceeds from securities dispositions", "is_required": False, "sort_order": 4},
-    {"category": "TAX_SLIP", "name": "T4E — Employment insurance benefits",          "description": "EI and other benefits",             "is_required": False, "sort_order": 5},
-    {"category": "TAX_SLIP", "name": "T4RSP — RRSP income",                          "description": "RRSP withdrawals and income",       "is_required": False, "sort_order": 6},
-    {"category": "TAX_SLIP", "name": "T2202 — Tuition & enrolment",                  "description": "Tuition and enrolment certificate", "is_required": False, "sort_order": 7},
+# CPA-style corporate document checklist. Each client gets a RANDOM subset of
+# 5–10 slips from this pool (not everyone has the same slips). Same record
+# shape as docs_for_tier().
+DIY_SLIP_POOL = [
+    {"category": "TAX_SLIP", "name": "T4 — Employment income",                  "description": "Employment income and deductions",       "is_required": True,  "sort_order": 0},
+    {"category": "TAX_SLIP", "name": "T4A — Pension, retirement & other income", "description": "Pension, annuity and other income",      "is_required": False, "sort_order": 1},
+    {"category": "TAX_SLIP", "name": "T4A(P) — CPP benefits",                   "description": "Canada Pension Plan benefits",           "is_required": False, "sort_order": 2},
+    {"category": "TAX_SLIP", "name": "T4A(OAS) — Old Age Security",             "description": "Old Age Security benefits",              "is_required": False, "sort_order": 3},
+    {"category": "TAX_SLIP", "name": "T5 — Investment income",                  "description": "Interest and dividend income",           "is_required": False, "sort_order": 4},
+    {"category": "TAX_SLIP", "name": "T3 — Trust income",                       "description": "Income from trusts",                     "is_required": False, "sort_order": 5},
+    {"category": "TAX_SLIP", "name": "T5008 — Securities transactions",         "description": "Proceeds from securities dispositions",  "is_required": False, "sort_order": 6},
+    {"category": "TAX_SLIP", "name": "T5013 — Partnership income",              "description": "Partnership income",                     "is_required": False, "sort_order": 7},
+    {"category": "TAX_SLIP", "name": "T4E — Employment insurance benefits",     "description": "EI and other benefits",                  "is_required": False, "sort_order": 8},
+    {"category": "TAX_SLIP", "name": "T4RSP — RRSP income",                     "description": "RRSP withdrawals and income",            "is_required": False, "sort_order": 9},
+    {"category": "TAX_SLIP", "name": "T4RIF — RRIF income",                     "description": "RRIF withdrawals and income",            "is_required": False, "sort_order": 10},
+    {"category": "TAX_SLIP", "name": "T5007 — Social assistance / WCB",         "description": "Social assistance or workers' comp",     "is_required": False, "sort_order": 11},
+    {"category": "TAX_SLIP", "name": "T2202 — Tuition & enrolment",             "description": "Tuition and enrolment certificate",      "is_required": False, "sort_order": 12},
+    {"category": "TAX_SLIP", "name": "RC62 — Universal Child Care Benefit",     "description": "Universal Child Care Benefit",           "is_required": False, "sort_order": 13},
 ]
+
+
+def random_slips():
+    """A random 5–10 slip subset, ordered by the pool's canonical sort_order."""
+    n = random.randint(5, 10)
+    return sorted(random.sample(DIY_SLIP_POOL, n), key=lambda s: s["sort_order"])
 
 
 async def main():
@@ -102,12 +116,12 @@ async def main():
             "partner_advisor_id": partners[idx % len(partners)]["id"],
             "created_at": ref, "updated_at": now,
         })
-        # tax slips (self-filers gather slips, not the corporate doc checklist)
+        # tax slips — random 5–10 subset per client (not everyone's the same)
         docs = [{"id": str(uuid.uuid4()), "engagement_id": eng_id, "category": d["category"],
                  "name": d["name"], "description": d["description"],
                  "status": "PENDING", "is_required": d["is_required"], "sort_order": d["sort_order"],
                  "file_url": None, "object_key": None, "file_size": None, "file_name": None,
-                 "created_at": ref} for d in DIY_TAX_SLIPS]
+                 "created_at": ref} for d in random_slips()]
         if docs:
             await db.documents.insert_many(docs)
         cl = [{"id": str(uuid.uuid4()), "engagement_id": eng_id, **c, "completed_at": None, "completed_by_id": None}
