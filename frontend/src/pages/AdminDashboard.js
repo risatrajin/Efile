@@ -181,9 +181,11 @@ function AddClientModal({ onClose, onCreated }) {
   );
 }
 
-function withDrPrefix(name) {
+function clientName(name) {
   if (!name) return "—";
-  return (/^dr\.?\s/i).test(name) ? name : `Dr. ${name}`;
+  // Clients are general small businesses — show the stored name, strip a stray
+  // leading "Dr." defensively.
+  return name.replace(/^dr\.?\s+/i, "");
 }
 
 function OnboardingCard({ eng, progress, onMove, onOpen }) {
@@ -194,7 +196,7 @@ function OnboardingCard({ eng, progress, onMove, onOpen }) {
     <div className="kanban-card" onClick={onOpen} data-testid={`onboarding-card-${eng.id}`} style={{ cursor: "pointer" }}>
       <div className="flex between items-start gap-2">
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{withDrPrefix(client.name)}</div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{clientName(client.name)}</div>
           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{corp.name || "Corporation pending"}</div>
         </div>
       </div>
@@ -250,7 +252,7 @@ function AdminCard({ eng, onClick }) {
   const needsCpa = !eng.assigned_cpa_id && eng.status === "REFERRED";
   const isFiled = eng.status === "FILED";
   const craRef = eng.cra_confirmation_number || (isFiled ? `CRA-${(eng.id || "").slice(0, 6).toUpperCase()}` : null);
-  const displayName = (/^dr\.?\s/i).test(client.name || "") ? client.name : `Dr. ${client.name || "—"}`;
+  const displayName = (client.name || "—").replace(/^dr\.?\s+/i, "");
   return (
     <div className="kanban-card" onClick={onClick} data-testid={`admin-card-${eng.id}`} style={{ cursor: "pointer", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>

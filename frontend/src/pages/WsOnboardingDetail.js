@@ -178,7 +178,7 @@ export default function WsOnboardingDetail() {
   const total = checklist.length;
   const ready = total > 0 && completed >= total;
   const fullName = `${form.first_name} ${form.last_name}`.trim();
-  const displayName = (/^dr\.?\s/i).test(fullName) ? fullName : `Dr. ${fullName}`;
+  const displayName = fullName.replace(/^dr\.?\s+/i, "");
 
   return (
     <div className="app-root">

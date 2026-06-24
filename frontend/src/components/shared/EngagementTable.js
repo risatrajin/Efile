@@ -150,7 +150,7 @@ export default function EngagementTable({
                   const client = e.client || {};
                   const corp = e.corporation || {};
                   const lastUpdate = e.updated_at || e.filing_date || e.created_at;
-                  const displayName = (/^dr\.?\s/i).test(client.name || "") ? client.name : `Dr. ${client.name || "—"}`;
+                  const displayName = (client.name || "—").replace(/^dr\.?\s+/i, "");
                   return (
                     <tr
                       key={e.id}
