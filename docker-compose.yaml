@@ -1,0 +1,47 @@
+# Full stack for Coolify (or plain `docker compose up`).
+#   mongo     — database (persisted volume)
+#   backend   — FastAPI (uvicorn :8001), seeds demo data on first boot
+#   frontend  — CRA build served by nginx, proxies /api -> backend
+#
+# In Coolify: deploy as a Docker Compose resource, then assign the domain
+# (efile.figcil.com) to the `frontend` service on port 80 — Coolify adds the
+# Traefik routing + Let's Encrypt TLS automatically.
+#
+# Set these in Coolify → Environment Variables:
+#   JWT_SECRET       (required — generate a long random string)
+#   ADMIN_PASSWORD   (demo login password; defaults to CloudTax2026!)
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=cloudtax_ws_pilot
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-nim@cloudtax.ca}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-CloudTax2026!}
+      - PRODUCTION=true
+      - SHOW_DEV_FALLBACK_TOKENS=false
+      - FRONTEND_URL=https://efile.figcil.com
+      - ALLOWED_ORIGINS=https://efile.figcil.com
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    expose:
+      - "80"
+
+volumes:
+  mongo-data:

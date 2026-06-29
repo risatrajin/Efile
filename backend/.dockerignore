@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.local_storage/
+uploads/
+_demo_*.py
+.pytest_cache/
+tests/
