@@ -61,3 +61,50 @@ def test_non_assignment_update_keeps_role_only_gate(monkeypatch):
         "eng-1", UpdateEngagementIn(notes="ok"), user=CPA1
     ))
     assert out["notes"] == "ok"
+
+
+def test_diy_engagement_cannot_be_assigned_a_cpa_by_admin(monkeypatch):
+    """No CPA is ever involved in a DIY filing — the guard fires for ADMIN too,
+    ahead of (and regardless of) the assign_cpa permission check, 400 not 403."""
+    eng = engagement(assigned=None, service_model="DIY", plan="NIL")
+    _db, sent, _notes = setup(
+        monkeypatch, eng=eng, users=[ADMIN, CPA1, client()], corps=[corp()]
+    )
+
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(update_engagement(
+            "eng-1", UpdateEngagementIn(assigned_cpa_id="cpa-1"), user=ADMIN
+        ))
+    assert ei.value.status_code == 400
+    assert "diy" in str(ei.value.detail).lower()
+    assert not [s for s in sent if s[1] == "cpa_client_assigned"]
+    assert eng["assigned_cpa_id"] is None  # untouched
+
+
+def test_diy_engagement_reassignment_also_blocked(monkeypatch):
+    """Same guard applies to reassignment, not just first assignment."""
+    eng = engagement(assigned="cpa-1", service_model="DIY", plan="BASIC_DIY")
+    _db, sent, _notes = setup(
+        monkeypatch, eng=eng, users=[ADMIN, CPA1, CPA2], corps=[corp()]
+    )
+
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(update_engagement(
+            "eng-1", UpdateEngagementIn(assigned_cpa_id="cpa-2"), user=ADMIN
+        ))
+    assert ei.value.status_code == 400
+    assert eng["assigned_cpa_id"] == "cpa-1"  # untouched
+
+
+def test_dfy_engagement_assignment_unaffected_by_diy_guard(monkeypatch):
+    """Regression: a DFY (or legacy, no service_model) engagement is untouched
+    by the new guard — it's not in the field it checks."""
+    eng = engagement(assigned=None, service_model="DFY")
+    _db, sent, _notes = setup(
+        monkeypatch, eng=eng, users=[ADMIN, CPA1, client()], corps=[corp()]
+    )
+
+    out = asyncio.run(update_engagement(
+        "eng-1", UpdateEngagementIn(assigned_cpa_id="cpa-1"), user=ADMIN
+    ))
+    assert out["assigned_cpa_id"] == "cpa-1"

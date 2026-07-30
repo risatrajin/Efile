@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
-import { TierBadge, StatusBadge } from "../components/shared/Badges";
+import { TierBadge, StatusBadge, SourceBadge } from "../components/shared/Badges";
 import { PLAN_LABELS } from "./ClientDashboard";
 import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileText, Download, CheckCircle2, AlertTriangle, Lock } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
@@ -267,6 +267,49 @@ function DocumentsCard({ documents }) {
 }
 
 
+// DIY plans have no document pipeline, no checklist, no CPA — this replaces
+// those sections with the handful of fields that actually apply.
+function DiySummaryCard({ eng }) {
+  return (
+    <div className="card" data-testid="admin-diy-summary-card">
+      <h2 className="card-title">DIY summary</h2>
+      <div className="grid-2 mt-3" style={{ rowGap: 18 }}>
+        <div className="field"><label className="field-label">Plan</label><div style={{ fontSize: 13, fontWeight: 500 }}>{PLAN_LABELS[eng.plan] || eng.plan || "—"}</div></div>
+        <div className="field"><label className="field-label">Status</label><div style={{ fontSize: 13, fontWeight: 500 }}>{eng.t2_filing_state || "—"}</div></div>
+        <div className="field"><label className="field-label">Engine opened</label><div style={{ fontSize: 13, fontWeight: 500 }}>{eng.diy_engine_opened_at ? fmtDate(eng.diy_engine_opened_at) : "Not yet opened"}</div></div>
+        {eng.plan === "NIL" && (
+          <div className="field"><label className="field-label">Pay What You Want amount</label><div style={{ fontSize: 13, fontWeight: 500 }}>${eng.nil_amount ?? 0}</div></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Read-only — source/entitlement are never editable from Admin. entitlement
+// and consent_at live on the client user record (Ownr handoff fields), not
+// on the engagement itself.
+function SourceEntitlementCard({ eng, client }) {
+  const isOwnr = eng.source === "OWNR";
+  return (
+    <div className="card" data-testid="admin-source-entitlement-card">
+      <h2 className="card-title">Source & entitlement</h2>
+      <div className="grid-2 mt-3" style={{ rowGap: 18 }}>
+        <div className="field"><label className="field-label">Source</label><div style={{ fontSize: 13, fontWeight: 500 }}><SourceBadge source={eng.source} /></div></div>
+        <div className="field"><label className="field-label">Plan</label><div style={{ fontSize: 13, fontWeight: 500 }}>{PLAN_LABELS[eng.plan] || eng.plan || "—"}</div></div>
+        {eng.plan === "NIL" && (
+          <div className="field"><label className="field-label">NIL amount</label><div style={{ fontSize: 13, fontWeight: 500 }}>${eng.nil_amount ?? 0}</div></div>
+        )}
+        {isOwnr && (
+          <>
+            <div className="field"><label className="field-label">Entitlement</label><div style={{ fontSize: 13, fontWeight: 500, wordBreak: "break-all" }} data-testid="admin-entitlement">{client.entitlement || "—"}</div></div>
+            <div className="field"><label className="field-label">Consent given</label><div style={{ fontSize: 13, fontWeight: 500 }} data-testid="admin-consent-at">{client.consent_at ? fmtDate(client.consent_at) : "—"}</div></div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminClientDetail() {
   const navigate = useNavigate();
   const { eid } = useParams();
@@ -377,6 +420,9 @@ export default function AdminClientDetail() {
   const client = eng.client || {};
   const noteRows = parseNotes(eng.notes);
   const ready = !!selectedCpa;
+  // DIY plans (NIL, BASIC_DIY) never enter the CPA document pipeline — no
+  // checklist, no document requests, no CPA assignment applies to them.
+  const isDIY = (eng.service_model || "DFY") === "DIY";
 
   return (
     <div className="app-root">
@@ -392,8 +438,16 @@ export default function AdminClientDetail() {
               <h1 className="page-title">{client.name}</h1>
               <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>{corp.name}</p>
               <div className="flex items-center gap-2 mt-3">
-                <TierBadge tier={eng.tier} />
-                <StatusBadge status={eng.status} />
+                {isDIY ? (
+                  <span className="badge" style={{ background: "var(--bg-subtle)" }} data-testid="admin-diy-status-badge">
+                    {eng.t2_filing_state}
+                  </span>
+                ) : (
+                  <>
+                    <TierBadge tier={eng.tier} />
+                    <StatusBadge status={eng.status} />
+                  </>
+                )}
                 {eng.plan && (
                   <span
                     className="badge"
@@ -419,31 +473,33 @@ export default function AdminClientDetail() {
             >
               <MessageSquare size={12} /> Message client
             </button>
-            <MoveToDropdown
-              current={eng.status}
-              onChange={async (next) => {
-                setBusy(true); setErr("");
-                try {
-                  if (next === "IN_REVIEW" && !eng.t2_draft_doc_id) {
-                    await api.post(`/engagements/${eid}/move-to-review`, {});
-                  } else {
-                    await api.patch(`/engagements/${eid}`, { status: next });
-                  }
-                  await load();
-                } catch (x) { setErr(fmtError(x)); }
-                setBusy(false);
-              }}
-              disabledKeys={
-                eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
-              }
-              note={(() => {
-                if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) return "CPA must upload the T2 draft PDF before moving to Review.";
-                if (eng.status === "IN_REVIEW") return "Filing happens through the CPA's 'Update submission info' form, which atomically moves the engagement to Filed.";
-                return null;
-              })()}
-              testid="admin-move-to"
-            />
-            {ready && eng.status === "REFERRED" && (
+            {!isDIY && (
+              <MoveToDropdown
+                current={eng.status}
+                onChange={async (next) => {
+                  setBusy(true); setErr("");
+                  try {
+                    if (next === "IN_REVIEW" && !eng.t2_draft_doc_id) {
+                      await api.post(`/engagements/${eid}/move-to-review`, {});
+                    } else {
+                      await api.patch(`/engagements/${eid}`, { status: next });
+                    }
+                    await load();
+                  } catch (x) { setErr(fmtError(x)); }
+                  setBusy(false);
+                }}
+                disabledKeys={
+                  eng.status === "IN_PREP" && !eng.t2_draft_doc_id ? ["IN_REVIEW"] : []
+                }
+                note={(() => {
+                  if (eng.status === "IN_PREP" && !eng.t2_draft_doc_id) return "CPA must upload the T2 draft PDF before moving to Review.";
+                  if (eng.status === "IN_REVIEW") return "Filing happens through the CPA's 'Update submission info' form, which atomically moves the engagement to Filed.";
+                  return null;
+                })()}
+                testid="admin-move-to"
+              />
+            )}
+            {!isDIY && ready && eng.status === "REFERRED" && (
               <button
                 className="btn btn-primary"
                 disabled={busy}
@@ -475,38 +531,42 @@ export default function AdminClientDetail() {
             <TaxSituationCard rows={noteRows} onSave={saveNotesFromRows} busy={busy} />
             <EngagementNotes eid={eid} title="Notes feed (Partner / CPA / Admin)" />
 
-            <PartnerFeedbackCard eid={eid} />
+            {!isDIY && <PartnerFeedbackCard eid={eid} />}
 
-            <DocumentsCard documents={documents} />
+            {isDIY ? <DiySummaryCard eng={eng} /> : <DocumentsCard documents={documents} />}
           </div>
 
           <div className="stack-lg">
-            <div className="card" data-testid="assign-cpa-card">
-              <h2 className="card-title">{eng.assigned_cpa_id ? "Reassign CPA" : "Assign CPA"}</h2>
-              <div className="muted" style={{ fontSize: 12, marginTop: 4 }} data-testid="assign-cpa-subtitle">
-                {eng.assigned_cpa_id
-                  ? <>Currently assigned to <strong>{cpaName(eng.assigned_cpa_id)}</strong>. Pick a different CPA to reassign.</>
-                  : "Select a CPA to take over from intake."}
+            <SourceEntitlementCard eng={eng} client={client} />
+
+            {!isDIY && (
+              <div className="card" data-testid="assign-cpa-card">
+                <h2 className="card-title">{eng.assigned_cpa_id ? "Reassign CPA" : "Assign CPA"}</h2>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }} data-testid="assign-cpa-subtitle">
+                  {eng.assigned_cpa_id
+                    ? <>Currently assigned to <strong>{cpaName(eng.assigned_cpa_id)}</strong>. Pick a different CPA to reassign.</>
+                    : "Select a CPA to take over from intake."}
+                </div>
+                <div className="field mt-3">
+                  <label className="field-label">CPA</label>
+                  <select className="select" value={selectedCpa} onChange={(e) => setSelectedCpa(e.target.value)} data-testid="cpa-select">
+                    <option value="">— Select a CPA —</option>
+                    {cpas.map((c) => <option key={c.id} value={c.id}>{c.email ? `${c.name} · ${c.email}` : c.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  {eng.status === "REFERRED" ? (
+                    <button className="btn btn-primary btn-sm w-full" disabled={!ready || busy} onClick={assignAndMove} data-testid="assign-and-move">
+                      Assign & Move to Intake
+                    </button>
+                  ) : (
+                    <button className="btn btn-secondary btn-sm w-full" style={{ justifyContent: "center" }} disabled={!ready || busy || selectedCpa === eng.assigned_cpa_id} onClick={justAssign}>
+                      Reassign CPA
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="field mt-3">
-                <label className="field-label">CPA</label>
-                <select className="select" value={selectedCpa} onChange={(e) => setSelectedCpa(e.target.value)} data-testid="cpa-select">
-                  <option value="">— Select a CPA —</option>
-                  {cpas.map((c) => <option key={c.id} value={c.id}>{c.email ? `${c.name} · ${c.email}` : c.name}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-2 mt-3">
-                {eng.status === "REFERRED" ? (
-                  <button className="btn btn-primary btn-sm w-full" disabled={!ready || busy} onClick={assignAndMove} data-testid="assign-and-move">
-                    Assign & Move to Intake
-                  </button>
-                ) : (
-                  <button className="btn btn-secondary btn-sm w-full" style={{ justifyContent: "center" }} disabled={!ready || busy || selectedCpa === eng.assigned_cpa_id} onClick={justAssign}>
-                    Reassign CPA
-                  </button>
-                )}
-              </div>
-            </div>
+            )}
 
             <div className="card" data-testid="status-history-card">
               <StatusHistoryHeader count={history.length} open={historyOpen} onToggle={() => setHistoryOpen(!historyOpen)} />

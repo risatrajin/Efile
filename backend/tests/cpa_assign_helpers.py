@@ -55,7 +55,7 @@ def setup(monkeypatch, *, eng, users, corps):
     ``(db, sent, notifications)`` where ``sent`` captures email dispatches and
     ``notifications`` captures in-app bell rows."""
     notifications: list = []
-    db = _DB(engagements=[eng], users=users, corporations=corps, notifications=notifications)
+    db = _DB(engagements=[eng], users=users, corporations=corps, notifications=notifications, status_history=[])
     monkeypatch.setattr(server, "get_db", lambda: db)
     sent: list = []
 
@@ -74,7 +74,7 @@ CPA1 = {"id": "cpa-1", "role": "CPA", "email": "pallavi@cloudtax.ca", "name": "P
 CPA2 = {"id": "cpa-2", "role": "CPA", "email": "terryann@cloudtax.ca", "name": "Terry-Ann Mitchell"}
 
 
-def engagement(assigned=None):
+def engagement(assigned=None, service_model=None, plan=None):
     return {
         "id": "eng-1",
         "status": "REFERRED",
@@ -82,6 +82,8 @@ def engagement(assigned=None):
         "assigned_cpa_id": assigned,
         "partner_advisor_id": None,
         "corporation_id": "corp-1",
+        "service_model": service_model,
+        "plan": plan,
     }
 
 

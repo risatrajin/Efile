@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Search, LayoutGrid, List, ArrowRight } from "lucide-react";
 import { fmtDate, TIER_LABELS } from "../../lib/api";
-import { TierBadge, StatusBadge } from "./Badges";
+import { TierBadge, StatusBadge, SourceBadge } from "./Badges";
 
 const STAGE_OPTIONS_DEFAULT = [
   { key: "all", label: "All stages" },
@@ -140,6 +140,7 @@ export default function EngagementTable({
                   <th style={cellHeader}>Corporation</th>
                   <th style={cellHeader}>Stage</th>
                   <th style={cellHeader}>Tier</th>
+                  {role === "ADMIN" && <th style={cellHeader}>Source</th>}
                   {role === "ADMIN" && <th style={cellHeader}>CPA</th>}
                   <th style={cellHeader}>Last update</th>
                   <th style={{ ...cellHeader, width: 80 }} />
@@ -168,6 +169,7 @@ export default function EngagementTable({
                       <td style={{ ...cellBody, color: "var(--text-secondary)" }}>{corp.name || "—"}</td>
                       <td style={cellBody}><StatusBadge status={e.status} /></td>
                       <td style={cellBody}><TierBadge tier={e.tier} /></td>
+                      {role === "ADMIN" && <td style={cellBody}><SourceBadge source={e.source} /></td>}
                       {role === "ADMIN" && (
                         <td style={{ ...cellBody, color: "var(--text-secondary)" }}>
                           {e.assigned_cpa?.name || (

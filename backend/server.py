@@ -1859,6 +1859,11 @@ async def _enrich_engagements(engs: list[dict]) -> list[dict]:
         # CPA pipeline) vs "Do it yourself" (DIY). Legacy engagements predate the
         # field — treat them as DFY.
         e["service_model"] = e.get("service_model") or "DFY"
+        # Same 3/6-state label every role reads under one field name — computed
+        # here once so Admin, CPA and Partner payloads can never drift apart
+        # (previously only attached for PARTNER via serialize_for_ownr_partner/
+        # redact_for_ws; Admin's DIY table needs it too).
+        e["t2_filing_state"] = partner_status_label(e)
         # DIY-plan engagements carry the filing-engine URL from backend env so
         # swapping in the real engine is a one-env-var change (no rebuild).
         # Plan-less legacy DIY engagements get nothing — they keep the portal.
@@ -1898,7 +1903,11 @@ async def list_engagements(user: dict = Depends(get_current_user)):
     role = user["role"]
     q = {}
     if role == "CPA":
-        q = {"assigned_cpa_id": user["id"]}
+        # No CPA is ever involved in a DIY filing (assignment is rejected at the
+        # source in update_engagement). This exclusion is defense-in-depth only
+        # — it should never actually filter anything out — guarding against a
+        # legacy/hand-edited row carrying both fields.
+        q = {"assigned_cpa_id": user["id"], "service_model": {"$ne": "DIY"}}
     elif role == "PARTNER":
         # Self-serve clients have no Ownr relationship — an unfiltered query
         # here would leak them to the partner (data-minimization commitment in
@@ -2600,6 +2609,11 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
         and updates["assigned_cpa_id"]
         and updates["assigned_cpa_id"] != eng.get("assigned_cpa_id")
     ):
+        # DIY plans (NIL, BASIC_DIY) never enter the CPA document pipeline — no
+        # CPA is ever involved in a DIY filing. Checked before the permission
+        # gate below so it applies uniformly regardless of who's asking.
+        if eng.get("service_model") == "DIY":
+            raise HTTPException(400, "DIY engagements cannot be assigned a CPA")
         # Seeded admins (auth.seed_admin) carry no explicit permissions map, so
         # fall back to the role defaults — ADMIN is all-true and never locked out.
         perms = user.get("permissions") or default_permissions_for(user["role"])

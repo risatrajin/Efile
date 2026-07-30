@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, TIME_LABELS, OPP_LABELS } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
-import { TierBadge, StatusBadge, SeverityDot } from "../components/shared/Badges";
+import { TierBadge, StatusBadge, SeverityDot, PlanBadge } from "../components/shared/Badges";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
 import EngagementNotes from "../components/shared/EngagementNotes";
 import PartnerFeedbackCard from "../components/shared/PartnerFeedbackCard";
@@ -961,12 +961,21 @@ export default function CpaEngagement() {
             <div className="flex items-center gap-3 mt-2" style={{ flexWrap: "wrap" }}>
               <TierBadge tier={eng.tier} />
               <StatusBadge status={eng.status} />
+              <PlanBadge plan={eng.plan} />
               <span className="muted" style={{ fontSize: 12 }}>Day {eng.days_elapsed || 0} · Fiscal year {fmtDate(corp.fiscal_year_end)}</span>
               <span className="badge badge-neutral" data-testid="docs-progress">{docsUploaded}/{docs.length} docs</span>
               {deferredCount > 0 && (
                 <span className="badge badge-attention" data-testid="deferred-counter">Deferred ({deferredCount})</span>
               )}
             </div>
+            {eng.plan === "REVIEW_FILE" && (
+              // TODO(review-file-workflow): this is context only for now — the
+              // full review-only flow (client-prepared return upload, review
+              // mode) is a later design phase.
+              <div className="muted" style={{ fontSize: 12, marginTop: 6 }} data-testid="review-file-info-line">
+                Client prepares the return. Your role: review, corrections, and filing.
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <MoveToDropdown

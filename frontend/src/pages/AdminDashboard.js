@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
-import { TierBadge } from "../components/shared/Badges";
+import { TierBadge, SourceBadge } from "../components/shared/Badges";
 import { PLAN_LABELS } from "./ClientDashboard";
 import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
 import UsersTable from "../components/shared/UsersTable";
@@ -16,6 +16,28 @@ const COLUMNS = [
   { key: "IN_REVIEW", label: "Review" },
   { key: "FILED", label: "Filed" },
 ];
+
+// DFY-only — DIY engagements never render in a kanban column (no pipeline
+// stages apply to them). Filtered out of `engs` before this list is built,
+// same construction rule as the partner dashboard split.
+const MODEL_TABS = [
+  { key: "DFY", label: "Done for you" },
+  { key: "DIY", label: "Do it yourself" },
+];
+
+const SOURCE_OPTIONS = [
+  { key: "all", label: "All sources" },
+  { key: "OWNR", label: "Ownr" },
+  { key: "SELF_SERVE", label: "Self-serve" },
+  { key: "PILOT", label: "Pilot (legacy)" },
+];
+
+// Legacy/partner-referred engagements predate the `source` field entirely —
+// treat "missing" as its own "Pilot" bucket rather than folding it into
+// either real source.
+function sourceOf(e) {
+  return e.source || "PILOT";
+}
 
 const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"];
 
@@ -263,6 +285,9 @@ function AdminCard({ eng, onClick }) {
         </div>
         <TierBadge tier={eng.tier} />
       </div>
+      <div className="flex items-center gap-1" style={{ marginTop: 6, flexWrap: "wrap" }}>
+        <SourceBadge source={eng.source} />
+      </div>
       {eng.plan && (
         <div className="muted" style={{ fontSize: 11, marginTop: 6 }} data-testid={`admin-card-plan-${eng.id}`}>
           Plan: {PLAN_LABELS[eng.plan] || eng.plan}{eng.plan === "NIL" ? ` · $${eng.nil_amount ?? 0}` : ""}
@@ -284,6 +309,59 @@ function AdminCard({ eng, onClick }) {
           <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Day {eng.days_elapsed || 0}</div>
         </>
       )}
+    </div>
+  );
+}
+
+function taxYearFromFYE(fye) {
+  if (!fye) return null;
+  const d = new Date(fye);
+  return Number.isNaN(d.getTime()) ? null : d.getUTCFullYear();
+}
+
+// DIY tab: table only, no kanban ever — DIY engagements have no pipeline
+// stages to place on a board. Status column uses the same shared 3-state
+// label (t2_filing_state) the partner dashboard's DIY tab uses.
+function AdminDiyTable({ rows, onRowClick }) {
+  const cols = ["Client", "Company", "Plan", "Status", "NIL amount", "Source", "Tax year", "Creation date"];
+  return (
+    <div className="card" style={{ padding: 0, overflow: "auto" }} data-testid="admin-diy-table">
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid var(--border-default)" }}>
+            {cols.map((h) => (
+              <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={cols.length} className="muted" style={{ padding: 32, textAlign: "center" }} data-testid="admin-diy-table-empty">No DIY clients to show</td></tr>
+          ) : rows.map((e) => {
+            const client = e.client || {};
+            const corp = e.corporation || {};
+            const displayName = (client.name || "—").replace(/^dr\.?\s+/i, "");
+            const taxYear = taxYearFromFYE(corp.fiscal_year_end);
+            return (
+              <tr
+                key={e.id}
+                onClick={() => onRowClick(e)}
+                data-testid={`admin-diy-row-${e.id}`}
+                style={{ borderTop: "1px solid var(--border-subtle)", cursor: "pointer" }}
+              >
+                <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{displayName}</td>
+                <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{corp.name || "—"}</td>
+                <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{e.plan ? PLAN_LABELS[e.plan] || e.plan : "—"}</td>
+                <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{e.t2_filing_state}</td>
+                <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{e.plan === "NIL" ? `$${e.nil_amount ?? 0}` : "—"}</td>
+                <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}><SourceBadge source={e.source} /></td>
+                <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{taxYear || "Not yet set"}</td>
+                <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{fmtDate(e.created_at)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -512,6 +590,15 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState("clients");
   const [view, setView] = useState(() => localStorage.getItem("ct_admin_dash_view") || "kanban");
   const [showAdd, setShowAdd] = useState(false);
+  // Service-model tab: "DFY" (existing kanban/list, byte-identical) vs "DIY"
+  // (table only, never a kanban column). Own localStorage key — distinct from
+  // the partner dashboard's ct_partner_model.
+  const [model, setModel] = useState(() => localStorage.getItem("ct_admin_model") || "DFY");
+  const setModelPersist = (m) => {
+    setModel(m);
+    try { localStorage.setItem("ct_admin_model", m); } catch { /* ignore */ }
+  };
+  const [sourceFilter, setSourceFilter] = useState("all");
 
   const load = async () => {
     try {
@@ -547,6 +634,19 @@ export default function AdminDashboard() {
     { key: "users", label: "Users" },
   ];
 
+  // Source filter applies before the DFY/DIY split so tab counts reflect it
+  // too — one filtered array feeds everything downstream, same rule as the
+  // DFY/DIY split itself.
+  const sourceFiltered = sourceFilter === "all" ? engs : engs.filter((e) => sourceOf(e) === sourceFilter);
+  const dfyRows = sourceFiltered.filter((e) => (e.service_model || "DFY") === "DFY");
+  const diyRows = sourceFiltered.filter((e) => (e.service_model || "DFY") === "DIY");
+  const modelCounts = { DFY: dfyRows.length, DIY: diyRows.length };
+  const isDIY = model === "DIY";
+  // CPA capacity/assignment stats are DFY-only (no CPA ever touches a DIY
+  // engagement) and independent of the Clients-tab source filter above — its
+  // own unfiltered DFY set, not `dfyRows`.
+  const dfyRowsForCpas = engs.filter((e) => (e.service_model || "DFY") === "DFY");
+
   return (
     <div className="app-root">
       <AppHeader />
@@ -573,22 +673,70 @@ export default function AdminDashboard() {
 
         {tab === "clients" && (
           <>
+            {/* Service-model tabs — same top-level split as the partner
+                dashboard. Every visible client is on exactly one side via
+                service_model; counts read from the same filtered arrays the
+                tabs render. */}
+            <div role="tablist" aria-label="Service model" data-testid="admin-model-tabs"
+                 style={{ display: "inline-flex", background: "var(--bg-subtle)", border: "1px solid var(--border-default)", borderRadius: 999, padding: 3, marginBottom: 16 }}>
+              {MODEL_TABS.map((t) => {
+                const active = model === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    data-testid={`admin-model-tab-${t.key}`}
+                    onClick={() => setModelPersist(t.key)}
+                    style={{
+                      position: "relative", zIndex: 1, border: "none", cursor: "pointer",
+                      padding: "7px 16px", fontSize: 14, fontFamily: "inherit",
+                      fontWeight: active ? 600 : 500, borderRadius: 999, whiteSpace: "nowrap",
+                      background: active ? "var(--accent-dark)" : "transparent",
+                      color: active ? "#fff" : "var(--text-secondary)",
+                      boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+                      transition: "color 200ms ease, background 200ms ease",
+                    }}
+                  >
+                    {t.label} <span style={{ fontWeight: 400, opacity: 0.85 }}>({modelCounts[t.key]})</span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 12 }}
               data-testid="admin-clients-toolbar"
             >
               <h2 style={{ fontSize: 22, fontWeight: 700 }}>Clients pipeline</h2>
               <div className="flex items-center gap-3">
-                <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)} data-testid="add-client-open">
-                  <Plus size={14} /> Add Client
-                </button>
-                <ViewToggle value={view} onChange={setViewPersist} testid="admin-view-toggle" />
+                <select
+                  className="select"
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  style={{ height: 36, fontSize: 12, width: "auto", minWidth: 150 }}
+                  data-testid="admin-source-filter"
+                >
+                  {SOURCE_OPTIONS.map((o) => (<option key={o.key} value={o.key}>{o.label}</option>))}
+                </select>
+                {!isDIY && (
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)} data-testid="add-client-open">
+                    <Plus size={14} /> Add Client
+                  </button>
+                )}
+                {/* DIY has no kanban in any view-mode state — hide the toggle
+                    entirely rather than show one that does nothing. */}
+                {!isDIY && <ViewToggle value={view} onChange={setViewPersist} testid="admin-view-toggle" />}
               </div>
             </div>
-            {view === "kanban" ? (
+
+            {isDIY ? (
+              <AdminDiyTable rows={diyRows} onRowClick={(e) => navigate(`/admin/client/${e.id}`)} />
+            ) : view === "kanban" ? (
               <div className="kanban" style={{ gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(220px, 1fr))` }} data-testid="admin-kanban">
                 {COLUMNS.map((col) => {
-                  const items = engs.filter((e) => e.status === col.key);
+                  const items = dfyRows.filter((e) => e.status === col.key);
                   const isOnboarding = col.key === "ONBOARDING";
                   return (
                     <div className="kanban-col" key={col.key} data-testid={`admin-kanban-col-${col.key}`}>
@@ -616,7 +764,7 @@ export default function AdminDashboard() {
               </div>
             ) : (
               <EngagementTable
-                engagements={engs}
+                engagements={dfyRows}
                 onRowClick={(e) => (e.status === "ONBOARDING" ? openOnboarding(e.id) : navigate(`/admin/client/${e.id}`))}
                 role="ADMIN"
                 testid="admin-engagement-table"
@@ -635,7 +783,7 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {tab === "cpas" && <CpasTab engs={engs} />}
+        {tab === "cpas" && <CpasTab engs={dfyRowsForCpas} />}
 
         {tab === "users" && (
           <>
