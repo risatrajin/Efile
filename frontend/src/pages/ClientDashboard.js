@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError } from "../lib/api";
 
@@ -12,8 +12,10 @@ const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "
 export const PLANS = [
   {
     key: "NIL",
+    group: "DIY",
     label: "T2 Nil",
-    price: "Pay What You Want, including $0",
+    priceAmount: "Pay What You Want",
+    priceNote: "including $0",
     desc: "Best for eligible corporations with no activity or simple startup costs.",
     bullets: [
       "Guided filing in plain language",
@@ -23,8 +25,10 @@ export const PLANS = [
   },
   {
     key: "BASIC_DIY",
+    group: "DIY",
     label: "T2 Basic DIY",
-    price: "$199 per year-end",
+    priceAmount: "$199",
+    priceNote: "per year-end",
     desc: "For owner-managed corporations that want control, with guardrails.",
     bullets: [
       "Guided filing workflow",
@@ -34,8 +38,10 @@ export const PLANS = [
   },
   {
     key: "REVIEW_FILE",
+    group: "DFY",
     label: "Review and File",
-    price: "$499 per year-end",
+    priceAmount: "$499",
+    priceNote: "per year-end",
     desc: "You prepare the return. We review it before you submit.",
     bullets: [
       "Expert review of your completed T2",
@@ -45,8 +51,11 @@ export const PLANS = [
   },
   {
     key: "DFY",
+    group: "DFY",
     label: "Done For You",
-    price: "From $749 per year-end",
+    priceAmount: "$749",
+    pricePrefix: "From",
+    priceNote: "per year-end",
     desc: "We prepare and file the return end-to-end.",
     bullets: [
       "T2 preparation and filing",
@@ -54,6 +63,11 @@ export const PLANS = [
       "Bounded CRA follow-up support",
     ],
   },
+];
+
+const PLAN_GROUPS = [
+  { key: "DIY", label: "Do it yourself", hint: "You prepare and file with our tools" },
+  { key: "DFY", label: "Done for you", hint: "A licensed CPA handles it" },
 ];
 
 export const PLAN_LABELS = Object.fromEntries(PLANS.map((p) => [p.key, p.label]));
@@ -151,13 +165,23 @@ function PlanCard({ plan, selected, onSelect, nilDeclaration, setNilDeclaration,
         background: selected ? "var(--bg-subtle)" : "transparent",
         transition: "background-color 150ms ease",
         userSelect: "none",
+        height: "100%",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <div className="flex items-center" style={{ justifyContent: "space-between", gap: 10 }}>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>{plan.label}</div>
-        <div style={{ fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>{plan.price}</div>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>{plan.label}</div>
+      <div style={{ marginTop: 6, display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap" }}>
+        {plan.pricePrefix && (
+          <span className="muted" style={{ fontSize: 11 }}>{plan.pricePrefix}</span>
+        )}
+        <span style={{ fontSize: plan.priceAmount.startsWith("$") ? 20 : 14, fontWeight: 700, letterSpacing: -0.3 }}>
+          {plan.priceAmount}
+        </span>
+        <span className="muted" style={{ fontSize: 11 }}>{plan.priceNote}</span>
       </div>
-      <div className="muted" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>{plan.desc}</div>
+      <div className="muted" style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>{plan.desc}</div>
       <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
         {plan.bullets.map((b) => (
           <li key={b} className="muted" style={{ fontSize: 12, lineHeight: 1.6 }}>{b}</li>
@@ -200,6 +224,7 @@ function CreateProfileForm({ corporations, onDone, onCancel }) {
   const [province, setProvince] = useState("ON");
   const [fye, setFye] = useState("");
   const [plan, setPlan] = useState(null);
+  const [planGroup, setPlanGroup] = useState("DIY");
   const [nilDeclaration, setNilDeclaration] = useState(false);
   const [nilAmount, setNilAmount] = useState("0");
   const [busy, setBusy] = useState(false);
@@ -232,7 +257,7 @@ function CreateProfileForm({ corporations, onDone, onCancel }) {
   };
 
   return (
-    <form onSubmit={onSubmit} className="stack-md" style={{ padding: "16px", borderTop: "1px solid var(--border-subtle)" }} data-testid="self-start-form">
+    <form onSubmit={onSubmit} className="stack-md" data-testid="self-start-form">
       <div className="field">
         <label className="field-label">Corporation</label>
         <select className="select" value={corpChoice} onChange={(e) => setCorpChoice(e.target.value)} data-testid="self-start-corp-select">
@@ -258,8 +283,57 @@ function CreateProfileForm({ corporations, onDone, onCancel }) {
       </div>
       <div className="field">
         <label className="field-label">Choose your plan</label>
-        <div className="stack-md" style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 10 }}>
-          {PLANS.map((p) => (
+        <div
+          role="tablist"
+          style={{
+            display: "flex",
+            gap: 4,
+            marginTop: 4,
+            padding: 4,
+            background: "var(--bg-subtle)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 12,
+          }}
+        >
+          {PLAN_GROUPS.map((g) => {
+            const active = planGroup === g.key;
+            return (
+              <button
+                key={g.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  setPlanGroup(g.key);
+                  // Drop a selection made on the other tab so a hidden plan
+                  // can never be submitted.
+                  const sel = PLANS.find((p) => p.key === plan);
+                  if (sel && sel.group !== g.key) setPlan(null);
+                }}
+                data-testid={`plan-tab-${g.key.toLowerCase()}`}
+                title={g.hint}
+                style={{
+                  flex: 1,
+                  padding: "7px 10px",
+                  border: "none",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  background: active ? "#fff" : "transparent",
+                  boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                  transition: "background-color 150ms ease, box-shadow 150ms ease",
+                  textAlign: "center",
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                }}
+              >
+                {g.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, alignItems: "stretch" }}>
+          {PLANS.filter((p) => p.group === planGroup).map((p) => (
             <PlanCard
               key={p.key}
               plan={p}
@@ -342,7 +416,40 @@ export default function ClientDashboard() {
           {engs.map((e) => (
             <ProfileRow key={e.id} eng={e} onOpen={() => navigate(`/portal/filing/${e.id}`)} />
           ))}
-          {creating ? (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setCreating(true)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCreating(true); } }}
+            className="flex items-center"
+            style={{ gap: 14, padding: "14px 16px", cursor: "pointer", borderTop: engs.length ? "1px solid var(--border-subtle)" : "none" }}
+            data-testid="create-profile-row"
+          >
+            <div
+              aria-hidden
+              style={{
+                width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+                border: "1px dashed var(--border-default)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <Plus size={18} style={{ color: "var(--text-secondary)" }} />
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Create a business profile</div>
+          </div>
+        </div>
+        {/* Promo slot — future banner (e.g. partner offer) renders here, under the list. */}
+      </div>
+      {err && <div className="alert alert-risk" data-testid="dashboard-error">{err}</div>}
+      {creating && (
+        <div className="modal-overlay" onClick={() => setCreating(false)} data-testid="create-profile-modal">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 600 }}>Create a business profile</h2>
+              <button onClick={() => setCreating(false)} data-testid="modal-close" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                <X size={18} />
+              </button>
+            </div>
             <CreateProfileForm
               corporations={corporations}
               onCancel={() => setCreating(false)}
@@ -352,33 +459,9 @@ export default function ClientDashboard() {
                 navigate(`/portal/filing/${eid}`);
               }}
             />
-          ) : (
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setCreating(true)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCreating(true); } }}
-              className="flex items-center"
-              style={{ gap: 14, padding: "14px 16px", cursor: "pointer", borderTop: engs.length ? "1px solid var(--border-subtle)" : "none" }}
-              data-testid="create-profile-row"
-            >
-              <div
-                aria-hidden
-                style={{
-                  width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-                  border: "1px dashed var(--border-default)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
-              >
-                <Plus size={18} style={{ color: "var(--text-secondary)" }} />
-              </div>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>Create a business profile</div>
-            </div>
-          )}
+          </div>
         </div>
-        {/* Promo slot — future banner (e.g. partner offer) renders here, under the list. */}
-      </div>
-      {err && <div className="alert alert-risk" data-testid="dashboard-error">{err}</div>}
+      )}
     </div>
   );
 }
