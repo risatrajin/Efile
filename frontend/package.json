@@ -17,7 +17,6 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "start:ownr-verify": "PORT=3010 REACT_APP_BACKEND_URL=http://localhost:8010 BROWSER=none react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
