@@ -1,6 +1,7 @@
 """JWT auth, password hashing, role-based access control."""
 import os
 import uuid
+import hmac
 import secrets
 import bcrypt
 import jwt as pyjwt
@@ -79,6 +80,23 @@ def require_role(*roles: str):
             raise HTTPException(status_code=403, detail="Insufficient role")
         return user
     return dep
+
+
+async def verify_ownr_api_key(request: Request) -> None:
+    """Server-to-server auth for Ownr endpoints: static Bearer key, constant-time
+    compare. Optional IP allowlist via OWNR_IP_ALLOWLIST (comma-separated), off
+    when unset."""
+    expected = os.environ.get("OWNR_API_KEY", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Ownr integration not configured")
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:] if auth.startswith("Bearer ") else ""
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    allowlist_raw = os.environ.get("OWNR_IP_ALLOWLIST", "")
+    allowlist = [ip.strip() for ip in allowlist_raw.split(",") if ip.strip()]
+    if allowlist and (request.client is None or request.client.host not in allowlist):
+        raise HTTPException(status_code=403, detail="IP not allowed")
 
 
 async def check_brute_force(identifier: str):

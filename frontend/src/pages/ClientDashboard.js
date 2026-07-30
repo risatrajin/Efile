@@ -148,7 +148,7 @@ function ProfileRow({ eng, onOpen }) {
   );
 }
 
-function PlanCard({ plan, selected, onSelect, nilDeclaration, setNilDeclaration, nilAmount, setNilAmount }) {
+function PlanCard({ plan, selected, onSelect, nilDeclaration, setNilDeclaration, nilAmount, setNilAmount, hasEntitlement }) {
   const isNil = plan.key === "NIL";
   return (
     <div
@@ -171,7 +171,19 @@ function PlanCard({ plan, selected, onSelect, nilDeclaration, setNilDeclaration,
         flexDirection: "column",
       }}
     >
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{plan.label}</div>
+      <div className="flex items-center" style={{ gap: 6 }}>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{plan.label}</div>
+        {hasEntitlement && (
+          // TODO(ownr-pricing): entitlement is display-only this phase — no
+          // price math against plan.priceAmount yet, payment doesn't exist.
+          <span
+            style={{ background: "#f5f0ff", color: "#4c30a0", fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 999 }}
+            data-testid={`ownr-offer-tag-${plan.key.toLowerCase()}`}
+          >
+            Ownr offer
+          </span>
+        )}
+      </div>
       <div style={{ marginTop: 6, display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap" }}>
         {plan.pricePrefix && (
           <span className="muted" style={{ fontSize: 11 }}>{plan.pricePrefix}</span>
@@ -218,7 +230,7 @@ function PlanCard({ plan, selected, onSelect, nilDeclaration, setNilDeclaration,
   );
 }
 
-function CreateProfileForm({ corporations, onDone, onCancel }) {
+function CreateProfileForm({ corporations, onDone, onCancel, hasEntitlement }) {
   const [corpChoice, setCorpChoice] = useState(corporations.length ? corporations[0].id : "NEW");
   const [corpName, setCorpName] = useState("");
   const [province, setProvince] = useState("ON");
@@ -343,6 +355,7 @@ function CreateProfileForm({ corporations, onDone, onCancel }) {
               setNilDeclaration={setNilDeclaration}
               nilAmount={nilAmount}
               setNilAmount={setNilAmount}
+              hasEntitlement={hasEntitlement}
             />
           ))}
         </div>
@@ -452,6 +465,7 @@ export default function ClientDashboard() {
             </div>
             <CreateProfileForm
               corporations={corporations}
+              hasEntitlement={!!user?.entitlement}
               onCancel={() => setCreating(false)}
               onDone={async (eid) => {
                 await load();

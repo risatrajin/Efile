@@ -94,8 +94,16 @@ export default function WsFileDetail() {
 
   const load = async () => {
     try {
+      // Ownr engagements come back from the allowlist serializer (flat 7-col
+      // shape, no corporation/client/tier/etc.) — this detail view is built
+      // for the rich pilot shape, so don't fetch the rest for an Ownr row.
+      const first = await api.get(`/engagements/${eid}`);
+      if (Object.prototype.hasOwnProperty.call(first.data, "t2_filing_state")) {
+        setEng(first.data);
+        return;
+      }
       const [a, b] = await Promise.all([
-        api.get(`/engagements/${eid}`),
+        Promise.resolve(first),
         api.get(`/engagements/${eid}/history`).catch(() => ({ data: [] })),
       ]);
       setEng(a.data);
@@ -148,6 +156,42 @@ export default function WsFileDetail() {
     );
     return (
       <div className={rootClass}><AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} /><div className="page-wide">Loading…</div></div>
+    );
+  }
+
+  if (Object.prototype.hasOwnProperty.call(eng, "t2_filing_state")) {
+    // Ownr row — no CPA-pipeline detail exists for it this phase; the 7-column
+    // dashboard table is the whole view. Show the same fields here rather than
+    // rendering (or crashing on) the pilot-only layout below.
+    return (
+      <div className={rootClass}>
+        <AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} />
+        <div className="page-wide stack-lg" data-testid="partner-file-detail-ownr">
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate("/partner/dashboard")} style={{ width: "fit-content" }} data-testid="back-link"><ArrowLeft size={12} /> Dashboard</button>
+          <div className="card" style={{ maxWidth: 480 }}>
+            <h1 className="page-title" style={{ fontSize: 20 }}>{eng.company_name || "Client"}</h1>
+            <div className="mt-3" style={{ fontSize: 13 }}>
+              {[
+                ["Email", eng.email],
+                ["Name", [eng.first_name, eng.last_name].filter(Boolean).join(" ")],
+                ["T2 filing state", eng.t2_filing_state],
+                ["T2 filing type", eng.t2_filing_type],
+                ["Tax year", eng.tax_year ? String(eng.tax_year) : "Not yet set"],
+                ["Creation date", fmtDate(eng.created_at)],
+                ...(eng.t2_filing_state === "Filed with CRA" ? [
+                  ["CRA confirmation", eng.filing_confirmation || "Not yet set"],
+                  ["Filed date", fmtDate(eng.filing_date)],
+                ] : []),
+              ].map(([k, v]) => (
+                <div key={k} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
+                  <span className="muted">{k}</span>
+                  <span style={{ fontWeight: 500 }}>{v || "—"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 

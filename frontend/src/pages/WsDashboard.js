@@ -83,6 +83,66 @@ function ReadOnlyCard({ eng, onOpen, isDIY }) {
 // Active (not-yet-filed) pipeline stages shown to the partner.
 const IN_PROGRESS_STATUSES = ["REFERRED", "INTAKE", "IN_PREP", "IN_REVIEW"];
 
+// Ownr-sourced rows come back from the allowlist serializer (server.py
+// serialize_for_ownr_partner) in a flat, unrelated shape — no `.corporation`/
+// `.client`/`.status`/`.service_model` the pilot kanban/table expect. Rather
+// than add a discriminator field to that allowlist, detect the shape
+// structurally: only Ownr rows carry `t2_filing_state`.
+function isOwnrRow(e) {
+  return Object.prototype.hasOwnProperty.call(e, "t2_filing_state");
+}
+
+function fmtTaxYear(y) {
+  // "em-dash-free" per spec — an engagement can exist before intake sets a
+  // fiscal year end, and fmtDate's "—" placeholder elsewhere isn't wanted here.
+  return y ? String(y) : "Not yet set";
+}
+
+function OwnrClientsTable({ rows }) {
+  if (!rows.length) return null;
+  const cols = ["Company Name", "Email", "First/Last name", "T2 filing state", "T2 filing type", "Tax year", "Creation date"];
+  return (
+    <div>
+      <div className="tertiary" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>
+        Ownr clients
+      </div>
+      <div className="card" style={{ padding: 0, overflow: "auto" }} data-testid="ownr-clients-table">
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid var(--border-default)" }}>
+              {cols.map((h) => (
+                <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <React.Fragment key={r.id}>
+                <tr style={{ borderTop: "1px solid var(--border-subtle)" }} data-testid={`ownr-row-${r.id}`}>
+                  <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{r.company_name || "—"}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13 }}>{r.email || "—"}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{[r.first_name, r.last_name].filter(Boolean).join(" ") || "—"}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{r.t2_filing_state}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{r.t2_filing_type}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{fmtTaxYear(r.tax_year)}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{fmtDate(r.created_at)}</td>
+                </tr>
+                {r.t2_filing_state === "Filed with CRA" && (
+                  <tr style={{ background: "var(--bg-subtle)" }} data-testid={`ownr-row-${r.id}-filed-extras`}>
+                    <td colSpan={cols.length} className="muted" style={{ padding: "6px 14px 10px", fontSize: 12 }}>
+                      CRA confirmation: {r.filing_confirmation || "Not yet set"} · Filed {fmtDate(r.filing_date)}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function WsDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -116,13 +176,20 @@ export default function WsDashboard() {
 
   const openFile = (eid) => navigate(`/partner/file/${eid}`);
 
+  // Ownr rows get their own flat 7-column table (see OwnrClientsTable) — they
+  // don't fit the pilot kanban/table's corporation/client/status shape at all
+  // (allowlist serializer, not the full engagement object). Keep them out of
+  // `pilotEngs` so the existing DFY/DIY pipeline is unaffected.
+  const pilotEngs = engs.filter((e) => !isOwnrRow(e));
+  const ownrEngs = engs.filter(isOwnrRow);
+
   // Slice to the active service-model tab. Legacy engagements with no field
   // count as DFY. Stats + kanban + table all read from `shown`.
-  const shown = engs.filter((e) => (e.service_model || "DFY") === model);
+  const shown = pilotEngs.filter((e) => (e.service_model || "DFY") === model);
   const isDIY = model === "DIY";
   const counts = {
-    DFY: engs.filter((e) => (e.service_model || "DFY") === "DFY").length,
-    DIY: engs.filter((e) => e.service_model === "DIY").length,
+    DFY: pilotEngs.filter((e) => (e.service_model || "DFY") === "DFY").length,
+    DIY: pilotEngs.filter((e) => e.service_model === "DIY").length,
   };
 
   // Stats derived entirely from the active-tab engagement slice.
@@ -147,6 +214,8 @@ export default function WsDashboard() {
     <div className={rootClass}>
       <AppHeader tabs={tabs} />
       <div className="page-wide stack-lg">
+        <OwnrClientsTable rows={ownrEngs} />
+
         {/* Service-model tabs — text-only pill segmented control, same styling
             as the Kanban/Table ViewToggle. Same pipeline UI under each; just a
             different slice of clients (Done for you vs Do it yourself). */}

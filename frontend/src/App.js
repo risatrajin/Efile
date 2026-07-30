@@ -9,6 +9,7 @@ import ClientLayout from "./pages/ClientLayout";
 import ClientDashboard from "./pages/ClientDashboard";
 import ClientPortal from "./pages/ClientPortal";
 import DiyWaiting from "./pages/DiyWaiting";
+import PurchaseHistory from "./pages/PurchaseHistory";
 import MessagesPage from "./pages/Messages";
 import StaffMessagesPage from "./pages/MessagesPage";
 import AccountPage from "./pages/Account";
@@ -115,6 +116,7 @@ export default function App() {
             <Route path="/portal/filing/:eid/waiting" element={<DiyWaiting />} />
             <Route path="/portal/messages" element={<MessagesPage />} />
             <Route path="/portal/account" element={<AccountPage />} />
+            <Route path="/portal/purchases" element={<PurchaseHistory />} />
           </Route>
 
           <Route path="/partner/dashboard" element={<Protected roles={["PARTNER"]}><WsDashboard /></Protected>} />

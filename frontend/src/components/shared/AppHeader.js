@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link, useLocation } from "react-router-dom";
-import { LogOut, Settings, Home, AlertTriangle, X } from "lucide-react";
+import { LogOut, Settings, Home, AlertTriangle, X, Receipt } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 import AccessibilityMenu from "./AccessibilityMenu";
 import MessagesInboxButton from "./MessagesInboxButton";
@@ -208,6 +208,19 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
               >
                 <Settings size={14} /> {user?.role === "ADMIN" ? "Settings" : "Account settings"}
               </button>
+              {user?.role === "CLIENT" && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setOpen(false); navigate("/portal/purchases"); }}
+                  className="flex items-center gap-2"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-primary)", fontSize: 13, textAlign: "left", transition: "background-color 120ms ease" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  data-testid="header-purchases-link"
+                >
+                  <Receipt size={14} /> Purchase history
+                </button>
+              )}
               <button
                 role="menuitem"
                 onClick={async () => { setOpen(false); await onSignOut(); }}

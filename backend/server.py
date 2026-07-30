@@ -10,6 +10,7 @@ import secrets
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Any, List
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, APIRouter, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +21,7 @@ import auth
 from auth import (
     hash_password, verify_password, create_access_token, get_current_user,
     require_role, check_brute_force, record_attempt, seed_admin,
-    set_auth_cookie, clear_auth_cookie, new_invite_token,
+    set_auth_cookie, clear_auth_cookie, new_invite_token, verify_ownr_api_key,
 )
 import s3_service
 import ses_service
@@ -40,6 +41,16 @@ log = logging.getLogger("cloudtax")
 app = FastAPI(title="CloudTax WS Pilot API", version="1.0.0")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# Ownr partner integration. OWNR_API_KEY gates the server-to-server handoff
+# endpoint (see auth.verify_ownr_api_key); OWNR_RETURN_URL is the "Back to
+# Ownr" link surfaced on /register. Both optional at import time so the app
+# still boots without the integration configured — verify_ownr_api_key
+# 503s if OWNR_API_KEY is unset, and the handoff routes below no-op cleanly.
+OWNR_API_KEY = os.environ.get("OWNR_API_KEY", "")
+OWNR_RETURN_URL = os.environ.get("OWNR_RETURN_URL", "https://www.ownr.co")
+if not OWNR_API_KEY:
+    log.warning("OWNR_API_KEY is not set — Ownr handoff endpoints will reject all requests")
 
 # PROD_GUARD: detects deploy environments that are NOT production dev/preview.
 # When this flag is on, ``FRONTEND_URL`` must be a clean production URL —
@@ -146,6 +157,23 @@ class ForgotPasswordIn(BaseModel):
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
+    handoff_token: Optional[str] = None  # Ownr handoff — see /auth/handoff-info
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    consent: bool = False  # required true when handoff_token is set
+
+
+class OwnrHandoffIn(BaseModel):
+    """Server-to-server payload from Ownr. Every field optional except what
+    the API key itself authenticates — Ownr may hand off a customer with as
+    little as nothing at all and let them fill in the rest at registration."""
+    email: Optional[EmailStr] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    company_name: Optional[str] = None
+    business_number: Optional[str] = None
+    customer_ref: Optional[str] = None
+    entitlement: Optional[str] = None  # raw string; display mapping is config-level, TBD
 
 
 class SelfStartIn(BaseModel):
@@ -263,6 +291,14 @@ def strip_id(doc: dict) -> dict:
     return doc
 
 
+def _is_expired(expires_at: datetime) -> bool:
+    """Normalize a Mongo-stored (possibly naive) datetime and compare to now.
+    Mirrors the inline tzinfo-fixup repeated at every token-expiry check."""
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at < datetime.now(timezone.utc)
+
+
 def safe_user(u: dict) -> dict:
     if not u:
         return u
@@ -362,9 +398,14 @@ async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
         return strip_id(eng)
     if role == "CPA" and eng.get("assigned_cpa_id") != user["id"]:
         raise HTTPException(403, "Not your engagement")
-    if role == "PARTNER" and eng.get("partner_advisor_id") != user["id"]:
-        # Partners can see all pilot engagements per spec; relax filter
-        pass
+    if role == "PARTNER":
+        if eng.get("source") == "SELF_SERVE":
+            # Same data-minimization rule as the list endpoint — a self-serve
+            # client has no Ownr relationship and must not be reachable by ID
+            # even though the list query already excludes them.
+            raise HTTPException(403, "Not your engagement")
+        # Otherwise partners can see all pilot/Ownr engagements per spec,
+        # regardless of partner_advisor_id — no advisor filter.
     if role == "CLIENT":
         corp = await db.corporations.find_one({"id": eng["corporation_id"]})
         is_primary = bool(corp and corp.get("client_id") == user["id"])
@@ -376,6 +417,67 @@ async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
             return strip_id(eng)
         raise HTTPException(403, "Not your engagement")
     return strip_id(eng)
+
+
+# Partner-facing (Ownr) status label mapping — service-model aware. DIY plans
+# (NIL, BASIC_DIY) never enter the CPA document pipeline, so the DFY labels
+# ("Documents Requested" for INTAKE..DELIVERY) would misleadingly suggest a
+# self-serve client has something to submit. DIY stays "Started" through the
+# whole pipeline and only flips to "Filed with CRA" at FILED. Shared by the
+# partner dashboard payload (serialize_for_ownr_partner) and any future Ownr
+# status webhook so the two mappings never drift apart.
+_OWNR_STATUS_LABELS_DFY = {
+    "REFERRED": "Started",
+    "INTAKE": "Documents Requested",
+    "IN_PREP": "Documents Requested",
+    "IN_REVIEW": "Documents Requested",
+    "DELIVERY": "Documents Requested",
+    "FILED": "Filed with CRA",
+}
+_OWNR_STATUS_LABELS_DIY = {
+    "REFERRED": "Started",
+    "INTAKE": "Started",
+    "IN_PREP": "Started",
+    "IN_REVIEW": "Started",
+    "DELIVERY": "Started",
+    "FILED": "Filed with CRA",
+}
+SERVICE_MODEL_LABELS = {"DIY": "Do it yourself", "DFY": "Done for you"}
+
+
+def partner_status_label(engagement: dict) -> str:
+    """T2 filing state, spelled out, as shown to Ownr. Falls back to "Started"
+    for ONBOARDING (a CloudTax-only stage partners never see) and any future
+    status this mapping hasn't caught up with yet."""
+    labels = _OWNR_STATUS_LABELS_DIY if engagement.get("service_model") == "DIY" else _OWNR_STATUS_LABELS_DFY
+    return labels.get(engagement.get("status"), "Started")
+
+
+def serialize_for_ownr_partner(eng: dict) -> dict:
+    """Allowlist serializer for Ownr-sourced engagements on the partner
+    dashboard. Only ever returns these fields — partners never receive tier,
+    plan pricing, nil_amount, CPA notes, extracted financials, or return-level
+    data. Filed rows additionally carry the CRA confirmation number + filing
+    completion date."""
+    corp = eng.get("corporation") or {}
+    client = eng.get("client") or {}
+    fiscal_year_end = corp.get("fiscal_year_end")
+    tax_year = fiscal_year_end.year if isinstance(fiscal_year_end, datetime) else None
+    out = {
+        "id": eng.get("id"),
+        "company_name": corp.get("name"),
+        "email": client.get("email"),
+        "first_name": client.get("first_name"),
+        "last_name": client.get("last_name"),
+        "t2_filing_state": partner_status_label(eng),
+        "t2_filing_type": SERVICE_MODEL_LABELS.get(eng.get("service_model"), SERVICE_MODEL_LABELS["DFY"]),
+        "tax_year": tax_year,
+        "created_at": eng.get("created_at"),
+    }
+    if eng.get("status") == "FILED":
+        out["filing_confirmation"] = eng.get("filing_confirmation")
+        out["filing_date"] = eng.get("filing_date")
+    return out
 
 
 def redact_for_ws(eng: dict) -> dict:
@@ -767,7 +869,9 @@ async def reset_password(body: SetPasswordIn):
 @api.post("/auth/register")
 async def register(body: RegisterIn, request: Request, response: Response):
     """Public self-serve signup. Creates a CLIENT account and signs it in,
-    returning the same shape as /auth/login."""
+    returning the same shape as /auth/login. Also handles the Ownr handoff
+    extension when body.handoff_token is set (see /auth/handoff-info for the
+    matching public prefill read)."""
     db = get_db()
     # Per-IP cap: every call counts against the same 5-per-15-min window used
     # for login lockout. Attempts are never cleared on success — the cap is on
@@ -785,13 +889,30 @@ async def register(body: RegisterIn, request: Request, response: Response):
     })
     if len(body.password) < 8:
         raise HTTPException(400, "Use at least 8 characters")
-    email = body.email.lower().strip()
+
+    handoff_row = None
+    if body.handoff_token:
+        handoff_row = await db.handoff_tokens.find_one({"token": body.handoff_token, "used": False})
+        if not handoff_row or _is_expired(handoff_row["expires_at"]):
+            raise HTTPException(400, "Invalid or expired token")
+        if not body.consent:
+            raise HTTPException(400, "Consent is required to continue")
+
+    # Email is locked to the token's value when the handoff carried one — a
+    # client-submitted email is never trusted over it, otherwise anyone could
+    # register under an email Ownr referred to someone else.
+    if handoff_row and handoff_row.get("email"):
+        email = handoff_row["email"].lower().strip()
+    else:
+        email = body.email.lower().strip()
+
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(400, "This email is already registered. Sign in instead.")
+
     now = datetime.now(timezone.utc)
     uid = str(uuid.uuid4())
-    await db.users.insert_one({
+    user_doc = {
         "id": uid,
         "email": email,
         "password_hash": hash_password(body.password),
@@ -802,12 +923,118 @@ async def register(body: RegisterIn, request: Request, response: Response):
         "created_at": now,
         "activated_at": now,
         "signup_source": "SELF_SERVE",
-    })
+    }
+    if handoff_row:
+        payload = handoff_row.get("payload") or {}
+        user_doc.update({
+            "signup_source": "OWNR",
+            "first_name": body.first_name or payload.get("first_name"),
+            "last_name": body.last_name or payload.get("last_name"),
+            "company_name": payload.get("company_name"),
+            "business_number": payload.get("business_number"),
+            "ownr_customer_ref": payload.get("customer_ref"),
+            "entitlement": payload.get("entitlement"),
+            "consent_at": now,
+        })
+    await db.users.insert_one(user_doc)
+    if handoff_row:
+        await db.handoff_tokens.update_one({"token": body.handoff_token}, {"$set": {"used": True}})
     user = await db.users.find_one({"id": uid})
     token = create_access_token(uid, email, "CLIENT")
     set_auth_cookie(response, token)
-    log.info("Self-serve signup: %s", email)
+    log.info("Self-serve signup: %s%s", email, " (Ownr handoff)" if handoff_row else "")
     return {"user": safe_user(user), "token": token}
+
+
+# ==================== Ownr partner handoff ====================
+
+OWNR_HANDOFF_TOKEN_TTL_DAYS = 7
+# Modest per-IP cap, separate from the login/register brute-force counter —
+# this endpoint is already keyed by OWNR_API_KEY, but a keyed secret can leak
+# (checked into a client, logged, etc.), so it still gets its own limiter.
+OWNR_HANDOFF_RATE_LIMIT = 30
+OWNR_HANDOFF_RATE_WINDOW_MIN = 5
+
+
+async def _check_ownr_handoff_rate_limit(identifier: str):
+    db = get_db()
+    window_start = datetime.now(timezone.utc) - timedelta(minutes=OWNR_HANDOFF_RATE_WINDOW_MIN)
+    count = await db.login_attempts.count_documents({"identifier": identifier, "at": {"$gte": window_start}})
+    if count >= OWNR_HANDOFF_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many requests")
+    await db.login_attempts.insert_one({"identifier": identifier, "at": datetime.now(timezone.utc), "success": True})
+
+
+@api.post("/partner/ownr/handoff")
+async def ownr_handoff(body: OwnrHandoffIn, request: Request, _auth: None = Depends(verify_ownr_api_key)):
+    """Server-to-server: Ownr hands a customer to CloudTax. Mints a single-use,
+    7-day registration token and returns a URL for Ownr to send the customer
+    to. If the email already belongs to an Ownr-sourced account, returns a
+    login URL (prefilled email) instead — never creates a duplicate account."""
+    db = get_db()
+    ip = request.client.host if request.client else "unknown"
+    await _check_ownr_handoff_rate_limit(f"ownr_handoff:{ip}")
+
+    email = body.email.lower().strip() if body.email else None
+
+    if email:
+        existing = await db.users.find_one({"email": email})
+        if existing:
+            # Whether the existing account came from Ownr or elsewhere, the
+            # rule is the same: no duplicate account, hand back a sign-in link.
+            return {"registration_url": f"{FRONTEND_URL}/login?email={quote(email)}"}
+
+    now = datetime.now(timezone.utc)
+    payload = {
+        "first_name": body.first_name,
+        "last_name": body.last_name,
+        "company_name": body.company_name,
+        "business_number": body.business_number,
+        "customer_ref": body.customer_ref,
+        "entitlement": body.entitlement,
+    }
+    if email:
+        # Repeat handoff calls for the same not-yet-registered email reuse
+        # that identity: burn any still-live token first so only the newest
+        # URL is ever live, then mint a fresh one.
+        await db.handoff_tokens.update_many({"email": email, "used": False}, {"$set": {"used": True}})
+    token = new_invite_token()
+    await db.handoff_tokens.insert_one({
+        "id": str(uuid.uuid4()),
+        "token": token,
+        "email": email,
+        "payload": payload,
+        "used": False,
+        "created_at": now,
+        "expires_at": now + timedelta(days=OWNR_HANDOFF_TOKEN_TTL_DAYS),
+    })
+    return {"registration_url": f"{FRONTEND_URL}/register?token={token}"}
+
+
+@api.get("/auth/handoff-info")
+async def handoff_info(token: str):
+    """Public: token -> registration prefill payload. Always 200 — ``valid``
+    tells the frontend whether to render the prefilled form or the friendly
+    invalid/expired-token state (both need ``ownr_return_url`` for the "Back
+    to Ownr" link, so a 4xx here would strand the error state without it). No
+    secrets: the raw entitlement string is never exposed, only whether one is
+    present (for the "Ownr offer applied" banner) — it's read server-side from
+    the token again at /auth/register, never trusted from the client."""
+    db = get_db()
+    row = await db.handoff_tokens.find_one({"token": token, "used": False})
+    if not row or _is_expired(row["expires_at"]):
+        return {"valid": False, "ownr_return_url": OWNR_RETURN_URL}
+    payload = row.get("payload") or {}
+    return {
+        "valid": True,
+        "email": row.get("email"),
+        "email_locked": bool(row.get("email")),
+        "first_name": payload.get("first_name"),
+        "last_name": payload.get("last_name"),
+        "company_name": payload.get("company_name"),
+        "has_entitlement": bool(payload.get("entitlement")),
+        "ownr_return_url": OWNR_RETURN_URL,
+    }
 
 
 # ==================== Users (Admin) ====================
@@ -1672,6 +1899,13 @@ async def list_engagements(user: dict = Depends(get_current_user)):
     q = {}
     if role == "CPA":
         q = {"assigned_cpa_id": user["id"]}
+    elif role == "PARTNER":
+        # Self-serve clients have no Ownr relationship — an unfiltered query
+        # here would leak them to the partner (data-minimization commitment in
+        # the partnership agreement). Legacy pilot rows predate the `source`
+        # field entirely, so "missing" must stay visible alongside "OWNR";
+        # only SELF_SERVE is excluded.
+        q = {"source": {"$ne": "SELF_SERVE"}}
     elif role == "CLIENT":
         # ALL of the caller's corporations — a client may hold several
         # profiles (multi-corp dashboard), not just the first one found.
@@ -1707,7 +1941,11 @@ async def list_engagements(user: dict = Depends(get_current_user)):
         return True
     out = [e for e in out if _is_valid(e)]
     if role == "PARTNER":
-        out = [redact_for_ws(e) for e in out]
+        # Ownr-sourced rows go through the allowlist serializer (7 columns +
+        # filing extras only); legacy pilot rows keep the existing
+        # mutate-and-strip shape so WsFileDetail's pilot-only features
+        # (opportunities, time entries, partner feedback) keep working.
+        out = [serialize_for_ownr_partner(e) if e.get("source") == "OWNR" else redact_for_ws(e) for e in out]
     if role == "CLIENT":
         out = [redact_for_client(e) for e in out]
         # Dashboard order: active filings first, FILED after, newest first
@@ -1878,7 +2116,11 @@ async def self_start_engagement(body: SelfStartIn, user: dict = Depends(require_
         "service_model": service_model,
         "plan": body.plan,
         "nil_amount": nil_amount,
-        "source": "SELF_SERVE",
+        # Inherit the user's signup channel so partner-facing visibility (Ownr
+        # dashboard) can tell an Ownr-referred filing apart from an organic
+        # self-serve one. Falls back to SELF_SERVE for users predating the
+        # signup_source field (staff-invited clients never set it either).
+        "source": user.get("signup_source", "SELF_SERVE"),
         "created_at": now,
         "updated_at": now,
     })
@@ -1919,7 +2161,7 @@ async def get_engagement(eid: str, user: dict = Depends(get_current_user)):
     if user["role"] == "CLIENT":
         e = redact_for_client(e)
     if user["role"] == "PARTNER":
-        e = redact_for_ws(e)
+        e = serialize_for_ownr_partner(e) if e.get("source") == "OWNR" else redact_for_ws(e)
     return e
 
 
