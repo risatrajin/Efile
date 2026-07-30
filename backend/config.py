@@ -131,10 +131,15 @@ TIER_LABELS = {
 # admin-managed tier: plan is client-visible, tier stays hidden. Pricing copy
 # lives in the frontend card list only — the backend stores no prices.
 PLAN_META = {
-    "NIL": {"label": "T2 Nil", "service_model": "DIY"},
-    "BASIC_DIY": {"label": "T2 Basic DIY", "service_model": "DIY"},
-    "REVIEW_FILE": {"label": "Review and File", "service_model": "DFY"},
-    "DFY": {"label": "Done For You", "service_model": "DFY"},
+    # DIY-group naming per Ownr partnership pricing: Support 365 is client-$0
+    # (Ownr pays $75/return); Review and File is $229 flat at the Ownr promo rate.
+    "NIL": {"label": "T2 DIY + Support 365", "service_model": "DIY"},
+    "BASIC_DIY": {"label": "Review and File", "service_model": "DIY"},
+    # DFY-group pricing follows the marketing pricing table: Economy $749/yr,
+    # Full Review & Filing $1,249/yr (adds bookkeeping + T-slips). Keys kept
+    # stable — REVIEW_FILE predates the rename.
+    "REVIEW_FILE": {"label": "Full Review & Filing", "service_model": "DFY"},
+    "DFY": {"label": "Economy", "service_model": "DFY"},
 }
 
 OPP_LABELS = {

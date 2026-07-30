@@ -30,8 +30,12 @@ def _h(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _register(email, password):
-    r = requests.post(f"{BASE}/api/auth/register", json={"email": email, "password": password}, timeout=20)
+def _register(email, password, first_name="Test", last_name="User"):
+    r = requests.post(
+        f"{BASE}/api/auth/register",
+        json={"email": email, "password": password, "first_name": first_name, "last_name": last_name},
+        timeout=20,
+    )
     if r.status_code == 429:
         pytest.skip("register rate limit hit (per-IP 5/15min) — rerun after the window")
     return r
@@ -69,6 +73,11 @@ def test_register_success_shape_and_login_state(registered_client):
     u = registered_client["user"]
     assert u["role"] == "CLIENT"
     assert u["email"] == registered_client["email"]
+    # Single `name` field, matching the invited-user storage convention — no
+    # separate first_name/last_name split stored on the document.
+    assert u["name"] == "Test User"
+    assert "first_name" not in u
+    assert "last_name" not in u
     assert "password_hash" not in u
     assert registered_client["token"]
     # Token works immediately — signed in after signup.
@@ -87,6 +96,30 @@ def test_register_weak_password_rejected():
     r = _register(_fresh_email(), "short")
     assert r.status_code == 400
     assert "8 characters" in r.json().get("detail", "")
+
+
+def test_register_missing_first_name_rejected():
+    r = requests.post(
+        f"{BASE}/api/auth/register",
+        json={"email": _fresh_email(), "password": "SelfServe2026!", "first_name": "  ", "last_name": "User"},
+        timeout=20,
+    )
+    if r.status_code == 429:
+        pytest.skip("register rate limit hit (per-IP 5/15min)")
+    assert r.status_code == 400
+    assert "name" in r.json().get("detail", "").lower()
+
+
+def test_register_missing_last_name_rejected():
+    r = requests.post(
+        f"{BASE}/api/auth/register",
+        json={"email": _fresh_email(), "password": "SelfServe2026!", "first_name": "Test", "last_name": ""},
+        timeout=20,
+    )
+    if r.status_code == 429:
+        pytest.skip("register rate limit hit (per-IP 5/15min)")
+    assert r.status_code == 400
+    assert "name" in r.json().get("detail", "").lower()
 
 
 # ---------- Self-start ----------
@@ -258,7 +291,7 @@ def test_admin_notified_with_dfy_copy(admin_token, dfy_engagement, registered_cl
     assert mine, "admin did not receive the self-serve notification"
     n = mine[0]
     assert n["title"] == "New self-serve client"
-    assert "started a Done For You filing. Assign a CPA to begin intake." in n["message"]
+    assert "started an Economy filing. Assign a CPA to begin intake." in n["message"]
     assert registered_client["email"] in n["message"] or (registered_client["user"].get("name") or "") in n["message"]
 
 
@@ -284,8 +317,97 @@ def test_diy_notification_copy(admin_token):
     assert r.status_code == 200
     mine = [n for n in r.json() if n.get("engagement_id") == eid and n.get("type") == "self_serve_start"]
     assert mine, "admin did not receive the DIY self-serve notification"
-    assert "started a T2 Basic DIY filing." in mine[0]["message"]
+    assert "started a Review and File filing." in mine[0]["message"]
     assert "Assign a CPA" not in mine[0]["message"]
+
+
+# ---------- Ownr handoff extension ----------
+# Registration-side coverage for the Ownr handoff (mint/reuse/rate-limit is
+# covered separately in test_ownr_handoff.py). Skips if OWNR_API_KEY isn't
+# configured — the mint endpoint 503s with no key, so there's nothing to
+# register against.
+
+OWNR_API_KEY = os.environ.get("OWNR_API_KEY", "")
+
+
+def _mint_handoff(payload):
+    if not OWNR_API_KEY:
+        pytest.skip("OWNR_API_KEY not set in the test environment")
+    r = requests.post(
+        f"{BASE}/api/partner/ownr/handoff",
+        headers={"Authorization": f"Bearer {OWNR_API_KEY}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=20,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["registration_url"].rsplit("token=", 1)[-1]
+
+
+def test_register_ownr_prefill_via_handoff_info():
+    token = _mint_handoff({"email": _fresh_email(), "first_name": "Prefill", "last_name": "Test", "company_name": "Prefill Co"})
+    r = requests.get(f"{BASE}/api/auth/handoff-info", params={"token": token}, timeout=20)
+    assert r.status_code == 200
+    info = r.json()
+    assert info["valid"] is True
+    assert info["first_name"] == "Prefill"
+    assert info["email_locked"] is True
+
+
+def test_register_ownr_consent_required():
+    token = _mint_handoff({"email": _fresh_email()})
+    r = requests.post(
+        f"{BASE}/api/auth/register",
+        json={"email": "ignored@example.com", "password": "SelfServe2026!", "first_name": "Test", "last_name": "User", "handoff_token": token, "consent": False},
+        timeout=20,
+    )
+    if r.status_code == 429:
+        pytest.skip("register rate limit hit (per-IP 5/15min)")
+    assert r.status_code == 400
+    assert "consent" in r.json().get("detail", "").lower()
+
+
+def test_register_ownr_consent_timestamped_and_entitlement_stored():
+    email = _fresh_email()
+    token = _mint_handoff({"email": email, "entitlement": "OFFER_XYZ"})
+    r = requests.post(
+        f"{BASE}/api/auth/register",
+        json={"email": "ignored@example.com", "password": "SelfServe2026!", "first_name": "Prefill", "last_name": "Client", "handoff_token": token, "consent": True},
+        timeout=20,
+    )
+    if r.status_code == 429:
+        pytest.skip("register rate limit hit (per-IP 5/15min)")
+    assert r.status_code == 200, r.text
+    u = r.json()["user"]
+    assert u["email"] == email  # locked, body email ("ignored@...") never used
+    assert u["name"] == "Prefill Client"
+    assert u["signup_source"] == "OWNR"
+    assert u["entitlement"] == "OFFER_XYZ"
+    assert u.get("consent_at")
+
+
+def test_register_ownr_invalid_token_rejected():
+    r = requests.post(
+        f"{BASE}/api/auth/register",
+        json={"email": _fresh_email(), "password": "SelfServe2026!", "first_name": "Test", "last_name": "User", "handoff_token": "bogus-token-xyz", "consent": True},
+        timeout=20,
+    )
+    if r.status_code == 429:
+        pytest.skip("register rate limit hit (per-IP 5/15min)")
+    assert r.status_code == 400
+    detail = r.json().get("detail", "").lower()
+    assert "invalid" in detail or "expired" in detail
+
+
+def test_register_plain_regression_no_token(registered_client):
+    # Sanity: the module-scoped fixture went through the plain path (no
+    # handoff_token) — confirm no Ownr fields leaked in, signup_source stayed
+    # SELF_SERVE, and the name still landed (single-field convention holds
+    # for the plain path too).
+    u = registered_client["user"]
+    assert u.get("signup_source", "SELF_SERVE") != "OWNR"
+    assert u["name"] == "Test User"
+    assert "entitlement" not in u
+    assert "consent_at" not in u
 
 
 # ---------- Regression ----------

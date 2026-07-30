@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
 import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Trash2, ThumbsUp, Flag, PenLine, Plus } from "lucide-react";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
+import { PLAN_LABELS } from "./ClientDashboard";
 import T183SigningModal from "../components/shared/T183SigningModal";
 
 const PHASES = [
@@ -13,6 +14,15 @@ const PHASES = [
   { key: "review", label: "Review" },
   { key: "filed", label: "Filed" },
 ];
+
+// Fire-and-forget: records the client's first "Open filing engine" click as
+// the partner dashboard's DIY "In progress" signal (backend no-ops after the
+// first call — see POST /engagements/{id}/diy-engine-open). Never blocks the
+// click itself, so a failed request here can't stop the client from opening
+// the engine.
+function recordDiyEngineOpen(engagementId) {
+  api.post(`/engagements/${engagementId}/diy-engine-open`).catch(() => {});
+}
 
 function statusToPhase(status) {
   if (status === "REFERRED") return 0;
@@ -29,14 +39,14 @@ function Stepper({ current }) {
   // - 1px connecting line, only visible between dots, color shifts at the boundary.
   // - Small uppercase labels below; active stage label uses primary color + medium weight.
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 0, padding: "10px 4px" }} data-testid="stepper">
+    <div className="portal-stepper" style={{ display: "flex", alignItems: "flex-start", gap: 0, padding: "10px 4px" }} data-testid="stepper">
       {PHASES.map((p, i) => {
         const done = i < current;
         const active = i === current;
         const reached = done || active;
         return (
           <React.Fragment key={p.key}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "0 0 auto", minWidth: 64 }}>
+            <div className="portal-stepper-item" style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "0 0 auto" }}>
               <div style={{
                 width: 10, height: 10, borderRadius: "50%",
                 background: reached ? "var(--accent-dark)" : "transparent",
@@ -44,8 +54,8 @@ function Stepper({ current }) {
                 boxShadow: active ? "0 0 0 4px rgba(26,26,26,0.06)" : "none",
                 transition: "all 160ms ease",
               }} />
-              <div style={{
-                fontSize: 11, marginTop: 8,
+              <div className="portal-stepper-label" style={{
+                marginTop: 8,
                 fontWeight: active ? 600 : 400,
                 color: active ? "var(--text-primary)" : reached ? "var(--text-secondary)" : "var(--text-tertiary)",
                 letterSpacing: "0.02em", whiteSpace: "nowrap",
@@ -556,6 +566,9 @@ export default function ClientPortal() {
   const [authBusy, setAuthBusy] = useState(false);
   const [forceUploadMode, setForceUploadMode] = useState(false);
   const [delegateContext, setDelegateContext] = useState(null);
+  // DIY handoff: engine not live yet → clicking the button reveals an inline
+  // notice bar instead of navigating anywhere.
+  const [engineNotice, setEngineNotice] = useState(false);
   // True once the FIRST /engagements response has come back (success OR error).
   // Gates the empty-state render so the "engagement is being set up" card
   // doesn't flash for a fraction of a second on initial page load before the
@@ -777,22 +790,37 @@ export default function ClientPortal() {
   // DIY_ENGINE_URL (one-env-var swap when the engine ships).
   // TODO(diy-engine): define what engagement context passes in the link.
   if (eng.plan && (eng.service_model || "DFY") === "DIY") return (
-    <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="diy-handoff">
+    <div className="page-narrow stack-lg" style={{ paddingTop: 32, maxWidth: 760 }} data-testid="diy-handoff">
       <h1 className="page-title">
         {greetingName ? `Welcome, ${greetingName}` : "Welcome"}
       </h1>
-      <div className="card">
-        <h2 className="section-title">Your self-serve filing</h2>
-        <p className="muted" style={{ fontSize: 13, lineHeight: 1.7 }}>
-          You&apos;ll complete your T2 in the CloudTax filing engine.
+      <div className="card animate-in" style={{ textAlign: "center", padding: "44px 28px" }}>
+        <div
+          aria-hidden
+          style={{
+            width: 56, height: 56, borderRadius: "50%", margin: "0 auto",
+            background: "var(--bg-subtle)", border: "1px solid var(--border-default)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <FileText size={24} style={{ color: "var(--text-secondary)" }} />
+        </div>
+        <h2 className="section-title" style={{ marginTop: 16, fontSize: 18 }}>Your self-serve filing</h2>
+        <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+          {(eng.corporation || {}).name}
+          {eng.plan ? ` · ${PLAN_LABELS[eng.plan] || eng.plan}` : ""}
+        </div>
+        <p className="muted" style={{ fontSize: 13, lineHeight: 1.7, marginTop: 12, maxWidth: 400, marginLeft: "auto", marginRight: "auto" }}>
+          You&apos;ll complete your T2 in the CloudTax filing engine — guided steps, built-in checks, file online when you&apos;re ready.
         </p>
         {eng.diy_engine_url ? (
           <a
             className="btn btn-primary"
-            style={{ marginTop: 12, display: "inline-flex" }}
+            style={{ marginTop: 20, display: "inline-flex" }}
             href={eng.diy_engine_url}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => recordDiyEngineOpen(eng.id)}
             data-testid="open-filing-engine"
           >
             Open filing engine
@@ -800,12 +828,30 @@ export default function ClientPortal() {
         ) : (
           <button
             className="btn btn-primary"
-            style={{ marginTop: 12 }}
-            onClick={() => navigate(`/portal/filing/${eng.id}/waiting`)}
+            style={{ marginTop: 20 }}
+            onClick={() => { recordDiyEngineOpen(eng.id); setEngineNotice(true); }}
             data-testid="open-filing-engine"
           >
             Open filing engine
           </button>
+        )}
+        {engineNotice && (
+          <div
+            className="animate-in"
+            role="status"
+            style={{
+              marginTop: 20,
+              display: "flex", alignItems: "center", gap: 10,
+              textAlign: "left",
+              background: "#fff8e1", border: "1px solid #ffe082",
+              color: "#6b3f10", borderRadius: 10,
+              padding: "12px 14px", fontSize: 13, lineHeight: 1.6,
+            }}
+            data-testid="engine-notice"
+          >
+            <Clock size={16} style={{ flexShrink: 0 }} />
+            <span>We&apos;re preparing your self-serve filing experience. You&apos;ll get an email when it&apos;s ready.</span>
+          </div>
         )}
       </div>
     </div>

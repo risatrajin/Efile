@@ -16,7 +16,7 @@ const PALETTE = [
   "#fffde7", // lemon
 ];
 
-function paletteFor(seed = "") {
+export function paletteFor(seed = "") {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
@@ -31,7 +31,10 @@ function paletteFor(seed = "") {
  *  - testid: optional data-testid
  */
 export default function UserAvatar({ user, size = 36, testid }) {
-  const name = user?.name || user?.email || "?";
+  // Self-serve/Ownr signups never set `name` (only first_name/last_name) —
+  // fall back through both before the raw email, else initials("some@email")
+  // collapses to the same letter twice (e.g. "browser-verify..." -> "BB").
+  const name = user?.name || [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.email || "?";
   const avatarUrl = user?.avatar_url;
   const fullSrc = avatarUrl ? (avatarUrl.startsWith("http") ? avatarUrl : `${BASE}${avatarUrl}`) : null;
 

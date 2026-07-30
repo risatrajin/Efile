@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronRight, Plus, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { api, fmtError } from "../lib/api";
+import { paletteFor } from "../components/shared/UserAvatar";
 
 const PROVINCES = ["ON", "BC", "AB", "QC", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"];
 
@@ -13,9 +14,9 @@ export const PLANS = [
   {
     key: "NIL",
     group: "DIY",
-    label: "T2 Nil",
-    priceAmount: "Pay What You Want",
-    priceNote: "including $0",
+    label: "T2 DIY + Support 365",
+    priceAmount: "$0",
+    priceNote: "Ownr pays $75/return",
     desc: "Best for eligible corporations with no activity or simple startup costs.",
     bullets: [
       "Guided filing in plain language",
@@ -26,9 +27,9 @@ export const PLANS = [
   {
     key: "BASIC_DIY",
     group: "DIY",
-    label: "T2 Basic DIY",
-    priceAmount: "$199",
-    priceNote: "per year-end",
+    label: "Review and File",
+    priceAmount: "$229",
+    priceNote: "flat · Ownr promo rate",
     desc: "For owner-managed corporations that want control, with guardrails.",
     bullets: [
       "Guided filing workflow",
@@ -37,30 +38,29 @@ export const PLANS = [
     ],
   },
   {
-    key: "REVIEW_FILE",
+    key: "DFY",
     group: "DFY",
-    label: "Review and File",
-    priceAmount: "$499",
-    priceNote: "per year-end",
-    desc: "You prepare the return. We review it before you submit.",
+    label: "Economy",
+    priceAmount: "$749",
+    priceNote: "per year",
+    desc: "We prepare and file the return end-to-end.",
     bullets: [
-      "Expert review of your completed T2",
-      "Corrections and feedback included",
-      "File online using WAC or EFILE",
+      "Corporate T2 preparation and filing with CRA",
+      "Tax consultation and basic personal return included",
+      "Post-audit support and tax optimization",
     ],
   },
   {
-    key: "DFY",
+    key: "REVIEW_FILE",
     group: "DFY",
-    label: "Done For You",
-    priceAmount: "$749",
-    pricePrefix: "From",
-    priceNote: "per year-end",
-    desc: "We prepare and file the return end-to-end.",
+    label: "Full Review & Filing",
+    priceAmount: "$1,249",
+    priceNote: "per year",
+    desc: "Full service for corporations that also need their records cleaned up.",
     bullets: [
-      "T2 preparation and filing",
-      "Intake and sanity checks",
-      "Bounded CRA follow-up support",
+      "Everything in Economy",
+      "Bookkeeping and record cleanup included",
+      "T-slip preparation and filing included",
     ],
   },
 ];
@@ -125,9 +125,13 @@ function ProfileRow({ eng, onOpen }) {
         aria-hidden
         style={{
           width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-          background: "var(--bg-subtle)", border: "1px solid var(--border-default)",
+          // Seed by corp id (uuid) — names like "Purchase Demo Corp" vs
+          // "Purchase Demo Two Inc" hash into the same palette bucket too
+          // often; uuids spread across the palette far better.
+          background: paletteFor(corp.id || corp.name || "?"),
+          boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.06)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontWeight: 600, fontSize: 15,
+          fontWeight: 600, fontSize: 15, lineHeight: 1, color: "#1a1a1a",
         }}
       >
         {(corp.name || "?").charAt(0).toUpperCase()}

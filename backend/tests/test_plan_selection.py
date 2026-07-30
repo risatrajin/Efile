@@ -37,7 +37,7 @@ def admin_token():
 @pytest.fixture(scope="module")
 def client():
     email = f"test_plans_{uuid.uuid4().hex[:10]}@example.com"
-    r = requests.post(f"{BASE}/api/auth/register", json={"email": email, "password": "SelfServe2026!"}, timeout=20)
+    r = requests.post(f"{BASE}/api/auth/register", json={"email": email, "password": "SelfServe2026!", "first_name": "Test", "last_name": "Plans"}, timeout=20)
     if r.status_code == 429:
         pytest.skip("register rate limit hit (per-IP 5/15min) — rerun after the window")
     assert r.status_code == 200, f"register failed: {r.status_code} {r.text}"
@@ -91,7 +91,7 @@ def test_nil_creates_diy_engagement_no_docs(client, admin_token):
     # Admin notification: plan label, no CPA sentence for DIY.
     r = requests.get(f"{BASE}/api/notifications", headers=_h(admin_token), timeout=20)
     mine = [n for n in r.json() if n.get("engagement_id") == eng["id"]]
-    assert mine and "started a T2 Nil filing." in mine[0]["message"]
+    assert mine and "started a T2 DIY + Support 365 filing." in mine[0]["message"]
     assert "Assign a CPA" not in mine[0]["message"]
 
 
@@ -117,7 +117,7 @@ def test_basic_diy_no_docs_no_nil_amount(client):
 
 # ---------- REVIEW_FILE / DFY ----------
 
-@pytest.mark.parametrize("plan,label", [("REVIEW_FILE", "Review and File"), ("DFY", "Done For You")])
+@pytest.mark.parametrize("plan,label", [("REVIEW_FILE", "Full Review & Filing"), ("DFY", "Economy")])
 def test_dfy_plans_seed_docs_and_notify(client, admin_token, plan, label):
     r = _self_start(client["token"], plan)
     assert r.status_code == 200, r.text
@@ -132,7 +132,8 @@ def test_dfy_plans_seed_docs_and_notify(client, admin_token, plan, label):
     r = requests.get(f"{BASE}/api/notifications", headers=_h(admin_token), timeout=20)
     mine = [n for n in r.json() if n.get("engagement_id") == eng["id"]]
     assert mine, f"no admin notification for {plan}"
-    assert f"started a {label} filing. Assign a CPA to begin intake." in mine[0]["message"]
+    article = "an" if label[:1].lower() in "aeiou" else "a"
+    assert f"started {article} {label} filing. Assign a CPA to begin intake." in mine[0]["message"]
 
 
 # ---------- Dashboard payload / legacy ----------

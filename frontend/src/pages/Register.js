@@ -68,12 +68,15 @@ export default function Register() {
   const onSubmit = async (e) => {
     e.preventDefault();
     setErr("");
+    if (!firstName.trim() || !lastName.trim()) return setErr("First and last name are required");
     if (password.length < 8) return setErr("Use at least 8 characters");
     if (isOwnrFlow && !consent) return setErr("Please review and accept the data-sharing consent to continue.");
     setBusy(true);
-    const extra = isOwnrFlow
-      ? { handoff_token: handoffToken, first_name: firstName, last_name: lastName, consent }
-      : {};
+    const extra = {
+      first_name: firstName,
+      last_name: lastName,
+      ...(isOwnrFlow ? { handoff_token: handoffToken, consent } : {}),
+    };
     const r = await register(email, password, extra);
     setBusy(false);
     if (!r.ok) setErr(r.error);
@@ -133,28 +136,28 @@ export default function Register() {
           <div className="muted" style={{ fontSize: 13, marginBottom: 24 }}>Corporate Tax Filing Platform</div>
 
           <form onSubmit={onSubmit} className="stack-md" style={{ marginTop: 16 }}>
-            {isOwnrFlow && (
-              <div style={{ display: "flex", gap: 12 }}>
-                <div className="field" style={{ flex: 1 }}>
-                  <label className="field-label">First name</label>
-                  <input
-                    className="input"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    data-testid="register-first-name"
-                  />
-                </div>
-                <div className="field" style={{ flex: 1 }}>
-                  <label className="field-label">Last name</label>
-                  <input
-                    className="input"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    data-testid="register-last-name"
-                  />
-                </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div className="field" style={{ flex: 1 }}>
+                <label className="field-label">First name</label>
+                <input
+                  className="input"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                  data-testid="register-first-name"
+                />
               </div>
-            )}
+              <div className="field" style={{ flex: 1 }}>
+                <label className="field-label">Last name</label>
+                <input
+                  className="input"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                  data-testid="register-last-name"
+                />
+              </div>
+            </div>
             <div className="field">
               <label className="field-label">Email</label>
               <input

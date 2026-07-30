@@ -94,11 +94,12 @@ export default function WsFileDetail() {
 
   const load = async () => {
     try {
-      // Ownr engagements come back from the allowlist serializer (flat 7-col
-      // shape, no corporation/client/tier/etc.) — this detail view is built
-      // for the rich pilot shape, so don't fetch the rest for an Ownr row.
+      // Ownr engagements come back from the allowlist serializer (flat
+      // shape, no corporation/client/tier/etc. — pilot rows always have a
+      // corporation) — this detail view is built for the rich pilot shape,
+      // so don't fetch the rest for an Ownr row.
       const first = await api.get(`/engagements/${eid}`);
-      if (Object.prototype.hasOwnProperty.call(first.data, "t2_filing_state")) {
+      if (!first.data.corporation) {
         setEng(first.data);
         return;
       }
@@ -159,29 +160,43 @@ export default function WsFileDetail() {
     );
   }
 
-  if (Object.prototype.hasOwnProperty.call(eng, "t2_filing_state")) {
-    // Ownr row — no CPA-pipeline detail exists for it this phase; the 7-column
-    // dashboard table is the whole view. Show the same fields here rather than
-    // rendering (or crashing on) the pilot-only layout below.
+  if (!eng.corporation) {
+    // Ownr row — no CPA-pipeline detail exists for it this phase; this is a
+    // lean profile card (name/avatar header + a couple of cards), not the
+    // full pilot layout below — there's no tier, CPA, or document pipeline
+    // to show for it.
+    const filed = eng.t2_filing_state === "Filed with CRA";
+    const statusColor = { "Started": { bg: "#e3f2fd", fg: "#1565c0" }, "In progress": { bg: "#fff3e0", fg: "#ef6c00" }, "Documents Requested": { bg: "#fff3e0", fg: "#ef6c00" }, "Filed with CRA": { bg: "#e8f5e9", fg: "#2e7d32" }, "Submitted": { bg: "#e8f5e9", fg: "#2e7d32" } }[eng.t2_filing_state] || { bg: "var(--bg-subtle)", fg: "var(--text-secondary)" };
     return (
       <div className={rootClass}>
         <AppHeader tabs={[{ key: "dashboard", to: "/partner/dashboard", label: "Dashboard" }]} />
-        <div className="page-wide stack-lg" data-testid="partner-file-detail-ownr">
+        <div className="page-wide stack-lg" style={{ maxWidth: 480, margin: "0 auto" }} data-testid="partner-file-detail-ownr">
           <button className="btn btn-ghost btn-sm" onClick={() => navigate("/partner/dashboard")} style={{ width: "fit-content" }} data-testid="back-link"><ArrowLeft size={12} /> Dashboard</button>
-          <div className="card" style={{ maxWidth: 480 }}>
-            <h1 className="page-title" style={{ fontSize: 20 }}>{eng.company_name || "Client"}</h1>
+
+          <div className="flex items-start gap-4">
+            <div className="avatar" style={{ width: 56, height: 56, fontSize: 16 }}>{initials(eng.name || "")}</div>
+            <div>
+              <h1 className="page-title">{eng.name || "Name not provided"}</h1>
+              <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>{eng.company_name}</p>
+              <div className="flex items-center gap-2 mt-3">
+                <span style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#4c30a0", background: "#f5f0ff", borderRadius: 999, padding: "2px 10px", letterSpacing: 0.3 }}>OWNR</span>
+                <span style={{ background: statusColor.bg, color: statusColor.fg, fontSize: 11, fontWeight: 500, padding: "3px 10px", borderRadius: 999 }}>{eng.t2_filing_state}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-secondary)" }}><Lock size={11} /> Read only</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ maxWidth: 480 }} data-testid="ownr-client-info-card">
+            <h2 className="card-title">Client information</h2>
             <div className="mt-3" style={{ fontSize: 13 }}>
               {[
                 ["Email", eng.email],
-                ["Name", [eng.first_name, eng.last_name].filter(Boolean).join(" ")],
-                ["T2 filing state", eng.t2_filing_state],
                 ["T2 filing type", eng.t2_filing_type],
+                ["Plan", eng.plan_label],
                 ["Tax year", eng.tax_year ? String(eng.tax_year) : "Not yet set"],
+                ["Ownr customer ref", eng.ownr_customer_ref],
+                ["Consent recorded", eng.consent_at ? fmtDate(eng.consent_at) : null],
                 ["Creation date", fmtDate(eng.created_at)],
-                ...(eng.t2_filing_state === "Filed with CRA" ? [
-                  ["CRA confirmation", eng.filing_confirmation || "Not yet set"],
-                  ["Filed date", fmtDate(eng.filing_date)],
-                ] : []),
               ].map(([k, v]) => (
                 <div key={k} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
                   <span className="muted">{k}</span>
@@ -190,6 +205,18 @@ export default function WsFileDetail() {
               ))}
             </div>
           </div>
+
+          {filed && (
+            <div className="card" style={{ maxWidth: 480 }} data-testid="ownr-filed-card">
+              <h2 className="card-title">Filing</h2>
+              <div className="flex items-center gap-2 mt-3">
+                {eng.filing_confirmation && (
+                  <span style={{ background: "#fff3e0", color: "#ef6c00", padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 500 }}>{eng.filing_confirmation}</span>
+                )}
+                <span className="muted" style={{ fontSize: 12 }}>Filed {fmtDate(eng.filing_date)}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -217,7 +244,7 @@ export default function WsFileDetail() {
           <div className="flex items-start gap-4">
             <div className="avatar" style={{ width: 56, height: 56, fontSize: 16 }}>{initials(client.name || "")}</div>
             <div>
-              <h1 className="page-title">{client.name}</h1>
+              <h1 className="page-title">{client.name || "Name not provided"}</h1>
               <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>{corp.name}</p>
               <div className="flex items-center gap-2 mt-3">
                 <TierBadge tier={eng.tier} />
@@ -305,7 +332,7 @@ export default function WsFileDetail() {
               <h2 className="card-title">Client information</h2>
               <div className="mt-3" style={{ fontSize: 13 }}>
                 {[
-                  ["Full name", client.name],
+                  ["Full name", client.name || "Name not provided"],
                   ["Email", client.email],
                   ["Province", corp.province],
                   ["Corporation", corp.name],

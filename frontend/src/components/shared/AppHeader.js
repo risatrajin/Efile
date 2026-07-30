@@ -93,6 +93,13 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  // Self-serve/Ownr signups never set `name` (only first_name/last_name) —
+  // fall back through both before ever showing the raw email.
+  // Fall back to a humanised email local-part ("purchase_demo" → "Purchase Demo")
+  // for pre-name-requirement accounts — never the raw email in the chip; the
+  // dropdown still shows the full address.
+  const emailName = (user?.email || "").split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const displayName = user?.name || [user?.first_name, user?.last_name].filter(Boolean).join(" ") || emailName;
 
   useEffect(() => {
     const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -182,10 +189,7 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
             aria-expanded={open}
           >
             <UserAvatar user={user} size={28} testid="user-avatar" />
-            <div style={{ textAlign: "left", lineHeight: 1.15 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }} data-testid="user-name">{user?.name}</div>
-              <div className="tertiary" style={{ fontSize: 11 }} data-testid="user-email">{user?.email}</div>
-            </div>
+            <div className="header-user-text" style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }} data-testid="user-name">{displayName}</div>
           </button>
           {open && (
             <div data-testid="user-menu" role="menu" style={{
@@ -194,8 +198,10 @@ export default function AppHeader({ tabs = [], unreadByKey = {} }) {
               padding: 8, minWidth: 240, boxShadow: "0 12px 32px rgba(0,0,0,0.10)", zIndex: 30,
             }}>
               <div style={{ padding: "8px 12px 10px", borderBottom: "1px solid var(--border-default)" }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{user?.name}</div>
-                <div className="tertiary" style={{ fontSize: 11 }}>{user?.email}</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{displayName}</div>
+                {/* #595959 on white = 7:1 contrast (AA/AAA at any size) — the
+                    "tertiary" token (#b5b0ab, 2.15:1) fails WCAG outright. */}
+                <div style={{ fontSize: 13, color: "#595959" }}>{user?.email}</div>
               </div>
               <button
                 role="menuitem"

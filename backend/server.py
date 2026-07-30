@@ -157,9 +157,9 @@ class ForgotPasswordIn(BaseModel):
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
+    first_name: str
+    last_name: str
     handoff_token: Optional[str] = None  # Ownr handoff — see /auth/handoff-info
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
     consent: bool = False  # required true when handoff_token is set
 
 
@@ -419,13 +419,13 @@ async def get_engagement_or_404(engagement_id: str, user: dict) -> dict:
     return strip_id(eng)
 
 
-# Partner-facing (Ownr) status label mapping — service-model aware. DIY plans
-# (NIL, BASIC_DIY) never enter the CPA document pipeline, so the DFY labels
-# ("Documents Requested" for INTAKE..DELIVERY) would misleadingly suggest a
-# self-serve client has something to submit. DIY stays "Started" through the
-# whole pipeline and only flips to "Filed with CRA" at FILED. Shared by the
-# partner dashboard payload (serialize_for_ownr_partner) and any future Ownr
-# status webhook so the two mappings never drift apart.
+# Partner-facing (Ownr) status label mapping — service-model aware, shared by
+# every partner dashboard payload (pilot via redact_for_ws, Ownr via
+# serialize_for_ownr_partner) and any future Ownr status webhook so labels
+# never drift apart across the two row shapes.
+#
+# DFY: the CPA document pipeline. INTAKE..DELIVERY collapse to "Documents
+# Requested" — partners don't get the internal stage granularity.
 _OWNR_STATUS_LABELS_DFY = {
     "REFERRED": "Started",
     "INTAKE": "Documents Requested",
@@ -434,23 +434,31 @@ _OWNR_STATUS_LABELS_DFY = {
     "DELIVERY": "Documents Requested",
     "FILED": "Filed with CRA",
 }
-_OWNR_STATUS_LABELS_DIY = {
-    "REFERRED": "Started",
-    "INTAKE": "Started",
-    "IN_PREP": "Started",
-    "IN_REVIEW": "Started",
-    "DELIVERY": "Started",
-    "FILED": "Filed with CRA",
-}
 SERVICE_MODEL_LABELS = {"DIY": "Do it yourself", "DFY": "Done for you"}
 
 
 def partner_status_label(engagement: dict) -> str:
-    """T2 filing state, spelled out, as shown to Ownr. Falls back to "Started"
-    for ONBOARDING (a CloudTax-only stage partners never see) and any future
-    status this mapping hasn't caught up with yet."""
-    labels = _OWNR_STATUS_LABELS_DIY if engagement.get("service_model") == "DIY" else _OWNR_STATUS_LABELS_DFY
-    return labels.get(engagement.get("status"), "Started")
+    """T2 filing state, spelled out, as shown to Ownr.
+
+    DFY: mapped from the internal pipeline status via _OWNR_STATUS_LABELS_DFY.
+
+    DIY: never enters the CPA document pipeline, so the DFY mapping doesn't
+    apply at all. Three states only:
+      - "Started": engagement exists, filing engine not yet opened.
+      - "In progress": client has opened the filing engine at least once
+        (diy_engine_opened_at set — see POST /engagements/{id}/diy-engine-open).
+        TODO(diy-engine): replace this click-based signal with real engine
+        telemetry once the engine reports its own progress.
+      - "Submitted": status is FILED. (May become "Submitted / Paid" once
+        payment exists — single label constant so that's a one-line change.)
+    """
+    if engagement.get("service_model") == "DIY":
+        if engagement.get("status") == "FILED":
+            return "Submitted"
+        if engagement.get("diy_engine_opened_at"):
+            return "In progress"
+        return "Started"
+    return _OWNR_STATUS_LABELS_DFY.get(engagement.get("status"), "Started")
 
 
 def serialize_for_ownr_partner(eng: dict) -> dict:
@@ -467,12 +475,14 @@ def serialize_for_ownr_partner(eng: dict) -> dict:
         "id": eng.get("id"),
         "company_name": corp.get("name"),
         "email": client.get("email"),
-        "first_name": client.get("first_name"),
-        "last_name": client.get("last_name"),
+        "name": client.get("name"),
         "t2_filing_state": partner_status_label(eng),
         "t2_filing_type": SERVICE_MODEL_LABELS.get(eng.get("service_model"), SERVICE_MODEL_LABELS["DFY"]),
+        "plan_label": PLAN_META.get(eng.get("plan"), {}).get("label"),
         "tax_year": tax_year,
         "created_at": eng.get("created_at"),
+        "ownr_customer_ref": client.get("ownr_customer_ref"),
+        "consent_at": client.get("consent_at"),
     }
     if eng.get("status") == "FILED":
         out["filing_confirmation"] = eng.get("filing_confirmation")
@@ -488,6 +498,12 @@ def redact_for_ws(eng: dict) -> dict:
     # ``notes_history`` is the internal staff notes feed (CPA/Admin). Strip it
     # from the engagement object — it was leaking the whole feed to partners.
     eng.pop("notes_history", None)
+    # Same computed label Ownr rows carry, attached here too so the dashboard
+    # has one field to read regardless of row shape. Purely additive — the
+    # raw `status` stays on the payload for the DFY kanban/list to bucket by;
+    # this is only consumed where the collapsed label is what's wanted (the
+    # DIY tab's 3-state column).
+    eng["t2_filing_state"] = partner_status_label(eng)
     return eng
 
 
@@ -889,6 +905,10 @@ async def register(body: RegisterIn, request: Request, response: Response):
     })
     if len(body.password) < 8:
         raise HTTPException(400, "Use at least 8 characters")
+    first_name = body.first_name.strip()
+    last_name = body.last_name.strip()
+    if not first_name or not last_name:
+        raise HTTPException(400, "First and last name are required")
 
     handoff_row = None
     if body.handoff_token:
@@ -916,7 +936,9 @@ async def register(body: RegisterIn, request: Request, response: Response):
         "id": uid,
         "email": email,
         "password_hash": hash_password(body.password),
-        "name": None,
+        # Single `name` field, matching the invited-user storage convention
+        # (InviteUserIn.name) — no first/last split on the stored document.
+        "name": f"{first_name} {last_name}",
         "role": "CLIENT",
         "phone": None,
         "is_active": True,
@@ -928,8 +950,6 @@ async def register(body: RegisterIn, request: Request, response: Response):
         payload = handoff_row.get("payload") or {}
         user_doc.update({
             "signup_source": "OWNR",
-            "first_name": body.first_name or payload.get("first_name"),
-            "last_name": body.last_name or payload.get("last_name"),
             "company_name": payload.get("company_name"),
             "business_number": payload.get("business_number"),
             "ownr_customer_ref": payload.get("customer_ref"),
@@ -2149,7 +2169,8 @@ async def self_start_engagement(body: SelfStartIn, user: dict = Depends(require_
     await log_status_change(eng_id, user["id"], None, "INTAKE", "Self-serve start")
     client_label = user.get("name") or user.get("email") or "A client"
     plan_label = PLAN_META[body.plan]["label"]
-    msg = f"{client_label} started a {plan_label} filing."
+    article = "an" if plan_label[:1].lower() in "aeiou" else "a"
+    msg = f"{client_label} started {article} {plan_label} filing."
     if service_model == "DFY":
         msg += " Assign a CPA to begin intake."
     await notify_admins("New self-serve client", msg, "self_serve_start", eng_id)
@@ -2160,6 +2181,21 @@ async def self_start_engagement(body: SelfStartIn, user: dict = Depends(require_
     if service_model == "DIY":
         eng["diy_engine_url"] = os.environ.get("DIY_ENGINE_URL") or None
     return eng
+
+
+@api.post("/engagements/{eid}/diy-engine-open")
+async def diy_engine_open(eid: str, user: dict = Depends(require_role("CLIENT"))):
+    """Records the first time this client opens the DIY filing engine —
+    the "In progress" signal on the partner dashboard's 3-state DIY status
+    until the engine reports its own telemetry. Idempotent: only the first
+    call sets the timestamp, everything after is a no-op."""
+    await get_engagement_or_404(eid, user)  # ownership check, raises if not theirs
+    db = get_db()
+    await db.engagements.update_one(
+        {"id": eid, "diy_engine_opened_at": None},
+        {"$set": {"diy_engine_opened_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True}
 
 
 @api.get("/engagements/{eid}")
