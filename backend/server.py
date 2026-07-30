@@ -31,7 +31,7 @@ from email_templates import send_email as _email_templates_send
 import ai_service
 from config import (
     docs_for_tier, review_checklist_for_tier, TIER_PRICING,
-    CPA_HOURLY_COST, STATUS_LABELS, TIER_LABELS,
+    CPA_HOURLY_COST, STATUS_LABELS, TIER_LABELS, PLAN_META,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -141,6 +141,22 @@ class SetPasswordIn(BaseModel):
 
 class ForgotPasswordIn(BaseModel):
     email: EmailStr
+
+
+class RegisterIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class SelfStartIn(BaseModel):
+    # Either an existing corporation (dropdown) or a new one by name — never both.
+    corporation_id: Optional[str] = None
+    corp_name: Optional[str] = None
+    province: str
+    fiscal_year_end: datetime
+    plan: str  # PLAN_META key — service_model is derived, never accepted
+    nil_declaration: bool = False  # required true for NIL
+    nil_amount: Optional[int] = None  # NIL only: Pay What You Want, whole dollars, >= 0
 
 
 class InviteUserIn(BaseModel):
@@ -746,6 +762,52 @@ async def reset_password(body: SetPasswordIn):
     except Exception as e:
         log.warning("trusted_devices.revoke_all_for_user failed on reset: %s", e)
     return {"ok": True}
+
+
+@api.post("/auth/register")
+async def register(body: RegisterIn, request: Request, response: Response):
+    """Public self-serve signup. Creates a CLIENT account and signs it in,
+    returning the same shape as /auth/login."""
+    db = get_db()
+    # Per-IP cap: every call counts against the same 5-per-15-min window used
+    # for login lockout. Attempts are never cleared on success — the cap is on
+    # account creation itself, not on failures.
+    # TODO(deploy): behind a reverse proxy request.client.host is the proxy IP,
+    # so this becomes one site-wide bucket. Key on X-Forwarded-For (trusted
+    # proxy) before production.
+    ip = request.client.host if request.client else "unknown"
+    identifier = f"register:{ip}"
+    await check_brute_force(identifier)
+    await db.login_attempts.insert_one({
+        "identifier": identifier,
+        "at": datetime.now(timezone.utc),
+        "success": False,
+    })
+    if len(body.password) < 8:
+        raise HTTPException(400, "Use at least 8 characters")
+    email = body.email.lower().strip()
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(400, "This email is already registered. Sign in instead.")
+    now = datetime.now(timezone.utc)
+    uid = str(uuid.uuid4())
+    await db.users.insert_one({
+        "id": uid,
+        "email": email,
+        "password_hash": hash_password(body.password),
+        "name": None,
+        "role": "CLIENT",
+        "phone": None,
+        "is_active": True,
+        "created_at": now,
+        "activated_at": now,
+        "signup_source": "SELF_SERVE",
+    })
+    user = await db.users.find_one({"id": uid})
+    token = create_access_token(uid, email, "CLIENT")
+    set_auth_cookie(response, token)
+    log.info("Self-serve signup: %s", email)
+    return {"user": safe_user(user), "token": token}
 
 
 # ==================== Users (Admin) ====================
@@ -1570,6 +1632,12 @@ async def _enrich_engagements(engs: list[dict]) -> list[dict]:
         # CPA pipeline) vs "Do it yourself" (DIY). Legacy engagements predate the
         # field — treat them as DFY.
         e["service_model"] = e.get("service_model") or "DFY"
+        # DIY-plan engagements carry the filing-engine URL from backend env so
+        # swapping in the real engine is a one-env-var change (no rebuild).
+        # Plan-less legacy DIY engagements get nothing — they keep the portal.
+        # TODO(diy-engine): decide what context passes in the handoff link.
+        if e.get("plan") and e["service_model"] == "DIY":
+            e["diy_engine_url"] = os.environ.get("DIY_ENGINE_URL") or None
         # Quick progress
         counts = await db.documents.count_documents({"engagement_id": e["id"]})
         uploaded = await db.documents.count_documents({"engagement_id": e["id"], "status": {"$in": ["UPLOADED", "REVIEWED", "EXTRACTED"]}})
@@ -1605,9 +1673,11 @@ async def list_engagements(user: dict = Depends(get_current_user)):
     if role == "CPA":
         q = {"assigned_cpa_id": user["id"]}
     elif role == "CLIENT":
-        corp = await db.corporations.find_one({"client_id": user["id"]})
+        # ALL of the caller's corporations — a client may hold several
+        # profiles (multi-corp dashboard), not just the first one found.
+        corp_ids = [c["id"] async for c in db.corporations.find({"client_id": user["id"]}, {"id": 1, "_id": 0})]
         # Engagements where the user is the primary client...
-        primary_q = {"corporation_id": corp["id"]} if corp else None
+        primary_q = {"corporation_id": {"$in": corp_ids}} if corp_ids else None
         # ...plus engagements where the user is an active delegate.
         delegate_eids = await delegates.list_engagement_ids_for_delegate(user["id"])
         if primary_q and delegate_eids:
@@ -1640,6 +1710,18 @@ async def list_engagements(user: dict = Depends(get_current_user)):
         out = [redact_for_ws(e) for e in out]
     if role == "CLIENT":
         out = [redact_for_client(e) for e in out]
+        # Dashboard order: active filings first, FILED after, newest first
+        # within each group. CLIENT-only — admin/partner views keep the
+        # global referral_date ordering they group themselves.
+        def _created(e):
+            v = e.get("created_at") or e.get("referral_date")
+            if isinstance(v, datetime):
+                return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v
+            try:
+                return datetime.fromisoformat(str(v))
+            except (TypeError, ValueError):
+                return datetime.min.replace(tzinfo=timezone.utc)
+        out.sort(key=lambda e: (e.get("status") == "FILED", -_created(e).timestamp()))
     return out
 
 
@@ -1722,6 +1804,111 @@ async def create_engagement(body: CreateEngagementIn, user: dict = Depends(requi
     if body.assigned_cpa_id:
         await notify(body.assigned_cpa_id, "New client referred", f"{body.client_name} ({body.corp_name})", "new_referral", eng_id)
     return {"id": eng_id, "invite_link": invite_link}
+
+
+@api.post("/engagements/self-start")
+async def self_start_engagement(body: SelfStartIn, user: dict = Depends(require_role("CLIENT"))):
+    """Client-initiated filing. Creates the corporation + an INTAKE engagement
+    for the caller. Tier stays unset — it is admin-managed and never accepted
+    from (or shown to) clients."""
+    db = get_db()
+    if body.plan not in PLAN_META:
+        raise HTTPException(400, f"plan must be one of {list(PLAN_META)}")
+    service_model = PLAN_META[body.plan]["service_model"]
+    nil_amount = None
+    if body.plan == "NIL":
+        if not body.nil_declaration:
+            raise HTTPException(400, "The no-activity declaration is required for T2 Nil.")
+        nil_amount = body.nil_amount if body.nil_amount is not None else 0
+        if not isinstance(nil_amount, int) or nil_amount < 0:
+            raise HTTPException(400, "nil_amount must be a whole number of dollars, 0 or more.")
+    # TODO(payment): checkout step slots in here after plan selection — out of
+    # scope this phase; the chosen plan (and nil_amount) is stored only.
+    if not body.province.strip():
+        raise HTTPException(400, "province cannot be empty")
+    now = datetime.now(timezone.utc)
+    if body.corporation_id:
+        # Existing profile from the dropdown. Guard is per-corporation: one
+        # active (non-FILED) filing per corp; FILED years never block the next.
+        corp = await db.corporations.find_one({"id": body.corporation_id, "client_id": user["id"]})
+        if not corp:
+            raise HTTPException(404, "Corporation not found")
+        active = await db.engagements.find_one({"corporation_id": corp["id"], "status": {"$ne": "FILED"}})
+        if active:
+            raise HTTPException(400, "This corporation already has a filing in progress.")
+        corp_id = corp["id"]
+        await db.corporations.update_one({"id": corp_id}, {"$set": {
+            "fiscal_year_start": body.fiscal_year_end - timedelta(days=364),
+            "fiscal_year_end": body.fiscal_year_end,
+            "province": body.province,
+        }})
+    else:
+        # "New corporation" — always a fresh record, no name-match guard.
+        if not (body.corp_name or "").strip():
+            raise HTTPException(400, "corp_name cannot be empty")
+        corp_id = str(uuid.uuid4())
+        await db.corporations.insert_one({
+            "id": corp_id,
+            "name": body.corp_name.strip(),
+            "business_number": None,
+            "fiscal_year_start": body.fiscal_year_end - timedelta(days=364),
+            "fiscal_year_end": body.fiscal_year_end,
+            "province": body.province,
+            "practice_type": None,
+            "has_holdco": False,
+            "has_trust": False,
+            "client_id": user["id"],
+            "created_at": now,
+        })
+    eng_id = str(uuid.uuid4())
+    await db.engagements.insert_one({
+        "id": eng_id,
+        "tier": None,
+        "original_tier": None,
+        "status": "INTAKE",
+        "cra_access_status": "NOT_STARTED",
+        "cra_access_method": None,
+        "cra_programs": None,
+        "referral_date": now,
+        "intake_complete_date": now,
+        "notes": None,
+        "corporation_id": corp_id,
+        "assigned_cpa_id": None,
+        "partner_advisor_id": None,
+        "service_model": service_model,
+        "plan": body.plan,
+        "nil_amount": nil_amount,
+        "source": "SELF_SERVE",
+        "created_at": now,
+        "updated_at": now,
+    })
+    # Document seeding is DFY-plans only (REVIEW_FILE, DFY): the 8
+    # tier-independent base documents (the BOOKS_COMPLETE list IS the base —
+    # higher tiers only append). Admin's later internal tier assignment appends
+    # the tier-specific documents via the re-seed hook in update_engagement.
+    # DIY plans (NIL, BASIC_DIY) seed nothing — the client is handed off to
+    # the filing engine, not the document portal.
+    if service_model == "DFY":
+        docs = [
+            {"id": str(uuid.uuid4()), "engagement_id": eng_id, **d, "status": "PENDING", "is_new_request": False, "issue_note": None, "request_note": None, "deferred_at": None, "created_at": now}
+            for d in docs_for_tier("BOOKS_COMPLETE")
+        ]
+        if docs:
+            await db.documents.insert_many(docs)
+    await log_status_change(eng_id, user["id"], None, "INTAKE", "Self-serve start")
+    client_label = user.get("name") or user.get("email") or "A client"
+    plan_label = PLAN_META[body.plan]["label"]
+    msg = f"{client_label} started a {plan_label} filing."
+    if service_model == "DFY":
+        msg += " Assign a CPA to begin intake."
+    await notify_admins("New self-serve client", msg, "self_serve_start", eng_id)
+    eng = await db.engagements.find_one({"id": eng_id})
+    eng = redact_for_client(strip_id(eng))
+    # Match the enriched GET payload: DIY-plan engagements carry the filing
+    # engine URL (null while DIY_ENGINE_URL is unset).
+    if service_model == "DIY":
+        eng["diy_engine_url"] = os.environ.get("DIY_ENGINE_URL") or None
+    return eng
 
 
 @api.get("/engagements/{eid}")
@@ -2241,7 +2428,30 @@ async def update_engagement(eid: str, body: UpdateEngagementIn, user: dict = Dep
         and updates["assigned_cpa_id"] != eng.get("assigned_cpa_id")
     )
 
+    # First tier assignment on a self-started engagement: keep original_tier in
+    # step (it was created as None, unlike admin-created engagements).
+    if "tier" in updates and updates["tier"] and not eng.get("original_tier"):
+        updates["original_tier"] = updates["tier"]
+
     await db.engagements.update_one({"id": eid}, {"$set": updates})
+
+    # Tier (re)assignment appends the tier-specific documents that the
+    # engagement doesn't already have — self-started engagements are seeded
+    # with only the base set. Dedup by category so nothing doubles up.
+    if "tier" in updates and updates["tier"] and updates["tier"] != eng.get("tier"):
+        have = {d["category"] async for d in db.documents.find({"engagement_id": eid}, {"category": 1, "_id": 0})}
+        new_docs = [
+            {"id": str(uuid.uuid4()), "engagement_id": eid, **d, "status": "PENDING", "is_new_request": False, "issue_note": None, "request_note": None, "deferred_at": None, "created_at": now}
+            for d in await _docs_for_tier_with_template(updates["tier"])
+            if d["category"] not in have
+        ]
+        if new_docs:
+            await db.documents.insert_many(new_docs)
+        # Self-started engagements also have no CPA review checklist yet.
+        if await db.checklist.count_documents({"engagement_id": eid}) == 0:
+            cl = [{"id": str(uuid.uuid4()), "engagement_id": eid, **c, "completed_at": None, "completed_by_id": None} for c in review_checklist_for_tier(updates["tier"])]
+            if cl:
+                await db.checklist.insert_many(cl)
 
     if cpa_changed:
         new_cpa_id = updates["assigned_cpa_id"]

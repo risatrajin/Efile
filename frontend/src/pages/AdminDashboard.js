@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge } from "../components/shared/Badges";
+import { PLAN_LABELS } from "./ClientDashboard";
 import EngagementTable, { ViewToggle } from "../components/shared/EngagementTable";
 import UsersTable from "../components/shared/UsersTable";
 import { Plus, X } from "lucide-react";
@@ -262,6 +263,11 @@ function AdminCard({ eng, onClick }) {
         </div>
         <TierBadge tier={eng.tier} />
       </div>
+      {eng.plan && (
+        <div className="muted" style={{ fontSize: 11, marginTop: 6 }} data-testid={`admin-card-plan-${eng.id}`}>
+          Plan: {PLAN_LABELS[eng.plan] || eng.plan}{eng.plan === "NIL" ? ` · $${eng.nil_amount ?? 0}` : ""}
+        </div>
+      )}
       {needsCpa ? (
         <div className="mt-3 flex items-center gap-1" style={{ fontSize: 11 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#f57f17" }} />

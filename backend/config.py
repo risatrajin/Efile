@@ -127,6 +127,16 @@ TIER_LABELS = {
     "WHITE_GLOVE": "White-Glove",
 }
 
+# Client-facing plans (self-serve intake). Separate axis from the internal
+# admin-managed tier: plan is client-visible, tier stays hidden. Pricing copy
+# lives in the frontend card list only — the backend stores no prices.
+PLAN_META = {
+    "NIL": {"label": "T2 Nil", "service_model": "DIY"},
+    "BASIC_DIY": {"label": "T2 Basic DIY", "service_model": "DIY"},
+    "REVIEW_FILE": {"label": "Review and File", "service_model": "DFY"},
+    "DFY": {"label": "Done For You", "service_model": "DFY"},
+}
+
 OPP_LABELS = {
     "COMPENSATION_STRATEGY": "Compensation strategy",
     "SBD_CLAWBACK": "SBD clawback",

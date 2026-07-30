@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { api, fmtError, fmtDate, initials } from "../lib/api";
 import AppHeader from "../components/shared/AppHeader";
 import { TierBadge, StatusBadge } from "../components/shared/Badges";
+import { PLAN_LABELS } from "./ClientDashboard";
 import { ArrowLeft, ArrowRight, MessageSquare, X, Pencil, Trash2, Check, FileText, Download, CheckCircle2, AlertTriangle, Lock } from "lucide-react";
 import MoveToDropdown from "../components/shared/MoveToDropdown";
 import StatusHistoryTimeline, { StatusHistoryHeader } from "../components/shared/StatusHistoryTimeline";
@@ -393,7 +394,21 @@ export default function AdminClientDetail() {
               <div className="flex items-center gap-2 mt-3">
                 <TierBadge tier={eng.tier} />
                 <StatusBadge status={eng.status} />
+                {eng.plan && (
+                  <span
+                    className="badge"
+                    style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-default)" }}
+                    data-testid="admin-plan-badge"
+                  >
+                    {PLAN_LABELS[eng.plan] || eng.plan}
+                  </span>
+                )}
               </div>
+              {eng.plan === "NIL" && (
+                <div className="muted" style={{ fontSize: 12, marginTop: 6 }} data-testid="admin-nil-amount">
+                  Pay What You Want amount: ${eng.nil_amount ?? 0}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-2 items-center">

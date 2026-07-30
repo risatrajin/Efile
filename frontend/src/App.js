@@ -3,9 +3,12 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AccessibilityProvider } from "./contexts/AccessibilityContext";
 import Login, { SetPassword } from "./pages/Login";
+import Register from "./pages/Register";
 import ForgotPassword, { ResetPassword } from "./pages/ForgotPassword";
 import ClientLayout from "./pages/ClientLayout";
+import ClientDashboard from "./pages/ClientDashboard";
 import ClientPortal from "./pages/ClientPortal";
+import DiyWaiting from "./pages/DiyWaiting";
 import MessagesPage from "./pages/Messages";
 import StaffMessagesPage from "./pages/MessagesPage";
 import AccountPage from "./pages/Account";
@@ -102,11 +105,14 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/set-password" element={<SetPassword />} />
+          <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
           <Route element={<Protected roles={["CLIENT"]}><ClientLayout /></Protected>}>
-            <Route path="/portal" element={<ClientPortal />} />
+            <Route path="/portal" element={<ClientDashboard />} />
+            <Route path="/portal/filing/:eid" element={<ClientPortal />} />
+            <Route path="/portal/filing/:eid/waiting" element={<DiyWaiting />} />
             <Route path="/portal/messages" element={<MessagesPage />} />
             <Route path="/portal/account" element={<AccountPage />} />
           </Route>

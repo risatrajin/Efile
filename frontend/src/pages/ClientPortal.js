@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api, fmtError, initials, fmtDate } from "../lib/api";
 import { Check, AlertCircle, MessageSquare, ChevronDown, FileText, Eye, Download, Calendar, Clock, FileBarChart, Trash2, ThumbsUp, Flag, PenLine, Plus } from "lucide-react";
 import DraftHistoryTable from "../components/shared/DraftHistoryTable";
@@ -543,6 +543,10 @@ function ReviewDecisionCard({ onSubmit }) {
 export default function ClientPortal() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  // Engagement id from /portal/filing/:eid — the dashboard is the only entry
+  // point. Internals (phases, documents, T183, polling) are untouched; only
+  // the engagement source changed from list[0] to this param.
+  const { eid } = useParams();
   const [eng, setEng] = useState(null);
   const [docs, setDocs] = useState([]);
   const [questions, setQuestions] = useState([]);
@@ -560,13 +564,13 @@ export default function ClientPortal() {
   const [loaded, setLoaded] = useState(false);
 
   const loadAll = async () => {
+    if (!eid) { navigate("/portal", { replace: true }); return; }
     try {
-      const [{ data: list }, ctxRes] = await Promise.all([
-        api.get("/engagements"),
+      const [{ data: e }, ctxRes] = await Promise.all([
+        api.get(`/engagements/${eid}`),
         api.get("/me/delegate-context").catch(() => ({ data: null })),
       ]);
       setDelegateContext(ctxRes.data || null);
-      const e = list[0];
       setEng(e);
       if (e) {
         const [d, q] = await Promise.all([
@@ -576,16 +580,24 @@ export default function ClientPortal() {
         setDocs(d.data);
         setQuestions(q.data);
       }
-    } catch (x) { setErr(fmtError(x)); }
+    } catch (x) {
+      // Missing / inaccessible engagement — back to the dashboard rather than
+      // rendering an error shell.
+      if (x?.response?.status === 404 || x?.response?.status === 403) {
+        navigate("/portal", { replace: true });
+        return;
+      }
+      setErr(fmtError(x));
+    }
     finally { setLoaded(true); }
   };
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [eid]); // eslint-disable-line react-hooks/exhaustive-deps
   // Poll engagement every 20s so the client sees a fresh ReviewDecisionCard
   // when the CPA uploads a new draft (review_decision is cleared server-side).
   useEffect(() => {
     const id = setInterval(() => { loadAll(); }, 20000);
     return () => clearInterval(id);
-  }, []);
+  }, [eid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onUpload = async (doc, file) => {
     if (!file) return;
@@ -740,9 +752,12 @@ export default function ClientPortal() {
     </div>
   );
 
-  // Empty state — only after the API has confirmed there is no active
-  // engagement (``loaded === true`` AND ``eng`` is null/ONBOARDING).
-  if (!eng || eng.status === "ONBOARDING") return (
+  // Engagement fetch resolved empty (deleted mid-session etc.) — dashboard
+  // owns the no-engagement experience now.
+  if (!eng) { navigate("/portal", { replace: true }); return null; }
+
+  // Empty state — engagement exists but is still being set up by staff.
+  if (eng.status === "ONBOARDING") return (
     <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="empty-state">
       <h1 className="page-title">
         {greetingName ? `Welcome, ${greetingName}` : "Welcome"}
@@ -752,6 +767,46 @@ export default function ClientPortal() {
         <p className="muted" style={{ fontSize: 13, lineHeight: 1.7 }}>
           Your CloudTax team is setting up your file. A licensed CPA will be assigned shortly and you&apos;ll be notified to begin uploading documents.
         </p>
+      </div>
+    </div>
+  );
+
+  // DIY-plan engagements hand off to the CloudTax filing engine — never the
+  // document portal. Legacy pilot DIY engagements have no `plan` and keep the
+  // portal exactly as before. `diy_engine_url` comes from backend env
+  // DIY_ENGINE_URL (one-env-var swap when the engine ships).
+  // TODO(diy-engine): define what engagement context passes in the link.
+  if (eng.plan && (eng.service_model || "DFY") === "DIY") return (
+    <div className="page-narrow stack-lg" style={{ paddingTop: 32 }} data-testid="diy-handoff">
+      <h1 className="page-title">
+        {greetingName ? `Welcome, ${greetingName}` : "Welcome"}
+      </h1>
+      <div className="card">
+        <h2 className="section-title">Your self-serve filing</h2>
+        <p className="muted" style={{ fontSize: 13, lineHeight: 1.7 }}>
+          You&apos;ll complete your T2 in the CloudTax filing engine.
+        </p>
+        {eng.diy_engine_url ? (
+          <a
+            className="btn btn-primary"
+            style={{ marginTop: 12, display: "inline-flex" }}
+            href={eng.diy_engine_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="open-filing-engine"
+          >
+            Open filing engine
+          </a>
+        ) : (
+          <button
+            className="btn btn-primary"
+            style={{ marginTop: 12 }}
+            onClick={() => navigate(`/portal/filing/${eng.id}/waiting`)}
+            data-testid="open-filing-engine"
+          >
+            Open filing engine
+          </button>
+        )}
       </div>
     </div>
   );

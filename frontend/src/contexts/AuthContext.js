@@ -54,6 +54,17 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const register = async (email, password) => {
+    try {
+      const { data } = await api.post("/auth/register", { email, password });
+      if (data.token) setToken(data.token);
+      setUser(data.user);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: fmtError(e) };
+    }
+  };
+
   const verifyLoginOtp = async (challengeId, code, trustDevice = false) => {
     try {
       const { data } = await api.post("/auth/2fa/verify-login", {
@@ -77,7 +88,7 @@ export function AuthProvider({ children }) {
 
   // Memoise so consumers don't re-render on every AuthProvider parent render.
   const value = useMemo(
-    () => ({ user, booting, login, verifyLoginOtp, logout, setUser }),
+    () => ({ user, booting, login, register, verifyLoginOtp, logout, setUser }),
     [user, booting]
   );
 
